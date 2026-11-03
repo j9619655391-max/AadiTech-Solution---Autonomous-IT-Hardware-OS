@@ -1,0 +1,31 @@
+# ==============================================================================
+# IT HARDWARE PLATFORM - HOSTINGER LITESPEED / APACHE CONFIGURATION
+# Platform: Hostinger Business Shared Web Hosting
+# ==============================================================================
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Force HTTPS
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # 2. Prevent direct access to sensitive files
+  RewriteRule ^(\.env|\.git|database/schema\.sql|package\.json|server\.ts) - [F,L,NC]
+
+  # 3. SPA Fallback: Don't rewrite real files or directories
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 4. Route all other requests to index.html for React SPA
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Security Headers
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

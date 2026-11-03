@@ -1,0 +1,6 @@
+{
+  "name": "IT Hardware Platform",
+  "description": "Autonomous IT hardware sales, marketing, procurement, and operations platform for AadiTech Solution with multi-agent AI, Telegram profit guard, and MySQL production backend.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
