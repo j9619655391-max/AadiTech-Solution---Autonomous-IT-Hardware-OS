@@ -37,7 +37,7 @@ export class MySQLCRMRepository implements CRMRepository {
     try {
       await connection.beginTransaction();
       const keys=Object.keys(fields);
-      await connection.execute(`INSERT INTO ${tables[entity]} (id,${keys.join(',')}) VALUES (?,${keys.map(()=>'?').join(',')})`,[id,...keys.map(k=>fields[k])]);
+      await connection.execute(`INSERT INTO ${tables[entity]} (id,${keys.join(',')}) VALUES (?,${keys.map(()=>'?').join(',')})`,[id,...keys.map(k=>fields[k] as string | number | null)]);
       const [rows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=?`,[id]);
       const after=clean(entity,rows[0]);
       await this.audit(connection,entity,id,actor,'CREATE',null,after);
@@ -58,7 +58,7 @@ export class MySQLCRMRepository implements CRMRepository {
         const sell=fields.sellingPrice??beforeRows[0].sellingPrice;
         if(Number(min)>Number(sell)){await connection.rollback();return 'conflict';}
       }
-      await connection.execute(`UPDATE ${tables[entity]} SET ${keys.map(k=>k+'=?').join(',')},version=version+1 WHERE id=?`,[...keys.map(k=>fields[k]),id]);
+      await connection.execute(`UPDATE ${tables[entity]} SET ${keys.map(k=>k+'=?').join(',')},version=version+1 WHERE id=?`,[...keys.map(k=>fields[k] as string | number | null),id]);
       const [rows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=?`,[id]);const after=clean(entity,rows[0]);
       await this.audit(connection,entity,id,actor,'UPDATE',before,after);
       await connection.commit();return after;
