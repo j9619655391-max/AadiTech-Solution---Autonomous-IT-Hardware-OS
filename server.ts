@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
 import authRouter, { requireOwner } from "./server/auth/router";
+import crmRouter from "./server/crm/router";
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ const PORT = 3000;
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
+app.use("/api/crm", crmRouter);
 
 // Fail closed: diagnostics and AI endpoints are restricted to an authenticated
 // owner. Public health remains an intentionally minimal liveness endpoint.
