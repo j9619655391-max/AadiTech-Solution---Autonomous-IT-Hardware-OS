@@ -79,8 +79,8 @@ router.post('/login', async (req, res) => {
     attempts.delete(key);
     const token = newSecret();
     const csrf = newSecret();
-    await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,?)',
-      [hashToken(token),user.id,csrf,new Date(Date.now() + SESSION_DURATION_MS)]);
+    await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 8 HOUR))',
+      [hashToken(token),user.id,csrf]);
     res.cookie(COOKIE, token, cookieOptions());
     res.json({ user: { id: user.id, email: user.email, role: user.role }, csrfToken: csrf });
   } catch {
