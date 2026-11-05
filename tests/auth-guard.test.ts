@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { once } from 'node:events';
 import { requireOwner } from '../server/auth/router';
 
 test('anonymous sensitive routes fail closed without MySQL/session', async () => {
@@ -12,6 +13,7 @@ test('anonymous sensitive routes fail closed without MySQL/session', async () =>
   app.get('/api/db/status', (_req,res) => res.json({ secret: true }));
   app.get('/api/hostinger/readiness', (_req,res) => res.json({ secret: true }));
   const listener = app.listen(0, '127.0.0.1');
+  await once(listener, 'listening');
   try {
     const address = listener.address();
     assert.ok(address && typeof address !== 'string');
