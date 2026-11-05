@@ -1,0 +1,29 @@
+name: Phase 0 baseline
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run lint
+      - name: Build
+        run: bun run build
+      - name: Record architecture blockers (non-gating)
+        if: always()
+        run: node scripts/audit-baseline.mjs
+      - name: Upload baseline audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-audit
+          path: phase0-audit-report.json
+          if-no-files-found: warn
