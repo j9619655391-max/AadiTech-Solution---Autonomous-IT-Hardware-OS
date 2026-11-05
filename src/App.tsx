@@ -1,3 +1,4 @@
+import { authenticatedFetch } from './services/authClient';
 import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { TelegramCommandHub } from './components/TelegramCommandHub';
@@ -168,7 +169,7 @@ export default function App() {
     setTelegramMessages(prev => [...prev, userMsg]);
 
     try {
-      const res = await fetch('/api/ai/command', {
+      const res = await authenticatedFetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

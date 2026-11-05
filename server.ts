@@ -5,7 +5,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
-import authRouter from "./server/auth/router";
+import authRouter, { requireOwner } from "./server/auth/router";
 
 dotenv.config();
 
@@ -15,6 +15,12 @@ const PORT = 3000;
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
+
+// Fail closed: diagnostics and AI endpoints are restricted to an authenticated
+// owner. Public health remains an intentionally minimal liveness endpoint.
+app.use('/api/db', requireOwner);
+app.use('/api/hostinger', requireOwner);
+app.use('/api/ai', requireOwner);
 
 // Lazy-initialized Gemini client
 let geminiClient: GoogleGenAI | null = null;
