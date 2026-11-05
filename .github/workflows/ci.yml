@@ -29,3 +29,41 @@ jobs:
           name: phase0-audit
           path: phase0-audit-report.json
           if-no-files-found: warn
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: aaditech_ci
+          MYSQL_ROOT_PASSWORD: ci_only_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_only_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASSWORD: ci_only_password
+      DB_NAME: aaditech_ci
+      DB_SSL: 'false'
+      CRM_TEST_DB: '1'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Apply non-destructive authentication migration
+        run: bun run db:migrate:auth
+      - name: Apply CRM migration
+        run: bun run db:migrate:crm
+      - name: Verify CRM migration rerun is idempotent
+        run: bun run db:migrate:crm
+      - name: Run real MySQL integration tests
+        run: bun run test:mysql

@@ -31,3 +31,8 @@ Use exact whitelisted business fields as defined in `server/crm/validation.ts`; 
 - API field shapes currently differ from the legacy UI's aggregate types. Do not interpret missing financial/stock fields as zero.
 - Running CI without an actual MySQL server validates code but not SQL execution, locking, audit atomicity or backup/restore. A real disposable MySQL integration suite is required before production.
 - Product pricing and tax fields are master-data values, not tax or pricing compliance verification.
+
+## CI database integration
+CI uses an ephemeral `mysql:8.0` service with database `aaditech_ci` and non-production credentials. The integration runner refuses databases with any other name. It tests migration rerun, session authentication enforcement, CSRF, customer/lead/product CRUD, duplicate SKU, optimistic conflicts, soft delete and audit records. All test records are disposable.
+
+**Do not use these CI credentials in any deployed environment.** Real production import/restore and MySQL version compatibility still require separate acceptance tests.

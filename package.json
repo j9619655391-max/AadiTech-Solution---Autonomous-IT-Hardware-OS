@@ -11,7 +11,8 @@
     "test": "node --test tests/*.test.mjs && tsx --test tests/*.test.ts",
     "db:migrate:auth": "tsx scripts/migrate-auth.ts",
     "owner:bootstrap": "tsx scripts/bootstrap-owner.ts",
-    "db:migrate:crm": "tsx scripts/migrate-crm.ts"
+    "db:migrate:crm": "tsx scripts/migrate-crm.ts",
+    "test:mysql": "tsx --test tests/crm-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
