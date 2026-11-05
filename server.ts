@@ -5,13 +5,16 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
+import authRouter from "./server/auth/router";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
+// Phase 1A: owner auth foundation; existing business routes migrate in later phases.
+app.use("/api/auth", authRouter);
 
 // Lazy-initialized Gemini client
 let geminiClient: GoogleGenAI | null = null;
