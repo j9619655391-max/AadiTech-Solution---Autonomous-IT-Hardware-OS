@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {authenticatedFetch,sensitiveFetch,verifyCurrentPassword,hasRecentVerification} from '../services/authClient';
 
 type Reviewer={id:string;email:string;full_name:string;status:'ACTIVE'|'DISABLED';active_sessions:number};
+type SecurityAlert={eventType:string;count:number};
 type EventRow={id:string;event_type:string;created_at:string;revoked_session_count:number;target_user_id:string};
 async function parse<T>(response:Response):Promise<T>{
  const value:unknown=await response.json();
@@ -14,24 +15,27 @@ async function parse<T>(response:Response):Promise<T>{
 export function SecurityAdminPanel(){
  const [reviewers,setReviewers]=useState<Reviewer[]>([]);
  const [events,setEvents]=useState<EventRow[]>([]);
+ const [alerts,setAlerts]=useState<SecurityAlert[]>([]);
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [success,setSuccess]=useState('');
  const [password,setPassword]=useState('');
  const [verified,setVerified]=useState(false);
  async function refresh(){
-  const [staff,log]=await Promise.all([
+  const [staff,log,summary]=await Promise.all([
    parse<{items:Reviewer[]}>(await authenticatedFetch('/api/security/reviewers')),
-   parse<{items:EventRow[]}>(await authenticatedFetch('/api/security/events?limit=20'))
+   parse<{items:EventRow[]}>(await authenticatedFetch('/api/security/events?limit=20')),
+   parse<{counts:SecurityAlert[]}>(await authenticatedFetch('/api/security/alerts'))
   ]);
-  setReviewers(staff.items);setEvents(log.items);
+  setReviewers(staff.items);setEvents(log.items);setAlerts(summary.counts);
  }
  useEffect(()=>{
   let active=true;
   Promise.all([
+   authenticatedFetch('/api/security/alerts').then(r=>parse<{counts:SecurityAlert[]}>(r)),
    authenticatedFetch('/api/security/reviewers').then(r=>parse<{items:Reviewer[]}>(r)),
    authenticatedFetch('/api/security/events?limit=20').then(r=>parse<{items:EventRow[]}>(r))
-  ]).then(([staff,log])=>{if(active){setReviewers(staff.items);setEvents(log.items);}})
+  ]).then(([summary,staff,log])=>{if(active){setAlerts(summary.counts);setReviewers(staff.items);setEvents(log.items);}})
    .catch(e=>{if(active)setError(e instanceof Error?e.message:'Could not load staff security records');});
   return()=>{active=false;};
  },[]);
@@ -96,6 +100,12 @@ export function SecurityAdminPanel(){
       onClick={()=>void change(item,'revoke')}>Revoke sessions</button>
     </div>
    </div>)}
+  </div>
+  <div className="border-t border-slate-700 pt-3 space-y-2">
+   <h3 className="font-medium text-sm">Security activity · previous 24 hours</h3>
+   <p className="text-xs text-amber-300">Read-only event counts. This is not a notification service or incident-response system.</p>
+   {alerts.length===0&&<p className="text-slate-400 text-xs">No monitored events recorded in this window.</p>}
+   {alerts.map(v=><p key={v.eventType} className="text-xs border border-slate-700 rounded p-2">{v.eventType}: {v.count}</p>)}
   </div>
   <div className="border-t border-slate-700 pt-3 space-y-2">
    <h3 className="font-medium text-sm">Recent security events</h3>
