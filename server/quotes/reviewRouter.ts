@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { RowDataPacket } from 'mysql2/promise';
 import { getPool } from '../db';
-import { requireOwner } from '../auth/router';
+import { requireReviewer } from '../auth/router';
 import { paise, rupees, QuoteInputError } from './money';
 import { evaluateRevision, type RevisionProduct } from './revisions';
 import { grossMarginBps, requiredMinimumMarginBps, reviewDecision } from './reviewPolicy';
 
 const router=Router();
-router.use(requireOwner);
+router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function failure(res:import('express').Response,e:unknown){
@@ -19,12 +19,52 @@ function failure(res:import('express').Response,e:unknown){
   console.error('Review request failure:',e instanceof Error?e.name:'Unknown');
   res.status(503).json({error:'Review service unavailable'});
 }
+router.get('/queue',async(req,res)=>{
+  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+  try{
+    const [rows]=await db.execute<RowDataPacket[]>(`SELECT q.id,q.created_by,q.created_at,
+      COALESCE(r.revision_number,0) AS current_revision,
+      CASE WHEN d.id IS NULL THEN 'AWAITING_REVIEW' ELSE d.decision END AS review_state
+      FROM sales_quote_drafts q
+      LEFT JOIN sales_quote_draft_revisions r ON r.quote_id=q.id
+        AND r.revision_number=(SELECT MAX(rr.revision_number) FROM sales_quote_draft_revisions rr WHERE rr.quote_id=q.id)
+      LEFT JOIN sales_quote_review_decisions d ON d.quote_id=q.id
+        AND d.revision_number=COALESCE(r.revision_number,0)
+      WHERE q.created_by<>? ORDER BY q.created_at DESC,q.id DESC LIMIT 100`,
+      [res.locals.auth.userId]);
+    res.json({items:rows});
+  }catch(e){failure(res,e);}
+});
+router.get('/:id/brief',async(req,res)=>{
+  if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
+  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+  try{
+    const [drafts]=await db.execute<RowDataPacket[]>(
+      'SELECT id,created_by,subtotal,tax_estimate,total_estimate FROM sales_quote_drafts WHERE id=? AND created_by<>? LIMIT 1',
+      [req.params.id,res.locals.auth.userId]);
+    if(!drafts.length){res.status(404).json({error:'Draft not available for independent review'});return;}
+    const [revisions]=await db.execute<RowDataPacket[]>(
+      'SELECT revision_number,subtotal,tax_estimate,total_estimate,gross_margin_bps,review_status,line_snapshot FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number DESC LIMIT 1',
+      [req.params.id]);
+    const [items]=await db.execute<RowDataPacket[]>(
+      'SELECT sku_snapshot,name_snapshot,quantity,unit_price,gst_rate,line_subtotal,line_tax_estimate FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position',
+      [req.params.id]);
+    const latest=revisions[0]??null;
+    res.json({draftId:req.params.id,drafterId:drafts[0].created_by,
+      revision:latest?Number(latest.revision_number):0,
+      subtotal:latest?.subtotal??drafts[0].subtotal,
+      taxEstimate:latest?.tax_estimate??drafts[0].tax_estimate,
+      totalEstimate:latest?.total_estimate??drafts[0].total_estimate,
+      items:latest?(typeof latest.line_snapshot==='string'?JSON.parse(latest.line_snapshot):latest.line_snapshot):items,
+      note:'Internal reviewer context only. No recipient details or customer contact data supplied.'});
+  }catch(e){failure(res,e);}
+});
 router.get('/:id',async(req,res)=>{
   if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
   const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
   try{
     const [owned]=await db.execute<RowDataPacket[]>(
-      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? LIMIT 1',[req.params.id,res.locals.auth.userId]);
+      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by<>? LIMIT 1',[req.params.id,res.locals.auth.userId]);
     if(!owned.length){res.status(404).json({error:'Draft not found'});return;}
     const [rev]=await db.execute<RowDataPacket[]>(
       'SELECT COALESCE(MAX(revision_number),0) AS n FROM sales_quote_draft_revisions WHERE quote_id=?',[req.params.id]);
@@ -52,7 +92,7 @@ router.post('/:id',async(req,res)=>{
   try{
     await conn.beginTransaction();
     const [drafts]=await conn.query<RowDataPacket[]>(
-      'SELECT id,subtotal FROM sales_quote_drafts WHERE id=? AND created_by=? FOR UPDATE',
+      'SELECT id,subtotal FROM sales_quote_drafts WHERE id=? AND created_by<>? FOR UPDATE',
       [req.params.id,res.locals.auth.userId]);
     if(!drafts.length){await conn.rollback();res.status(404).json({error:'Draft not found'});return;}
     const [rev]=await conn.query<RowDataPacket[]>(
