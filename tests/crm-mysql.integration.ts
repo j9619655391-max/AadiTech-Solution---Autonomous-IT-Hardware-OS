@@ -356,6 +356,18 @@ test('privileged MFA policy rejects password-only sessions, retains journal and 
   }
 });
 
+test('owner-only read-only security summary returns event counts without secrets',async()=>{
+  assert.equal((await call('/api/security/alerts','GET',undefined,false)).status,401);
+  assert.equal((await call('/api/security/alerts','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  const response=await call('/api/security/alerts');
+  assert.equal(response.status,200);
+  assert.equal(response.data.windowHours,24);
+  assert.equal(response.data.deliveryEnabled,false);
+  assert.ok(Array.isArray(response.data.counts));
+  assert.ok(response.data.counts.every((v:any)=>
+    typeof v.eventType==='string' && Number.isSafeInteger(v.count) && v.count>=0));
+});
+
 test('owner-only reviewer administration revokes sessions and appends immutable security events',async()=>{
   const baseRoute='/api/security/reviewers/'+reviewerId;
   assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,true,{'x-step-up-token':'invalid'})).status,403);
