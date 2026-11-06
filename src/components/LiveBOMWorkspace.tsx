@@ -3,6 +3,7 @@ import { crmClient, type CRMRecord } from '../services/crmClient';
 import { authenticatedFetch } from '../services/authClient';
 import { DraftRevisionPanel } from './DraftRevisionPanel';
 import { DraftOwnerReviewPanel } from './DraftOwnerReviewPanel';
+import { DraftReleaseHoldPanel } from './DraftReleaseHoldPanel';
 
 type Line = { productId: string; quantity: number };
 type DraftSummary = { id: string; draftNumber: string; customer_name: string; subtotal: string; tax_estimate: string; total_estimate: string; created_at: string };
@@ -148,7 +149,7 @@ export function LiveBOMWorkspace(){
         </button>
       </>}
     </div>
-    {revisionDraftId && <><DraftRevisionPanel draftId={revisionDraftId} /><DraftOwnerReviewPanel draftId={revisionDraftId}/></>}
+    {revisionDraftId && <><DraftRevisionPanel draftId={revisionDraftId} /><DraftOwnerReviewPanel draftId={revisionDraftId}/><DraftReleaseHoldPanel draftId={revisionDraftId}/></>}
     <div className="rounded-xl border border-slate-700 bg-slate-900 p-5">
       <h3 className="font-semibold mb-3">Saved draft quotations (latest 100)</h3>
       {drafts.length===0 ? <p className="text-slate-400 text-sm">No persisted draft quotations yet.</p> :
