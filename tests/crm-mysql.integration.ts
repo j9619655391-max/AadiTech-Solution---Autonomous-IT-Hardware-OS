@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { getPool } from '../server/db';
-import { hashToken } from '../server/auth/crypto';
+import { hashPassword, hashToken } from '../server/auth/crypto';
 import crmRouter from '../server/crm/router';
 import quoteDraftRouter from '../server/quotes/router';
 import quoteReviewRouter from '../server/quotes/reviewRouter';
@@ -17,13 +17,16 @@ const db=getPool();
 if (!db) throw new Error('Integration test MySQL pool unavailable');
 after(async()=>{await db.end();});
 const actor=randomUUID(), token='a'.repeat(43), csrf='b'.repeat(43);
+const ownerPassword='CI-owner-strong-password-2026';
+let stepUpToken='';
 let base='';
 let closeServer:()=>Promise<void>;
 const cookie='aaditech_session='+token;
 const reviewerId=randomUUID(),reviewerToken='r'.repeat(43),reviewerCookie='aaditech_session='+reviewerToken;
 
 test('setup isolated owner session',async()=>{
-  await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",[actor,'ci-owner@example.invalid','CI Owner','test-only','OWNER']);
+  await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+    [actor,'ci-owner@example.invalid','CI Owner',await hashPassword(ownerPassword),'OWNER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",[hashToken(token),actor,csrf]);
   await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
     [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer','test-only','REVIEWER']);
@@ -45,6 +48,8 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   if(body!==undefined)headers['content-type']='application/json';
   if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
   if(includeCsrf&& !['GET','HEAD'].includes(method))headers['x-csrf-token']=csrf;
+  if(stepUpToken && !('x-step-up-token' in headers) && ((route.startsWith('/api/security/reviewers/')&&method!=='GET') || route==='/api/auth/revoke-my-sessions'))
+    headers['x-step-up-token']=stepUpToken;
   const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const raw=await response.text();
   return {status:response.status,data:raw?JSON.parse(raw):null};
@@ -314,8 +319,21 @@ test('release-preparation outbox stays disabled, replays safely and stales after
   assert.equal((await call(path,'POST',{expectedRevision:1})).status,409);
 });
 
+test('step-up requires correct password and creates session-bound short-lived token',async()=>{
+  assert.equal((await call('/api/auth/step-up','POST',{currentPassword:ownerPassword},true,false)).status,403);
+  assert.equal((await call('/api/auth/step-up','POST',{currentPassword:'wrong-password'})).status,401);
+  const verified=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(verified.status,200);
+  assert.equal(verified.data.expiresInSeconds,300);
+  assert.match(verified.data.stepUpToken,/^[A-Za-z0-9_-]{43}$/);
+  stepUpToken=verified.data.stepUpToken;
+  const [rows]=await db.execute<any[]>('SELECT step_up_token_hash FROM auth_step_up_sessions WHERE session_token_hash=?',[hashToken(token)]);
+  assert.equal(rows[0].step_up_token_hash,hashToken(stepUpToken));
+});
+
 test('owner-only reviewer administration revokes sessions and appends immutable security events',async()=>{
   const baseRoute='/api/security/reviewers/'+reviewerId;
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,true,{'x-step-up-token':'invalid'})).status,403);
   assert.equal((await call('/api/security/reviewers','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
   assert.equal((await call('/api/security/reviewers','GET',undefined,false)).status,401);
   const listed=await call('/api/security/reviewers');
@@ -356,6 +374,7 @@ test('owner-only reviewer administration revokes sessions and appends immutable 
 
 test('authenticated self-revocation invalidates current owner session and is recorded',async()=>{
   assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,false)).status,403);
+  assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,true,{'x-step-up-token':'bad'})).status,403);
   const response=await call('/api/auth/revoke-my-sessions','POST',{});
   assert.equal(response.status,200);
   assert.equal(response.data.signInRequired,true);
@@ -364,4 +383,18 @@ test('authenticated self-revocation invalidates current owner session and is rec
   assert.equal((await call('/api/crm/customers')).status,401);
   const [events]=await db.execute<any[]>('SELECT event_type,revoked_session_count FROM auth_security_events WHERE target_user_id=? ORDER BY created_at DESC',[actor]);
   assert.ok(events.some((item:any)=>item.event_type==='OWN_SESSIONS_REVOKED'));
+});
+
+test('database-backed rate limiter survives request bursts and stores hashed identifiers',async()=>{
+  const email='absent-ci-user@example.invalid';
+  for(let n=0;n<6;n++){
+    const outcome=await call('/api/auth/login','POST',{email,password:'invalid-password'},false);
+    assert.equal(outcome.status,401);
+  }
+  assert.equal((await call('/api/auth/login','POST',{email,password:'invalid-password'},false)).status,429);
+  const [rows]=await db.execute<any[]>('SELECT key_hash,attempt_count FROM auth_login_rate_buckets ORDER BY attempt_count DESC');
+  assert.ok(rows.some((x:any)=>Number(x.attempt_count)>=7));
+  assert.ok(rows.every((x:any)=>!String(x.key_hash).includes('absent-ci-user')));
+  const [stepups]=await db.execute<any[]>('SELECT * FROM auth_step_up_sessions WHERE session_token_hash=?',[hashToken(token)]);
+  assert.equal(stepups.length,0);
 });
