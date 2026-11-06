@@ -22,6 +22,20 @@ router.get('/reviewers',async(_req,res)=>{
   res.json({items:rows});
  }catch(e){fail(res,e);}
 });
+router.get('/alerts',async(_req,res)=>{
+ const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ try{
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT event_type,COUNT(*) AS event_count
+   FROM auth_security_events
+   WHERE created_at>=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 24 HOUR)
+     AND event_type IN ('MFA_LOGIN_FAILED','MFA_POLICY_DENIED','MFA_RECOVERY_USED',
+       'MFA_RECOVERY_ROTATED','REVIEWER_DISABLED','SESSIONS_REVOKED')
+   GROUP BY event_type ORDER BY event_count DESC,event_type ASC`);
+  res.json({windowHours:24,counts:rows.map(row=>({
+   eventType:String(row.event_type),count:Number(row.event_count)
+  })),deliveryEnabled:false});
+ }catch(e){fail(res,e);}
+});
 router.get('/events',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  const limit=req.query.limit===undefined?50:Number(req.query.limit);
