@@ -54,7 +54,7 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
     headers['x-step-up-token']=stepUpToken;
   const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const raw=await response.text();
-  return {status:response.status,data:raw?JSON.parse(raw):null};
+  return {status:response.status,data:raw?JSON.parse(raw):null,setCookie:response.headers.get('set-cookie')};
 }
 
 test('roles are independent: reviewer cannot mutate CRM or draft, owner cannot sign review decisions',async()=>{
@@ -501,6 +501,21 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   },false);
   assert.equal(signed.status,200);
   assert.equal(signed.data.user.id,id);
+  const sessionCookie=signed.setCookie?.split(';')[0];
+  assert.ok(sessionCookie?.startsWith('aaditech_session='));
+  const oldPolicy=process.env.MFA_REQUIRE_PRIVILEGED;
+  try{
+    process.env.MFA_REQUIRE_PRIVILEGED='true';
+    // A session created after the real TOTP challenge may reach the
+    // owner-only action; 404 is the expected unknown-draft result.
+    const accepted=await call('/api/quotes/release-preparations/'+randomUUID(),'POST',
+      {expectedRevision:0},true,false,
+      {cookie:sessionCookie,'x-csrf-token':signed.data.csrfToken});
+    assert.equal(accepted.status,404);
+  }finally{
+    if(oldPolicy===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
+    else process.env.MFA_REQUIRE_PRIVILEGED=oldPolicy;
+  }
   const [verifiedSessions]=await db.execute<any[]>('SELECT mfa_verified_at FROM auth_sessions WHERE user_id=?',[id]);
   assert.ok(verifiedSessions.some((row:any)=>row.mfa_verified_at));
   const [mfaEvents]=await db.execute<any[]>('SELECT event_type FROM auth_security_events WHERE target_user_id=?',[id]);
