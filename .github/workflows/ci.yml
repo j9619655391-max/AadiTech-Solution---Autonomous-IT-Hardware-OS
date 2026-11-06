@@ -54,6 +54,7 @@ jobs:
       DB_NAME: aaditech_ci
       DB_SSL: 'false'
       CRM_TEST_DB: '1'
+      MFA_ENCRYPTION_KEY: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
@@ -97,5 +98,9 @@ jobs:
         run: bun run db:migrate:login-security
       - name: Verify login security migration rerun
         run: bun run db:migrate:login-security
+      - name: Apply MFA migration
+        run: bun run db:migrate:mfa
+      - name: Verify MFA migration rerun
+        run: bun run db:migrate:mfa
       - name: Run real MySQL integration tests
         run: bun run test:mysql
