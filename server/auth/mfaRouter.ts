@@ -80,6 +80,47 @@ router.post('/enroll/activate',requireAuthenticated,requireStepUp,async(req,res)
    message:'MFA enabled. Store recovery codes securely now; they cannot be displayed again. Sign in again.'});
  }catch(e){await conn.rollback();error(res,e);}finally{conn.release();}
 });
+router.post('/recovery/rotate',requireAuthenticated,requireStepUp,async(req,res)=>{
+ const code=req.body?.code;
+ if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)||
+   Object.keys(req.body).join(',')!=='code'||typeof code!=='string'||!/^\d{6}$/.test(code)){
+  res.status(400).json({error:'A fresh six-digit authenticator code is required'});return;
+ }
+ if(!res.locals.auth.mfaVerifiedAt){
+  res.status(403).json({error:'An MFA-verified session is required'});return;
+ }
+ const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ try{
+  if(!await reserveStepUpAttempt(db,res.locals.auth.userId)){
+   res.status(429).json({error:'Too many MFA verification attempts'});return;
+  }
+ }catch(e){error(res,e);return;}
+ const conn=await db.getConnection();
+ try{
+  await conn.beginTransaction();
+  const [rows]=await conn.query<RowDataPacket[]>(
+   'SELECT secret_encrypted,last_counter FROM auth_totp_credentials WHERE user_id=? AND enabled_at IS NOT NULL FOR UPDATE',
+   [res.locals.auth.userId]);
+  if(!rows.length){await conn.rollback();res.status(403).json({error:'Authenticator enrollment required'});return;}
+  const counter=matchTotp(decryptSecret(String(rows[0].secret_encrypted)),code,Number(rows[0].last_counter));
+  if(counter===null){
+   await conn.rollback();res.status(401).json({error:'Invalid or previously used authenticator code'});return;
+  }
+  const recoveryCodes=newRecoveryCodes();
+  await conn.execute('DELETE FROM auth_totp_recovery_codes WHERE user_id=?',[res.locals.auth.userId]);
+  for(const recovery of recoveryCodes){
+   await conn.execute('INSERT INTO auth_totp_recovery_codes (user_id,code_hash) VALUES (?,?)',
+    [res.locals.auth.userId,hashToken(res.locals.auth.userId+':'+recovery)]);
+  }
+  await conn.execute('UPDATE auth_totp_credentials SET last_counter=? WHERE user_id=?',
+   [counter,res.locals.auth.userId]);
+  await recordMfaEvent(conn,res.locals.auth.userId,'MFA_RECOVERY_ROTATED');
+  await conn.commit();
+  res.json({recoveryCodes,rotated:true,
+   message:'Previous recovery codes invalidated. Save these new codes securely; they are only shown once.'});
+ }catch(e){await conn.rollback();error(res,e);}finally{conn.release();}
+});
+
 router.post('/challenge/verify',async(req,res)=>{
  if(!originValid(req)){res.status(403).json({error:'Invalid request origin'});return;}
  const body=req.body;
