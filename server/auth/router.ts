@@ -130,6 +130,16 @@ router.post('/login', async (req, res) => {
     if (!valid) {
       res.status(401).json({ error: 'Invalid credentials' }); return;
     }
+    const [factors]=await db.execute<any[]>(
+      'SELECT enabled_at FROM auth_totp_credentials WHERE user_id=?',[user.id]);
+    if(factors[0]?.enabled_at){
+      const challengeToken=newSecret();
+      await db.execute('INSERT INTO auth_mfa_challenges (token_hash,user_id,expires_at) VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE))',
+        [hashToken(challengeToken),user.id]);
+      res.setHeader('Cache-Control','no-store');
+      res.status(202).json({mfaRequired:true,challengeToken,expiresInSeconds:300});
+      return;
+    }
     const token = newSecret();
     const csrf = newSecret();
     await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 8 HOUR))',
