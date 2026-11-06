@@ -89,5 +89,9 @@ jobs:
         run: bun run db:migrate:reviewer-roles
       - name: Verify reviewer role migration rerun
         run: bun run db:migrate:reviewer-roles
+      - name: Apply security event migration
+        run: bun run db:migrate:security-events
+      - name: Verify security event migration rerun
+        run: bun run db:migrate:security-events
       - name: Run real MySQL integration tests
         run: bun run test:mysql
