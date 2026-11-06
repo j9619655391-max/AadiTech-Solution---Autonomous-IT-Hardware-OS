@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { RowDataPacket } from 'mysql2/promise';
 import { getPool } from '../db';
 import { requireReviewer } from '../auth/router';
+import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import { paise, rupees, QuoteInputError } from './money';
 import { evaluateRevision, type RevisionProduct } from './revisions';
 import { grossMarginBps, requiredMinimumMarginBps, reviewDecision } from './reviewPolicy';
@@ -76,7 +77,7 @@ router.get('/:id',async(req,res)=>{
     res.json({draftId:req.params.id,currentRevision,effectiveDecision:current,history:decisions});
   }catch(e){failure(res,e);}
 });
-router.post('/:id',async(req,res)=>{
+router.post('/:id',requirePrivilegedMfa,async(req,res)=>{
   if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
   const input=req.body;
   if(!input||typeof input!=='object'||Array.isArray(input)||

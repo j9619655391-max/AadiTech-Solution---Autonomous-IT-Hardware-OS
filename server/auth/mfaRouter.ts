@@ -4,6 +4,7 @@ import {getPool} from '../db';
 import {requireAuthenticated,requireStepUp} from './router';
 import {hashToken,newSecret} from './crypto';
 import {reserveStepUpAttempt} from './limiter';
+import {recordMfaEvent} from './mfaPolicy';
 import {generateTotpSecret,encryptSecret,decryptSecret,matchTotp,newRecoveryCodes} from './totp';
 
 const router=Router();
@@ -71,6 +72,7 @@ router.post('/enroll/activate',requireAuthenticated,requireStepUp,async(req,res)
   await conn.execute('DELETE FROM auth_totp_recovery_codes WHERE user_id=?',[res.locals.auth.userId]);
   for(const recovery of codes)await conn.execute('INSERT INTO auth_totp_recovery_codes (user_id,code_hash) VALUES (?,?)',
     [res.locals.auth.userId,hashToken(res.locals.auth.userId+':'+recovery)]);
+  await recordMfaEvent(conn,res.locals.auth.userId,'MFA_ENROLLED');
   await conn.execute('DELETE FROM auth_sessions WHERE user_id=?',[res.locals.auth.userId]);
   await conn.commit();
   res.clearCookie(COOKIE,{path:'/api',httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production'});
@@ -110,12 +112,15 @@ router.post('/challenge/verify',async(req,res)=>{
    good=recovered.affectedRows===1;
   }
   if(!good){
+   await recordMfaEvent(conn,userId,'MFA_LOGIN_FAILED');
    await conn.execute('UPDATE auth_mfa_challenges SET attempts=attempts+1 WHERE token_hash=?',[hashToken(body.challengeToken)]);
    await conn.commit();
    res.status(401).json({error:'Invalid MFA code'});return;
   }
   const token=newSecret(),csrf=newSecret();
   await conn.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',[hashToken(token),userId,csrf]);
+  await recordMfaEvent(conn,userId,'MFA_LOGIN_SUCCEEDED');
+  if(!/^\d{6}$/.test(given))await recordMfaEvent(conn,userId,'MFA_RECOVERY_USED');
   await conn.execute('DELETE FROM auth_mfa_challenges WHERE user_id=?',[userId]);
   await conn.commit();
   res.cookie(COOKIE,token,cookieOptions);

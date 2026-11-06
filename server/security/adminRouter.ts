@@ -2,6 +2,7 @@ import {Router} from 'express';
 import {randomUUID} from 'node:crypto';
 import type {ResultSetHeader,RowDataPacket} from 'mysql2/promise';
 import {requireOwner,requireStepUp} from '../auth/router';
+import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {getPool} from '../db';
 
 const router=Router();
@@ -65,6 +66,6 @@ async function change(req:import('express').Request,res:import('express').Respon
   res.json({reviewerId:req.params.id,status:action==='status'?input.status:target.status,revokedSessions:revoked.affectedRows,eventType});
  }catch(e){await conn.rollback();fail(res,e);}finally{conn.release();}
 }
-router.patch('/reviewers/:id/status',requireStepUp,(req,res)=>{void change(req,res,'status');});
-router.post('/reviewers/:id/revoke-sessions',requireStepUp,(req,res)=>{void change(req,res,'revoke');});
+router.patch('/reviewers/:id/status',requirePrivilegedMfa,requireStepUp,(req,res)=>{void change(req,res,'status');});
+router.post('/reviewers/:id/revoke-sessions',requirePrivilegedMfa,requireStepUp,(req,res)=>{void change(req,res,'revoke');});
 export default router;
