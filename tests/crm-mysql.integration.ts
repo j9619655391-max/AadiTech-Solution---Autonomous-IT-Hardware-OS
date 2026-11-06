@@ -501,8 +501,8 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   },false);
   assert.equal(signed.status,200);
   assert.equal(signed.data.user.id,id);
-  const sessionCookie=signed.setCookie?.split(';')[0];
-  assert.ok(sessionCookie?.startsWith('aaditech_session='));
+  const verifiedCookie=signed.setCookie?.split(';')[0];
+  assert.ok(verifiedCookie?.startsWith('aaditech_session='));
   const oldPolicy=process.env.MFA_REQUIRE_PRIVILEGED;
   try{
     process.env.MFA_REQUIRE_PRIVILEGED='true';
@@ -510,7 +510,7 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
     // owner-only action; 404 is the expected unknown-draft result.
     const accepted=await call('/api/quotes/release-preparations/'+randomUUID(),'POST',
       {expectedRevision:0},true,false,
-      {cookie:sessionCookie,'x-csrf-token':signed.data.csrfToken});
+      {cookie:verifiedCookie,'x-csrf-token':signed.data.csrfToken});
     assert.equal(accepted.status,404);
   }finally{
     if(oldPolicy===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
