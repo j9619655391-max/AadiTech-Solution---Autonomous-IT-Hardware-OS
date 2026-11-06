@@ -20,7 +20,8 @@
     "db:migrate:release-holds": "tsx scripts/migrate-release-holds.ts",
     "db:migrate:reviewer-roles": "tsx scripts/migrate-reviewer-roles.ts",
     "reviewer:provision": "tsx scripts/provision-reviewer.ts",
-    "db:migrate:security-events": "tsx scripts/migrate-security-events.ts"
+    "db:migrate:security-events": "tsx scripts/migrate-security-events.ts",
+    "db:migrate:login-security": "tsx scripts/migrate-login-security.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

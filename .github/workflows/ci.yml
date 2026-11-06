@@ -93,5 +93,9 @@ jobs:
         run: bun run db:migrate:security-events
       - name: Verify security event migration rerun
         run: bun run db:migrate:security-events
+      - name: Apply durable login security migration
+        run: bun run db:migrate:login-security
+      - name: Verify login security migration rerun
+        run: bun run db:migrate:login-security
       - name: Run real MySQL integration tests
         run: bun run test:mysql
