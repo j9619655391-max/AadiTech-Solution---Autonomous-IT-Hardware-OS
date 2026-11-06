@@ -6,6 +6,7 @@ import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { CRMAndLeadsView } from './components/CRMAndLeadsView';
 import { LiveCRMWorkspace } from './components/LiveCRMWorkspace';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
+import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
 import { ApprovalEngineView } from './components/ApprovalEngineView';
 import { ProcurementAndInventory } from './components/ProcurementAndInventory';
@@ -73,6 +74,7 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [crmViewMode, setCrmViewMode] = useState<'live' | 'legacy'>('live');
+  const [bomViewMode, setBomViewMode] = useState<'live' | 'legacy'>('live');
   const [isTelegramDrawerOpen, setIsTelegramDrawerOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
@@ -1087,12 +1089,21 @@ export default function App() {
         )}
 
         {activeTab === 'bom' && (
-          <SalesAndBOMBuilder
-            products={products}
-            currentBOM={currentBOM}
-            setCurrentBOM={setCurrentBOM}
-            onGenerateQuote={handleGenerateQuote}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" aria-pressed={bomViewMode === 'live'} onClick={() => setBomViewMode('live')}
+                className={bomViewMode === 'live' ? 'bg-cyan-700 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Live MySQL BOM</button>
+              <button type="button" aria-pressed={bomViewMode === 'legacy'} onClick={() => setBomViewMode('legacy')}
+                className={bomViewMode === 'legacy' ? 'bg-amber-900 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Legacy AI Demo BOM</button>
+            </div>
+            {bomViewMode === 'live' ? <LiveBOMWorkspace /> :
+              <div className="space-y-3">
+                <div role="alert" className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-amber-200 text-sm">
+                  DEMO ONLY: AI generated BOM costs, compatibility claims and quotation transitions are not verified commercial commitments.
+                </div>
+                <SalesAndBOMBuilder products={products} currentBOM={currentBOM} setCurrentBOM={setCurrentBOM} onGenerateQuote={handleGenerateQuote} />
+              </div>}
+          </div>
         )}
 
         {activeTab === 'quotes' && (
