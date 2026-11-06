@@ -5,6 +5,7 @@ import express from 'express';
 import { getPool } from '../server/db';
 import { hashToken } from '../server/auth/crypto';
 import crmRouter from '../server/crm/router';
+import quoteDraftRouter from '../server/quotes/router';
 
 if (process.env.CRM_TEST_DB !== '1') throw new Error('CRM integration test must run on disposable test DB only (CRM_TEST_DB=1)');
 if (process.env.DB_NAME !== 'aaditech_ci') throw new Error('Refusing integration tests outside aaditech_ci database');
@@ -19,7 +20,7 @@ const cookie='aaditech_session='+token;
 test('setup isolated owner session',async()=>{
   await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",[actor,'ci-owner@example.invalid','CI Owner','test-only','OWNER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",[hashToken(token),actor,csrf]);
-  const app=express();app.use(express.json());app.use('/api/crm',crmRouter);
+  const app=express();app.use(express.json());app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -71,4 +72,45 @@ test('lead and product records persist; product SKU enforced unique',async()=>{
   assert.equal((await call('/api/crm/products','POST',product)).status,409);
   assert.equal((await call('/api/crm/products','POST',{...product,sku:'X',stockBhiwandi:100})).status,400);
   assert.equal((await call('/api/crm/products','POST',{...product,sku:'Y',unitCost:20000})).status,400);
+});
+
+
+test('authenticated quote drafts snapshot verified product prices and do not send anything',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Quote Test Customer',contactPerson:'Buyer',email:'quote-buyer@example.invalid',
+    phone:'9999999999',city:'Mumbai',state:'Maharashtra'
+  });
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'QUOTE-TEST-1',brand:'Dell',model:'Quote Test Server',category:'SERVER',
+    specs:'Verified test specification',unitCost:'1000.00',minPrice:'1200.00',
+    sellingPrice:'1500.00',gstRate:'18.00',hsn:'8471'
+  });
+  assert.equal(product.status,201);
+  const body={customerId:customer.data.id,items:[{productId:product.data.id,quantity:2}]};
+  assert.equal((await call('/api/quotes/drafts','POST',body,false)).status,401);
+  assert.equal((await call('/api/quotes/drafts','POST',body,true,false)).status,403);
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,totalEstimate:'0.01'})).status,400);
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,items:[{...body.items[0],unitPrice:'0.01'}]})).status,400);
+  const created=await call('/api/quotes/drafts','POST',body);
+  assert.equal(created.status,201);
+  assert.equal(created.data.status,'DRAFT');
+  assert.equal(created.data.subtotal,'3000.00');
+  assert.equal(created.data.taxEstimate,'540.00');
+  assert.equal(created.data.totalEstimate,'3540.00');
+  const detail=await call('/api/quotes/drafts/'+created.data.id);
+  assert.equal(detail.status,200);
+  assert.equal(detail.data.items.length,1);
+  assert.equal(detail.data.items[0].unit_price,'1500.00');
+  assert.equal((await call('/api/quotes/drafts')).data.items.length,1);
+  // Snapshot remains intact even after catalog price changes.
+  const updated=await call('/api/crm/products/'+product.data.id,'PATCH',
+    {expectedVersion:1,sellingPrice:'1900.00'});
+  assert.equal(updated.status,200);
+  const frozen=await call('/api/quotes/drafts/'+created.data.id);
+  assert.equal(frozen.data.items[0].unit_price,'1500.00');
+  const [dbRows]=await db.query<any[]>('SELECT status,total_estimate FROM sales_quote_drafts WHERE id=?',[created.data.id]);
+  assert.equal(dbRows[0].status,'DRAFT');
+  assert.equal(dbRows[0].total_estimate,'3540.00');
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,customerId:'00000000-0000-0000-0000-000000000000'})).status,400);
 });

@@ -12,7 +12,8 @@
     "db:migrate:auth": "tsx scripts/migrate-auth.ts",
     "owner:bootstrap": "tsx scripts/bootstrap-owner.ts",
     "db:migrate:crm": "tsx scripts/migrate-crm.ts",
-    "test:mysql": "tsx --test tests/crm-mysql.integration.ts"
+    "test:mysql": "tsx --test tests/crm-mysql.integration.ts",
+    "db:migrate:quotes": "tsx scripts/migrate-quotes.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

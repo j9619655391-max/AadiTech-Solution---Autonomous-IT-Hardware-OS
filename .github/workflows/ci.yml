@@ -65,5 +65,9 @@ jobs:
         run: bun run db:migrate:crm
       - name: Verify CRM migration rerun is idempotent
         run: bun run db:migrate:crm
+      - name: Apply quotation draft migration
+        run: bun run db:migrate:quotes
+      - name: Verify quotation draft migration is idempotent
+        run: bun run db:migrate:quotes
       - name: Run real MySQL integration tests
         run: bun run test:mysql
