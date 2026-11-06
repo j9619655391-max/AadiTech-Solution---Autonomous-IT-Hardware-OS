@@ -13,7 +13,7 @@ export function privilegedMfaRequired():boolean {
 export async function recordMfaEvent(
  db:Pool|PoolConnection,
  userId:string,
- eventType:'MFA_ENROLLED'|'MFA_LOGIN_SUCCEEDED'|'MFA_LOGIN_FAILED'|'MFA_RECOVERY_USED'|'MFA_POLICY_DENIED'
+ eventType:'MFA_ENROLLED'|'MFA_LOGIN_SUCCEEDED'|'MFA_LOGIN_FAILED'|'MFA_RECOVERY_USED'|'MFA_POLICY_DENIED'|'MFA_RECOVERY_ROTATED'
 ):Promise<void> {
  await db.execute(
   'INSERT INTO auth_security_events (id,actor_user_id,target_user_id,event_type,revoked_session_count) VALUES (?,?,?,?,0)',
