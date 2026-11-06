@@ -18,10 +18,15 @@ const actor=randomUUID(), token='a'.repeat(43), csrf='b'.repeat(43);
 let base='';
 let closeServer:()=>Promise<void>;
 const cookie='aaditech_session='+token;
+const reviewerId=randomUUID(),reviewerToken='r'.repeat(43),reviewerCookie='aaditech_session='+reviewerToken;
 
 test('setup isolated owner session',async()=>{
   await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",[actor,'ci-owner@example.invalid','CI Owner','test-only','OWNER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",[hashToken(token),actor,csrf]);
+  await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+    [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer','test-only','REVIEWER']);
+  await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
+    [hashToken(reviewerToken),reviewerId,csrf]);
   const app=express();app.use(express.json());app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
@@ -34,7 +39,7 @@ after(async()=>{if(closeServer)await closeServer();});
 
 async function call(route:string, method='GET', body?:unknown, authorized=true, includeCsrf=true, extraHeaders:Record<string,string>={}) {
   const headers:Record<string,string>={...extraHeaders};
-  if(authorized)headers.cookie=cookie;
+  if(authorized)headers.cookie=headers.cookie??(route.startsWith('/api/quotes/reviews')?reviewerCookie:cookie);
   if(body!==undefined)headers['content-type']='application/json';
   if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
   if(includeCsrf&& !['GET','HEAD'].includes(method))headers['x-csrf-token']=csrf;
@@ -42,6 +47,21 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   const raw=await response.text();
   return {status:response.status,data:raw?JSON.parse(raw):null};
 }
+
+test('roles are independent: reviewer cannot mutate CRM or draft, owner cannot sign review decisions',async()=>{
+  const reviewSession=await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:reviewerCookie});
+  assert.equal(reviewSession.status,200);
+  assert.equal((await call('/api/crm/customers','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/quotes/drafts','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie})).status,403);
+  const [drafts]=await db.query<any[]>('SELECT id FROM sales_quote_drafts ORDER BY created_at LIMIT 1');
+  if(drafts.length){
+    const attempt=await call('/api/quotes/reviews/'+drafts[0].id,'POST',{
+      expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Owner bypass attempt',overrideRequested:false
+    },true,true,{cookie});
+    assert.equal(attempt.status,403);
+  }
+});
 
 test('anonymous access and missing CSRF are blocked by server',async()=>{
   assert.equal((await call('/api/crm/leads','GET',undefined,false)).status,401);
@@ -209,6 +229,12 @@ test('owner reviews exact latest draft revision with enforced margin override an
   const approved=await call(path,'POST',{...review,reason:'Owner accepted discounted margin after detailed commercial review',overrideRequested:true});
   assert.equal(approved.status,201);
   assert.equal(approved.data.reviewStatus,'APPROVED_INTERNAL');
+  const reviewQueue=await call('/api/quotes/reviews/queue');
+  assert.equal(reviewQueue.status,200);
+  const brief=await call('/api/quotes/reviews/'+draft.data.id+'/brief');
+  assert.equal(brief.status,200);
+  assert.equal(brief.data.drafterId,actor);
+  assert.equal('email' in brief.data,false);
   assert.equal(approved.data.grossMarginBps,500);
   assert.equal((await call(path,'POST',{...review,reason:'Try again',overrideRequested:true})).status,409);
   const initial=await call(path);
