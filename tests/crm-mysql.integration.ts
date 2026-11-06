@@ -538,3 +538,59 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
     challengeToken:reusedChallenge.data.challengeToken,code:activated.data.recoveryCodes[2]
   },false)).status,401);
 });
+
+test('recovery rotation requires verified second factor and invalidates every old code',async()=>{
+  const id=randomUUID(),email='rotation-'+id.slice(0,8)+'@example.invalid';
+  const password='Strong-Rotation-Password-2026';
+  const tokenValue='q'.repeat(43),loginCookie='aaditech_session='+tokenValue;
+  await db.execute('INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+    [id,email,'Recovery Rotation CI',await hashPassword(password),'OWNER']);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',
+    [hashToken(tokenValue),id,csrf]);
+  const oldSession={cookie:loginCookie};
+  const oldStep=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,oldSession);
+  assert.equal(oldStep.status,200);
+  const enrollHeaders={cookie:loginCookie,'x-step-up-token':oldStep.data.stepUpToken};
+  const started=await call('/api/auth/mfa/enroll/start','POST',{},true,true,enrollHeaders);
+  assert.equal(started.status,200);
+  const activated=await call('/api/auth/mfa/enroll/activate','POST',{
+    code:totpAt(started.data.secret,Math.floor(Date.now()/30000))
+  },true,true,enrollHeaders);
+  assert.equal(activated.status,200);
+  const olderCodes=activated.data.recoveryCodes as string[];
+  const challenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(challenge.status,202);
+  const finished=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:challenge.data.challengeToken,code:olderCodes[0]
+  },false);
+  assert.equal(finished.status,200);
+  const verifiedCookie=finished.setCookie?.split(';')[0];
+  assert.ok(verifiedCookie?.startsWith('aaditech_session='));
+  const verifiedHeaders={cookie:verifiedCookie,'x-csrf-token':finished.data.csrfToken};
+  assert.equal((await call('/api/auth/mfa/recovery/rotate','POST',{code:'000000'},true,true,verifiedHeaders)).status,403);
+  const verifyPasswordAgain=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,verifiedHeaders);
+  assert.equal(verifyPasswordAgain.status,200);
+  const authorized={...verifiedHeaders,'x-step-up-token':verifyPasswordAgain.data.stepUpToken};
+  const fresh=totpAt(started.data.secret,Math.floor(Date.now()/30000)+1);
+  const rotated=await call('/api/auth/mfa/recovery/rotate','POST',{code:fresh},true,true,authorized);
+  assert.equal(rotated.status,200);
+  assert.equal(rotated.data.recoveryCodes.length,8);
+  assert.ok(!rotated.data.recoveryCodes.some((v:string)=>olderCodes.includes(v)));
+  assert.equal((await call('/api/auth/mfa/recovery/rotate','POST',{code:fresh},true,true,authorized)).status,401);
+  const [existing]=await db.execute<any[]>(
+    'SELECT code_hash FROM auth_totp_recovery_codes WHERE user_id=?',[id]);
+  assert.equal(existing.length,8);
+  assert.ok(!existing.some((row:any)=>row.code_hash===hashToken(id+':'+olderCodes[1])));
+  const secondChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(secondChallenge.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:secondChallenge.data.challengeToken,code:olderCodes[1]
+  },false)).status,401);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:secondChallenge.data.challengeToken,code:rotated.data.recoveryCodes[0]
+  },false)).status,200);
+  const [events]=await db.execute<any[]>(
+    'SELECT COUNT(*) AS n FROM auth_security_events WHERE target_user_id=? AND event_type=?',
+    [id,'MFA_RECOVERY_ROTATED']);
+  assert.equal(Number(events[0].n),1);
+});
