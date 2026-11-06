@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../services/authClient';
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
@@ -79,7 +80,7 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
   const handleTestNegotiation = async () => {
     setIsNegotiating(true);
     try {
-      const res = await fetch('/api/ai/negotiate', {
+      const res = await authenticatedFetch('/api/ai/negotiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

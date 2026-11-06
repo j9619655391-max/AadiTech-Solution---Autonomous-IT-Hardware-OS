@@ -5,13 +5,34 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
+import authRouter, { requireOwner } from "./server/auth/router";
+import crmRouter from "./server/crm/router";
+import quoteDraftRouter from "./server/quotes/router";
+import quoteReviewRouter from "./server/quotes/reviewRouter";
+import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
+import securityAdminRouter from "./server/security/adminRouter";
+import mfaRouter from "./server/auth/mfaRouter";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "256kb" }));
+// Phase 1A: owner auth foundation; existing business routes migrate in later phases.
+app.use("/api/auth", authRouter);
+app.use("/api/auth/mfa", mfaRouter);
+app.use("/api/security", securityAdminRouter);
+app.use("/api/crm", crmRouter);
+app.use("/api/quotes/drafts", quoteDraftRouter);
+app.use("/api/quotes/reviews", quoteReviewRouter);
+app.use("/api/quotes/release-preparations", quoteReleaseHoldRouter);
+
+// Fail closed: diagnostics and AI endpoints are restricted to an authenticated
+// owner. Public health remains an intentionally minimal liveness endpoint.
+app.use('/api/db', requireOwner);
+app.use('/api/hostinger', requireOwner);
+app.use('/api/ai', requireOwner);
 
 // Lazy-initialized Gemini client
 let geminiClient: GoogleGenAI | null = null;
@@ -53,19 +74,14 @@ app.get("/api/db/status", async (_req, res) => {
 });
 
 // Hostinger phpMyAdmin Schema Download / Viewer Endpoint
-app.get("/api/db/schema-sql", (_req, res) => {
-  try {
-    const schemaPath = path.join(process.cwd(), "database", "schema.sql");
-    if (fs.existsSync(schemaPath)) {
-      const sqlContent = fs.readFileSync(schemaPath, "utf-8");
-      res.setHeader("Content-Type", "text/plain");
-      res.send(sqlContent);
-    } else {
-      res.status(404).send("-- schema.sql not found");
-    }
-  } catch (err: any) {
-    res.status(500).send(`-- Error reading schema: ${err.message}`);
-  }
+app.get("/api/db/schema-sql", (_req,res) => {
+  // The legacy schema creates demo tables and must never be offered as a
+  // deployment recipe. Modern schema changes are checksum-tracked migrations.
+  res.setHeader("Cache-Control","no-store");
+  res.status(410).json({
+    error:"Legacy schema download disabled to prevent destructive import",
+    safePath:"Use staging backup/restore rehearsal and additive migrations 0001-0013"
+  });
 });
 
 // Hostinger Deployment Checklist & Readiness Info
@@ -86,12 +102,14 @@ app.get("/api/hostinger/readiness", async (_req, res) => {
       schemaSql: hasSchema,
       pm2Config: hasEcosystem
     },
+    warning: "READINESS INFORMATION ONLY. Do not execute legacy schema.sql or any production migration from this endpoint.",
+    productionReady: false,
     quickChecklist: [
       { step: 1, title: "Create MySQL Database in Hostinger hPanel", status: dbStatus.isConfigured ? "DONE" : "PENDING" },
-      { step: 2, title: "Import database/schema.sql via phpMyAdmin", status: dbStatus.isConnected && dbStatus.tableCount > 0 ? "DONE" : "PENDING" },
+      { step: 2, title: "Apply checksum-tracked additive migrations 0001–0013 after staging backup/restore rehearsal; NEVER import legacy database/schema.sql", status: "REQUIRES_VERIFIED_STAGING_REHEARSAL" },
       { step: 3, title: "Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME in .env", status: dbStatus.isConfigured ? "DONE" : "PENDING" },
       { step: 4, title: "Configure Node.js version 18+ in Hostinger Node.js Selector", status: "READY" },
-      { step: 5, title: "Run 'npm run build' & start via PM2 / Passenger", status: "READY" }
+      { step: 5, title: "Run build and verify isolated staging MFA/browser acceptance BEFORE any production deployment", status: "NOT_VERIFIED" }
     ]
   });
 });

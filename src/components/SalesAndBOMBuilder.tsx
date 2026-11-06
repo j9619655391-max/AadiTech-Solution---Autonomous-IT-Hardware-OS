@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../services/authClient';
 import React, { useState } from 'react';
 import {
   Cpu,
@@ -69,7 +70,7 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
     const prompt = promptText || requirementPrompt;
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/ai/bom', {
+      const res = await authenticatedFetch('/api/ai/bom', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requirement: prompt })

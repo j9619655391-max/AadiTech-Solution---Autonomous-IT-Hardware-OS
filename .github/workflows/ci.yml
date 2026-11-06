@@ -1,0 +1,144 @@
+name: Phase 0 baseline
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run lint
+      - name: Baseline tests
+        run: bun run test
+      - name: Build
+        run: bun run build
+      - name: Record architecture blockers (non-gating)
+        if: always()
+        run: node scripts/audit-baseline.mjs
+      - name: Upload baseline audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase0-audit
+          path: phase0-audit-report.json
+          if-no-files-found: warn
+
+  mysql-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: aaditech_ci
+          MYSQL_ROOT_PASSWORD: ci_only_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_only_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASSWORD: ci_only_password
+      DB_NAME: aaditech_ci
+      DB_SSL: 'false'
+      CRM_TEST_DB: '1'
+      MFA_ENCRYPTION_KEY: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Apply non-destructive authentication migration
+        run: bun run db:migrate:auth
+      - name: Apply CRM migration
+        run: bun run db:migrate:crm
+      - name: Verify CRM migration rerun is idempotent
+        run: bun run db:migrate:crm
+      - name: Apply quotation draft migration
+        run: bun run db:migrate:quotes
+      - name: Verify quotation draft migration is idempotent
+        run: bun run db:migrate:quotes
+      - name: Apply quote idempotency migration
+        run: bun run db:migrate:quote-idempotency
+      - name: Verify quote idempotency migration rerun
+        run: bun run db:migrate:quote-idempotency
+      - name: Apply quote revisions migration
+        run: bun run db:migrate:quote-revisions
+      - name: Verify quote revisions migration rerun
+        run: bun run db:migrate:quote-revisions
+      - name: Apply quote review migration
+        run: bun run db:migrate:quote-reviews
+      - name: Verify quote review migration rerun
+        run: bun run db:migrate:quote-reviews
+      - name: Apply release hold migration
+        run: bun run db:migrate:release-holds
+      - name: Verify release hold migration rerun
+        run: bun run db:migrate:release-holds
+      - name: Apply reviewer role migration
+        run: bun run db:migrate:reviewer-roles
+      - name: Verify reviewer role migration rerun
+        run: bun run db:migrate:reviewer-roles
+      - name: Apply security event migration
+        run: bun run db:migrate:security-events
+      - name: Verify security event migration rerun
+        run: bun run db:migrate:security-events
+      - name: Apply durable login security migration
+        run: bun run db:migrate:login-security
+      - name: Verify login security migration rerun
+        run: bun run db:migrate:login-security
+      - name: Apply MFA migration
+        run: bun run db:migrate:mfa
+      - name: Verify MFA migration rerun
+        run: bun run db:migrate:mfa
+      - name: Apply MFA event audit migration
+        run: bun run db:migrate:mfa-audit
+      - name: Verify MFA audit migration rerun
+        run: bun run db:migrate:mfa-audit
+      - name: Apply MFA recovery migration
+        run: bun run db:migrate:mfa-recovery
+      - name: Verify MFA recovery migration rerun
+        run: bun run db:migrate:mfa-recovery
+      - name: Run real MySQL integration tests
+        run: bun run test:mysql
+      - name: Isolated HTTP authentication and MFA smoke
+        run: bun run test:auth-smoke
+      - name: Chromium browser MFA / role smoke (isolated CI only)
+        env:
+          BROWSER_E2E_CI: '1'
+          BROWSER_E2E_BASE_URL: 'http://127.0.0.1:3000'
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+          ./node_modules/.bin/playwright install --with-deps chromium
+          bun run dev > "$RUNNER_TEMP/aaditech-browser-server.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local CI app failed to start"
+            tail -n 60 "$RUNNER_TEMP/aaditech-browser-server.log"
+            exit 1
+          fi
+          node --import tsx scripts/browser-smoke.mjs
+      - name: Read-only disposable staging readiness preflight
+        env:
+          STAGING_PREFLIGHT: '1'
+        run: bun run staging:preflight

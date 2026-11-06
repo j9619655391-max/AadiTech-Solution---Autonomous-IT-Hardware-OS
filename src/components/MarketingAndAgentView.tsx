@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../services/authClient';
 import React, { useState } from 'react';
 import {
   Sparkles,
@@ -55,7 +56,7 @@ export const MarketingAndAgentView: React.FC<MarketingAndAgentViewProps> = ({
   const handleGenerateAIContent = async () => {
     setIsGeneratingContent(true);
     try {
-      const res = await fetch('/api/ai/campaign', {
+      const res = await authenticatedFetch('/api/ai/campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
