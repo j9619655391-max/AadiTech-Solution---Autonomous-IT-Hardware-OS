@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { crmClient, CRMRequestError, type CRMEntity, type CRMRecord, type PageResult } from '../services/crmClient';
 import { crmFields, prepareCRMFields, CRMRecordToForm } from '../services/crmFields';
+import { LegacyImportReview, getCurrentRecords } from './LegacyImportReview';
+import type { LegacyCandidate } from '../services/legacyImport';
 
 const names: { key: CRMEntity; label: string }[] = [
   { key: 'leads', label: 'Leads' },
@@ -48,6 +50,8 @@ export function LiveCRMWorkspace() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const requestId = useRef(0);
+  const [importCandidate, setImportCandidate] = useState<LegacyCandidate | null>(null);
+  const [approvedImport, setApprovedImport] = useState(false);
 
   const load = useCallback(async () => {
     const request = ++requestId.current;
@@ -72,12 +76,19 @@ export function LiveCRMWorkspace() {
 
   function switchEntity(value: CRMEntity) {
     setEntity(value); setPage(1); setFormOpen(false); setEditing(null);
-    setDraft({}); setSuccess(''); setError(''); setData(null);
+    setDraft({}); setImportCandidate(null); setApprovedImport(false); setSuccess(''); setError(''); setData(null);
   }
 
   function openForm(record: CRMRecord | null) {
-    setEditing(record); setDraft(CRMRecordToForm(entity, record));
+    setEditing(record); setImportCandidate(null); setApprovedImport(false); setDraft(CRMRecordToForm(entity, record));
     setFormOpen(true); setError(''); setSuccess('');
+  }
+
+  function reviewLegacy(item: LegacyCandidate) {
+    if (item.issues.length) return;
+    setEntity(item.entity); setPage(1); setEditing(null);
+    setImportCandidate(item); setApprovedImport(false);
+    setDraft({ ...item.fields }); setFormOpen(true); setError(''); setSuccess('');
   }
 
   async function save(event: React.FormEvent) {
@@ -85,11 +96,19 @@ export function LiveCRMWorkspace() {
     if (busy) return;
     setBusy(true); setError(''); setSuccess('');
     try {
+      if (importCandidate && !approvedImport) throw Error('Approve this individual legacy record first.');
       const input = prepareCRMFields(entity, draft, editing !== null);
+      if (importCandidate) {
+        const existing = await getCurrentRecords();
+        const key = entity === 'products' ? 'sku' : 'email';
+        const candidateId = String(input[key] ?? '').toLowerCase().trim();
+        if (!candidateId || existing[entity].some(row => String(row[key] ?? '').toLowerCase().trim() === candidateId))
+          throw Error('An existing MySQL record has the same email/SKU. Save cancelled.');
+      }
       if (editing) await crmClient.update(entity, editing.id, editing.version, input);
       else await crmClient.create(entity, input);
       setSuccess(labels[entity] + (editing ? ' updated in MySQL.' : ' saved in MySQL.'));
-      setFormOpen(false); setEditing(null); setDraft({});
+      setFormOpen(false); setEditing(null); setImportCandidate(null); setApprovedImport(false); setDraft({});
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save record.');
@@ -150,9 +169,14 @@ export function LiveCRMWorkspace() {
       {error} {error.includes('changed') ? 'Refresh the record before editing again.' : ''}
     </div>}
     {success && <div role="status" className="rounded-lg border border-emerald-700 bg-emerald-950/30 text-emerald-200 p-3 text-sm">{success}</div>}
+    <LegacyImportReview onReview={reviewLegacy} />
     {formOpen && <form onSubmit={save} className="rounded-xl border border-cyan-700/70 bg-slate-900 p-5 space-y-4">
       <h3 className="font-semibold">{editing ? 'Edit' : 'New'} {labels[entity]}</h3>
       <p className="text-xs text-slate-400">Enter verified details only. No invented contacts, inventory, credit or tax compliance claims.</p>
+      {importCandidate && <label className="block border border-amber-700 rounded-lg p-3 text-sm text-amber-200">
+        <input type="checkbox" checked={approvedImport} onChange={e => setApprovedImport(e.target.checked)} className="mr-2" />
+        I independently verified this is genuine business data (not demo) and approve saving this one record.
+      </label>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {crmFields[entity].map(field => <label key={field.key} className="text-xs text-slate-300 space-y-1">
           <span className="block font-medium">{field.label}{field.required ? ' *' : ''}</span>
@@ -172,10 +196,10 @@ export function LiveCRMWorkspace() {
         </label>)}
       </div>
       <div className="flex flex-wrap gap-2">
-        <button type="submit" disabled={busy} className="rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-4 py-2 font-semibold">
+        <button type="submit" disabled={busy || (!!importCandidate && !approvedImport)} className="rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-4 py-2 font-semibold">
           {busy ? 'Saving…' : 'Save to MySQL'}
         </button>
-        <button type="button" onClick={() => { setFormOpen(false); setEditing(null); }} className="rounded-lg border border-slate-600 px-4 py-2">Cancel</button>
+        <button type="button" onClick={() => { setFormOpen(false); setEditing(null); setImportCandidate(null); setApprovedImport(false); }} className="rounded-lg border border-slate-600 px-4 py-2">Cancel</button>
       </div>
     </form>}
     <div className="rounded-xl border border-slate-700 bg-slate-900 overflow-x-auto">
@@ -211,7 +235,7 @@ export function LiveCRMWorkspace() {
     </div>
     <p className="text-xs text-slate-500">
       Data writes are confirmed by the server before success is shown. An HTTP 409 means another edit or duplicate SKU was detected.
-      Browser backups remain local until a separate validated import is approved.
+      Legacy import requires manual review of each record; browser backup is never deleted.
     </p>
   </section>;
 }
