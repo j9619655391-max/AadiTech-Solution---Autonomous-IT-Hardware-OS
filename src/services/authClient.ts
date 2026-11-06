@@ -48,6 +48,18 @@ export async function logoutOwner(): Promise<void> {
   }
 }
 
+export async function revokeMySessions(): Promise<number> {
+ if(!csrfToken)throw Error('Session expired. Sign in again.');
+ const response=await fetch('/api/auth/revoke-my-sessions',{
+  method:'POST',credentials:'same-origin',cache:'no-store',
+  headers:{'Content-Type':'application/json','x-csrf-token':csrfToken},body:'{}'
+ });
+ if(!response.ok)throw Error('Could not revoke sessions. Please retry.');
+ const value=await response.json() as {revokedSessions:number};
+ csrfToken=null;
+ return value.revokedSessions;
+}
+
 export async function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method || 'GET').toUpperCase();
   const headers = new Headers(init.headers);

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { currentSession, loginOwner, logoutOwner, type OwnerUser } from '../services/authClient';
+import { currentSession, loginOwner, logoutOwner, revokeMySessions, type OwnerUser } from '../services/authClient';
+import { SecurityAdminPanel } from './SecurityAdminPanel';
 import { ReviewerWorkspace } from './ReviewerWorkspace';
 
 interface AuthGateProps { children: React.ReactNode }
@@ -10,6 +11,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -47,6 +49,17 @@ export function AuthGate({ children }: AuthGateProps) {
     }
   }
 
+  async function revokeAll() {
+    if (!window.confirm('Revoke all your sessions, including this one, and sign out?')) return;
+    try {
+      await revokeMySessions();
+      setShowSecurity(false);
+      setState({ status: 'logged_out' });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not revoke sessions.');
+    }
+  }
+
   if (state.status === 'checking') {
     return <div className="min-h-screen bg-slate-950 text-slate-200 grid place-items-center" role="status">Checking secure session…</div>;
   }
@@ -78,8 +91,12 @@ export function AuthGate({ children }: AuthGateProps) {
   return <div>
     <div className="bg-slate-950 border-b border-slate-800 text-slate-400 text-xs flex items-center justify-end gap-3 px-4 py-2">
       <span>Signed in: {state.user.email} · {state.user.role}</span>
+      {state.user.role === 'OWNER' && <button type="button" onClick={() => setShowSecurity(v => !v)}
+        className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Reviewer security</button>}
+      <button type="button" onClick={() => void revokeAll()} className="rounded border border-amber-700 px-3 py-1 text-amber-200">Sign out all sessions</button>
       <button onClick={logout} className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Sign out</button>
     </div>
+    {state.user.role === 'OWNER' && showSecurity && <div className="mx-auto max-w-6xl p-4"><SecurityAdminPanel /></div>}
     {state.user.role === 'REVIEWER' ? <ReviewerWorkspace /> : children}
   </div>;
 }
