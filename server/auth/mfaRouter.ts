@@ -118,7 +118,7 @@ router.post('/challenge/verify',async(req,res)=>{
    res.status(401).json({error:'Invalid MFA code'});return;
   }
   const token=newSecret(),csrf=newSecret();
-  await conn.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',[hashToken(token),userId,csrf]);
+  await conn.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR),UTC_TIMESTAMP(3))',[hashToken(token),userId,csrf]);
   await recordMfaEvent(conn,userId,'MFA_LOGIN_SUCCEEDED');
   if(!/^\d{6}$/.test(given))await recordMfaEvent(conn,userId,'MFA_RECOVERY_USED');
   await conn.execute('DELETE FROM auth_mfa_challenges WHERE user_id=?',[userId]);

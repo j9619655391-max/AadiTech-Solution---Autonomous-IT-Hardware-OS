@@ -28,12 +28,12 @@ function isSameOrigin(req: Request): boolean {
   try { return new URL(origin).origin === new URL(allowed).origin; } catch { return false; }
 }
 
-export interface Session { userId: string; email: string; role: 'OWNER' | 'REVIEWER'; csrf: string; }
+export interface Session { userId: string; email: string; role: 'OWNER' | 'REVIEWER'; csrf: string; mfaVerifiedAt: Date | null; }
 async function getSession(req: Request): Promise<Session | null> {
   const cookie = getSessionCookie(req);
   const db = getPool();
   if (!cookie || !db) return null;
-  const [rows] = await db.execute<any[]>(`SELECT u.id AS userId,u.email,u.role,s.csrf_token AS csrf
+  const [rows] = await db.execute<any[]>(`SELECT u.id AS userId,u.email,u.role,s.csrf_token AS csrf,s.mfa_verified_at AS mfaVerifiedAt
     FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
     WHERE s.token_hash=? AND s.expires_at > UTC_TIMESTAMP(3) AND u.status='ACTIVE' LIMIT 1`, [hashToken(cookie)]);
   return rows.length ? rows[0] as Session : null;

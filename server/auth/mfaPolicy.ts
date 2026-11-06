@@ -31,9 +31,9 @@ export async function requirePrivilegedMfa(req:Request,res:Response,next:NextFun
  try{
   const [rows]=await db.execute<RowDataPacket[]>(
    'SELECT enabled_at FROM auth_totp_credentials WHERE user_id=? LIMIT 1',[session.userId]);
-  if(!rows[0]?.enabled_at){
+  if(!rows[0]?.enabled_at || !session.mfaVerifiedAt){
    await recordMfaEvent(db,session.userId,'MFA_POLICY_DENIED');
-   res.status(403).json({error:'Authenticator MFA enrollment required for privileged action'});return;
+   res.status(403).json({error:'MFA-verified session required for privileged action'});return;
   }
   next();
  }catch{
