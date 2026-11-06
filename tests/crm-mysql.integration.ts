@@ -10,6 +10,8 @@ import quoteReviewRouter from '../server/quotes/reviewRouter';
 import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
 import securityAdminRouter from '../server/security/adminRouter';
 import authRouter from '../server/auth/router';
+import mfaRouter from '../server/auth/mfaRouter';
+import {totpAt} from '../server/auth/totp';
 
 if (process.env.CRM_TEST_DB !== '1') throw new Error('CRM integration test must run on disposable test DB only (CRM_TEST_DB=1)');
 if (process.env.DB_NAME !== 'aaditech_ci') throw new Error('Refusing integration tests outside aaditech_ci database');
@@ -32,7 +34,7 @@ test('setup isolated owner session',async()=>{
     [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer','test-only','REVIEWER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
     [hashToken(reviewerToken),reviewerId,csrf]);
-  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -397,4 +399,71 @@ test('database-backed rate limiter survives request bursts and stores hashed ide
   assert.ok(rows.every((x:any)=>!String(x.key_hash).includes('absent-ci-user')));
   const [stepups]=await db.execute<any[]>('SELECT * FROM auth_step_up_sessions WHERE session_token_hash=?',[hashToken(token)]);
   assert.equal(stepups.length,0);
+});
+
+
+test('MFA enrollment revokes old sessions; password login needs challenge; recovery codes are one-use',async()=>{
+  const id=randomUUID();
+  const email='mfa-ci-'+id.slice(0,8)+'@example.invalid';
+  const password='MFA-Integration-Test-Password-2026';
+  const sessionToken='m'.repeat(43),sessionCookie='aaditech_session='+sessionToken;
+  await db.execute('INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+    [id,email,'MFA CI Owner',await hashPassword(password),'OWNER']);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',
+    [hashToken(sessionToken),id,csrf]);
+  const extra={cookie:sessionCookie};
+  assert.equal((await call('/api/auth/mfa/status','GET',undefined,true,true,extra)).data.enabled,false);
+  assert.equal((await call('/api/auth/mfa/enroll/start','POST',{},true,true,extra)).status,403);
+  const fresh=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,extra);
+  assert.equal(fresh.status,200);
+  const stepHeaders={cookie:sessionCookie,'x-step-up-token':fresh.data.stepUpToken};
+  const start=await call('/api/auth/mfa/enroll/start','POST',{},true,true,stepHeaders);
+  assert.equal(start.status,200);
+  assert.match(start.data.otpauthUri,/^otpauth:\/\/totp\//);
+  const secret=start.data.secret;
+  const firstCode=totpAt(secret,Math.floor(Date.now()/30000));
+  assert.equal((await call('/api/auth/mfa/enroll/activate','POST',{code:'abcdef'},true,true,stepHeaders)).status,400);
+  assert.equal((await call('/api/auth/mfa/enroll/activate','POST',{code:'000000'},true,true,stepHeaders)).status,401);
+  const activated=await call('/api/auth/mfa/enroll/activate','POST',{code:firstCode},true,true,stepHeaders);
+  assert.equal(activated.status,200);
+  assert.equal(activated.data.enabled,true);
+  assert.equal(activated.data.signInRequired,true);
+  assert.equal(activated.data.recoveryCodes.length,8);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,extra)).status,401);
+  const [storage]=await db.execute<any[]>('SELECT secret_encrypted,enabled_at,last_counter FROM auth_totp_credentials WHERE user_id=?',[id]);
+  assert.ok(storage[0].enabled_at);
+  assert.ok(!String(storage[0].secret_encrypted).includes(secret));
+  const noCookieLogin=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(noCookieLogin.status,202);
+  assert.equal(noCookieLogin.data.mfaRequired,true);
+  assert.ok(!noCookieLogin.data.csrfToken);
+  assert.ok(!noCookieLogin.data.user);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:'999'
+  },false)).status,400);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:firstCode
+  },false)).status,401);
+  const usedCode=activated.data.recoveryCodes[0];
+  const second=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:usedCode
+  },false);
+  assert.equal(second.status,200);
+  assert.equal(second.data.user.id,id);
+  assert.ok(second.data.csrfToken);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:usedCode
+  },false)).status,401);
+  const again=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(again.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:again.data.challengeToken,code:usedCode
+  },false)).status,401);
+  // An unused recovery code can recover once more.
+  const another=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:again.data.challengeToken,code:activated.data.recoveryCodes[1]
+  },false);
+  assert.equal(another.status,200);
+  const [used]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_totp_recovery_codes WHERE user_id=? AND used_at IS NOT NULL',[id]);
+  assert.equal(Number(used[0].n),2);
 });
