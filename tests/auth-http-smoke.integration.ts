@@ -87,7 +87,7 @@ test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',
  assert.equal(noCsrf.response.status,403);
  const logout=await request('/api/auth/logout',{method:'POST',
   headers:{cookie:cookie!,'x-csrf-token':valid.data.csrfToken}});
- assert.equal(logout.response.status,200);
+ assert.equal(logout.response.status,204);
  const expired=await request('/api/auth/me',{headers:{cookie:cookie!}});
  assert.equal(expired.response.status,401);
  const retry=await request('/api/auth/mfa/challenge/verify',{
