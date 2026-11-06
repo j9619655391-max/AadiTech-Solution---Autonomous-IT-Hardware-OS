@@ -24,7 +24,8 @@
     "db:migrate:login-security": "tsx scripts/migrate-login-security.ts",
     "db:migrate:mfa": "tsx scripts/migrate-mfa.ts",
     "db:migrate:mfa-audit": "tsx scripts/migrate-mfa-audit.ts",
-    "db:migrate:mfa-recovery": "tsx scripts/migrate-mfa-recovery.ts"
+    "db:migrate:mfa-recovery": "tsx scripts/migrate-mfa-recovery.ts",
+    "staging:preflight": "tsx scripts/staging-preflight.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
