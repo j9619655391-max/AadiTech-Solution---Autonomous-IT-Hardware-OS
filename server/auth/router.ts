@@ -1,5 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import {randomUUID} from 'node:crypto';
 import { getPool } from '../db';
+import type {ResultSetHeader} from 'mysql2/promise';
 import { hashToken, newSecret, verifyPassword } from './crypto';
 
 const router = Router();
@@ -114,6 +116,31 @@ router.post('/logout', requireAuthenticated, async (req, res) => {
     res.clearCookie(COOKIE, { path: '/api', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     res.status(204).end();
   } catch { res.status(503).json({ error: 'Authentication service unavailable' }); }
+});
+
+router.post('/revoke-my-sessions',requireAuthenticated,async(req,res)=>{
+ const pool=getPool();
+ if(!pool){res.status(503).json({error:'Authentication service unavailable'});return;}
+ const userId=(res.locals.auth as Session).userId;
+ const conn=await pool.getConnection();
+ try{
+  await conn.beginTransaction();
+  // Lock user row before revocation so any concurrent account lifecycle writes
+  // are serialized. The session table records are deleted transactionally.
+  const [rows]=await conn.execute<any[]>('SELECT id FROM auth_users WHERE id=? AND status=? FOR UPDATE',[userId,'ACTIVE']);
+  if(rows.length!==1)throw Error('User no longer active');
+  const [result]=await conn.execute<ResultSetHeader>('DELETE FROM auth_sessions WHERE user_id=?',[userId]);
+  await conn.execute(
+   'INSERT INTO auth_security_events (id,actor_user_id,target_user_id,event_type,revoked_session_count) VALUES (?,?,?,?,?)',
+   [randomUUID(),userId,userId,'OWN_SESSIONS_REVOKED',result.affectedRows]);
+  await conn.commit();
+  res.clearCookie(COOKIE,{path:'/api',httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production'});
+  res.status(200).json({revokedSessions:result.affectedRows,signInRequired:true});
+ }catch(e){
+  await conn.rollback();
+  console.error('Self session revocation failed',e instanceof Error?e.name:'Unknown');
+  res.status(503).json({error:'Authentication service unavailable'});
+ }finally{conn.release();}
 });
 
 export default router;
