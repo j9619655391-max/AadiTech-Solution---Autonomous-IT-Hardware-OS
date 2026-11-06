@@ -140,3 +140,48 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
     'SELECT COUNT(*) AS n FROM sales_quote_drafts WHERE id=?',[first.data.id]);
   assert.equal(Number(concurrentRows[0].n),1);
 });
+
+test('draft revisions preserve original snapshots, enforce version and margin guardrail',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Revision Customer',contactPerson:'Owner',email:'revision@example.invalid',
+    phone:'1234567890',city:'Mumbai',state:'Maharashtra'
+  });
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'REV-SKU-1',brand:'Dell',model:'Revision Test',category:'SERVER',
+    specs:'Test',unitCost:'900.00',minPrice:'1000.00',sellingPrice:'1000.00',gstRate:'18.00',hsn:'8471'
+  });
+  assert.equal(product.status,201);
+  const draft=await call('/api/quotes/drafts','POST',{
+    customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]
+  });
+  assert.equal(draft.status,201);
+  const route='/api/quotes/drafts/'+draft.data.id+'/revisions';
+  assert.equal((await call(route,'GET',undefined,false)).status,401);
+  assert.equal((await call(route)).data.revisions.length,0);
+  const body={expectedRevision:0,reason:'Customer requested two servers',items:[{productId:product.data.id,quantity:2}]};
+  assert.equal((await call(route,'POST',body,true,false)).status,403);
+  const first=await call(route,'POST',body);
+  assert.equal(first.status,201);
+  assert.equal(first.data.revision,1);
+  assert.equal(first.data.subtotal,'2000.00');
+  assert.equal(first.data.totalEstimate,'2360.00');
+  assert.equal(first.data.grossMarginBps,1000);
+  assert.equal(first.data.reviewStatus,'MARGIN_REVIEW_REQUIRED');
+  assert.equal((await call(route,'POST',body)).status,409);
+  assert.equal((await call(route,'POST',{...body,expectedRevision:1,
+    items:[{productId:randomUUID(),quantity:2}]})).status,400);
+  const second=await call(route,'POST',{...body,expectedRevision:1,reason:'Customer confirmed three units',
+    items:[{productId:product.data.id,quantity:3}]});
+  assert.equal(second.status,201);
+  assert.equal(second.data.revision,2);
+  const history=await call(route);
+  assert.equal(history.status,200);
+  assert.equal(history.data.revisions.length,2);
+  assert.equal(history.data.revisions[0].line_snapshot[0].quantity,2);
+  assert.equal(history.data.revisions[1].line_snapshot[0].quantity,3);
+  const original=await call('/api/quotes/drafts/'+draft.data.id);
+  assert.equal(original.data.items[0].quantity,1);
+  const [dbHistory]=await db.query<any[]>('SELECT revision_number,review_status FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number',[draft.data.id]);
+  assert.deepEqual(dbHistory.map((x:any)=>x.revision_number),[1,2]);
+});
