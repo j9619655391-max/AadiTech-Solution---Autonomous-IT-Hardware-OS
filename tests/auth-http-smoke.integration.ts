@@ -42,7 +42,8 @@ test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',
  const base='http://127.0.0.1:'+addr.port;
  const request=async(path:string,options:RequestInit={})=>{
   const response=await fetch(base+path,{...options,redirect:'manual'});
-  const data=await response.json();
+  const raw=await response.text();
+  const data=raw?JSON.parse(raw):null;
   return {response,data};
  };
  const without=await request('/api/crm/customers');
