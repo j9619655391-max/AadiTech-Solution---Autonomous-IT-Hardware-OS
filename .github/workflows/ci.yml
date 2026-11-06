@@ -85,5 +85,9 @@ jobs:
         run: bun run db:migrate:release-holds
       - name: Verify release hold migration rerun
         run: bun run db:migrate:release-holds
+      - name: Apply reviewer role migration
+        run: bun run db:migrate:reviewer-roles
+      - name: Verify reviewer role migration rerun
+        run: bun run db:migrate:reviewer-roles
       - name: Run real MySQL integration tests
         run: bun run test:mysql
