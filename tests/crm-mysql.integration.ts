@@ -438,6 +438,8 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   assert.equal(noCookieLogin.data.mfaRequired,true);
   assert.ok(!noCookieLogin.data.csrfToken);
   assert.ok(!noCookieLogin.data.user);
+  const [noSession]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[id]);
+  assert.equal(Number(noSession[0].n),0);
   assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
     challengeToken:noCookieLogin.data.challengeToken,code:'999'
   },false)).status,400);
@@ -466,4 +468,27 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   assert.equal(another.status,200);
   const [used]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_totp_recovery_codes WHERE user_id=? AND used_at IS NOT NULL',[id]);
   assert.equal(Number(used[0].n),2);
+  const nextChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(nextChallenge.status,202);
+  // Current-step +1 is within the allowable TOTP drift window and is newer
+  // than the code already used at enrollment.
+  const freshTotp=totpAt(secret,Math.floor(Date.now()/30000)+1);
+  const signed=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:nextChallenge.data.challengeToken,code:freshTotp
+  },false);
+  assert.equal(signed.status,200);
+  assert.equal(signed.data.user.id,id);
+  const reusedChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(reusedChallenge.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:freshTotp
+  },false)).status,401);
+  // A fixed challenge allows five wrong guesses, then permanently denies.
+  const wrong='FFFFFFFFFFFFFFFFFFFF';
+  for(let n=0;n<5;n++)assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:wrong
+  },false)).status,401);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:activated.data.recoveryCodes[2]
+  },false)).status,401);
 });
