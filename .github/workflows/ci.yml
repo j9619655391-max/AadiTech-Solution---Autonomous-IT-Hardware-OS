@@ -114,6 +114,30 @@ jobs:
         run: bun run test:mysql
       - name: Isolated HTTP authentication and MFA smoke
         run: bun run test:auth-smoke
+      - name: Chromium browser MFA / role smoke (isolated CI only)
+        env:
+          BROWSER_E2E_CI: '1'
+          BROWSER_E2E_BASE_URL: 'http://127.0.0.1:3000'
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+          ./node_modules/.bin/playwright install --with-deps chromium
+          bun run dev > "$RUNNER_TEMP/aaditech-browser-server.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local CI app failed to start"
+            tail -n 60 "$RUNNER_TEMP/aaditech-browser-server.log"
+            exit 1
+          fi
+          node --import tsx scripts/browser-smoke.mjs
       - name: Read-only disposable staging readiness preflight
         env:
           STAGING_PREFLIGHT: '1'
