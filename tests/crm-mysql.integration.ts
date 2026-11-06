@@ -128,4 +128,15 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
   assert.equal((await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':'bad'})).status,400);
   const [keys]=await db.query<any[]>('SELECT COUNT(*) AS n FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,key]);
   assert.equal(Number(keys[0].n),1);
+  // Concurrent identical POST requests must serialize on MySQL's unique key.
+  const concurrentKey=randomUUID();
+  const [first,second]=await Promise.all([
+    call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':concurrentKey}),
+    call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':concurrentKey})
+  ]);
+  assert.deepEqual([first.status,second.status].sort(),[200,201]);
+  assert.equal(first.data.id,second.data.id);
+  const [concurrentRows]=await db.query<any[]>(
+    'SELECT COUNT(*) AS n FROM sales_quote_drafts WHERE id=?',[first.data.id]);
+  assert.equal(Number(concurrentRows[0].n),1);
 });
