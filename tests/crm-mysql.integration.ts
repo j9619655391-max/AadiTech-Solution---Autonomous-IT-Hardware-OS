@@ -8,6 +8,8 @@ import crmRouter from '../server/crm/router';
 import quoteDraftRouter from '../server/quotes/router';
 import quoteReviewRouter from '../server/quotes/reviewRouter';
 import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
+import securityAdminRouter from '../server/security/adminRouter';
+import authRouter from '../server/auth/router';
 
 if (process.env.CRM_TEST_DB !== '1') throw new Error('CRM integration test must run on disposable test DB only (CRM_TEST_DB=1)');
 if (process.env.DB_NAME !== 'aaditech_ci') throw new Error('Refusing integration tests outside aaditech_ci database');
@@ -27,7 +29,7 @@ test('setup isolated owner session',async()=>{
     [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer','test-only','REVIEWER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
     [hashToken(reviewerToken),reviewerId,csrf]);
-  const app=express();app.use(express.json());app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -310,4 +312,56 @@ test('release-preparation outbox stays disabled, replays safely and stales after
     expectedRevision:1,decision:'REJECTED_INTERNAL',
     reason:'Do not prepare this version',overrideRequested:false})).status,201);
   assert.equal((await call(path,'POST',{expectedRevision:1})).status,409);
+});
+
+test('owner-only reviewer administration revokes sessions and appends immutable security events',async()=>{
+  const baseRoute='/api/security/reviewers/'+reviewerId;
+  assert.equal((await call('/api/security/reviewers','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/security/reviewers','GET',undefined,false)).status,401);
+  const listed=await call('/api/security/reviewers');
+  assert.equal(listed.status,200);
+  const target=listed.data.items.find((item:any)=>item.id===reviewerId);
+  assert.equal(target.status,'ACTIVE');
+  assert.equal('password_hash' in target,false);
+  assert.equal('csrf_token' in target,false);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,false)).status,403);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'OWNER'})).status,400);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED',role:'OWNER'})).status,400);
+  assert.equal((await call('/api/security/reviewers/'+actor+'/status','PATCH',{status:'DISABLED'})).status,404);
+  const disabled=await call(baseRoute+'/status','PATCH',{status:'DISABLED'});
+  assert.equal(disabled.status,200);
+  assert.equal(disabled.data.status,'DISABLED');
+  assert.ok(disabled.data.revokedSessions>=1);
+  assert.equal((await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'})).status,409);
+  const enabled=await call(baseRoute+'/status','PATCH',{status:'ACTIVE'});
+  assert.equal(enabled.status,200);
+  assert.equal(enabled.data.status,'ACTIVE');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  const secondToken='z'.repeat(43);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(secondToken),reviewerId,csrf]);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:'aaditech_session='+secondToken})).status,200);
+  const revoked=await call(baseRoute+'/revoke-sessions','POST',{});
+  assert.equal(revoked.status,200);
+  assert.equal(revoked.data.revokedSessions,1);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:'aaditech_session='+secondToken})).status,401);
+  const logs=await call('/api/security/events?limit=10');
+  assert.equal(logs.status,200);
+  assert.deepEqual(logs.data.items.filter((ev:any)=>ev.target_user_id===reviewerId).slice(0,3).map((ev:any)=>ev.event_type),
+    ['SESSIONS_REVOKED','REVIEWER_ENABLED','REVIEWER_DISABLED']);
+  assert.equal((await call('/api/security/events?limit=1000')).status,400);
+});
+
+test('authenticated self-revocation invalidates current owner session and is recorded',async()=>{
+  assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,false)).status,403);
+  const response=await call('/api/auth/revoke-my-sessions','POST',{});
+  assert.equal(response.status,200);
+  assert.equal(response.data.signInRequired,true);
+  assert.ok(response.data.revokedSessions>=1);
+  assert.equal((await call('/api/auth/me')).status,401);
+  assert.equal((await call('/api/crm/customers')).status,401);
+  const [events]=await db.execute<any[]>('SELECT event_type,revoked_session_count FROM auth_security_events WHERE target_user_id=? ORDER BY created_at DESC',[actor]);
+  assert.ok(events.some((item:any)=>item.event_type==='OWN_SESSIONS_REVOKED'));
 });
