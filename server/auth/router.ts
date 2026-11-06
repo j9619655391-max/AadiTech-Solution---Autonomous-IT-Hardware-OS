@@ -3,13 +3,11 @@ import {randomUUID} from 'node:crypto';
 import { getPool } from '../db';
 import type {ResultSetHeader} from 'mysql2/promise';
 import { hashToken, newSecret, verifyPassword } from './crypto';
+import {reserveLoginAttempt,reserveStepUpAttempt} from './limiter';
 
 const router = Router();
 const COOKIE = 'aaditech_session';
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
-const attempts = new Map<string, { count: number; reset: number }>();
-const MAX_ATTEMPTS = 6;
-const WINDOW_MS = 15 * 60 * 1000;
 
 function getSessionCookie(req: Request): string | null {
   const header = req.headers.cookie || '';
@@ -64,6 +62,54 @@ export function requireAuthenticated(req:Request,res:Response,next:NextFunction)
   return enforceRole(req,res,next,['OWNER','REVIEWER']);
 }
 
+
+export async function requireStepUp(req:Request,res:Response,next:NextFunction){
+ // Must be mounted AFTER a requireOwner/requireAuthenticated middleware.
+ const session=res.locals.auth as Session|undefined;
+ const cookie=getSessionCookie(req),token=req.header('x-step-up-token');
+ if(!session||!cookie||!token||!(/^[A-Za-z0-9_-]{43}$/).test(token)){
+  res.status(403).json({error:'Recent password verification required'});return;
+ }
+ const db=getPool();
+ if(!db){res.status(503).json({error:'Authentication service unavailable'});return;}
+ try{
+  const [rows]=await db.execute<any[]>(
+   'SELECT 1 AS ok FROM auth_step_up_sessions WHERE session_token_hash=? AND step_up_token_hash=? AND expires_at>UTC_TIMESTAMP(3) LIMIT 1',
+   [hashToken(cookie),hashToken(token)]);
+  if(!rows.length){res.status(403).json({error:'Recent password verification required'});return;}
+  next();
+ }catch{res.status(503).json({error:'Authentication service unavailable'});}
+}
+
+router.post('/step-up',requireAuthenticated,async(req,res)=>{
+ const session=res.locals.auth as Session;
+ const password=req.body?.currentPassword;
+ if(typeof password!=='string'||!password||Buffer.byteLength(password,'utf8')>1024||
+    !req.body||typeof req.body!=='object'||Array.isArray(req.body)||
+    Object.keys(req.body).join(',')!=='currentPassword'){
+  res.status(400).json({error:'Current password required'});return;
+ }
+ const db=getPool(),cookie=getSessionCookie(req);
+ if(!db||!cookie){res.status(503).json({error:'Authentication service unavailable'});return;}
+ try{
+  if(!await reserveStepUpAttempt(db,session.userId)){
+   res.status(429).json({error:'Too many password verification attempts'});return;
+  }
+  const [rows]=await db.execute<any[]>(
+   'SELECT password_hash FROM auth_users WHERE id=? AND status=? LIMIT 1',
+   [session.userId,'ACTIVE']);
+  const valid=rows.length>0&&await verifyPassword(password,String(rows[0].password_hash));
+  if(!valid){res.status(401).json({error:'Invalid credentials'});return;}
+  const secret=newSecret();
+  await db.execute(`INSERT INTO auth_step_up_sessions (session_token_hash,step_up_token_hash,expires_at)
+    VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 5 MINUTE))
+    ON DUPLICATE KEY UPDATE step_up_token_hash=VALUES(step_up_token_hash),expires_at=VALUES(expires_at),created_at=UTC_TIMESTAMP(3)`,
+    [hashToken(cookie),hashToken(secret)]);
+  res.setHeader('Cache-Control','no-store');
+  res.json({stepUpToken:secret,expiresInSeconds:300});
+ }catch{res.status(503).json({error:'Authentication service unavailable'});}
+});
+
 router.post('/login', async (req, res) => {
   if (!isSameOrigin(req)) { res.status(403).json({ error: 'Invalid request origin' }); return; }
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
@@ -71,25 +117,19 @@ router.post('/login', async (req, res) => {
   if (email.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || typeof password !== 'string' || password.length > 1024) {
     res.status(400).json({ error: 'Invalid credentials' }); return;
   }
-  // Initial single-instance limiter. Replace with persistent/shared limiter before multi-worker deployment.
-  const key = (req.ip || 'unknown') + ':' + email;
-  const now = Date.now();
-  const current = attempts.get(key);
-  const state = current && current.reset > now ? current : { count: 0, reset: now + WINDOW_MS };
-  if (state.count >= MAX_ATTEMPTS) { res.status(429).json({ error: 'Too many attempts' }); return; }
   const db = getPool();
   if (!db) { res.status(503).json({ error: 'Authentication service unavailable' }); return; }
   try {
+    if(!await reserveLoginAttempt(db,email,req.ip||'unknown')){
+      res.status(429).json({error:'Too many attempts'});return;
+    }
     const [users] = await db.execute<any[]>('SELECT id,email,role,password_hash FROM auth_users WHERE email=? AND status=? LIMIT 1', [email, 'ACTIVE']);
     const user = users[0];
     // Generic failure response; do not leak whether an account exists.
     const valid = user ? await verifyPassword(password, user.password_hash) : false;
     if (!valid) {
-      state.count++;
-      attempts.set(key, state);
       res.status(401).json({ error: 'Invalid credentials' }); return;
     }
-    attempts.delete(key);
     const token = newSecret();
     const csrf = newSecret();
     await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 8 HOUR))',
@@ -118,7 +158,7 @@ router.post('/logout', requireAuthenticated, async (req, res) => {
   } catch { res.status(503).json({ error: 'Authentication service unavailable' }); }
 });
 
-router.post('/revoke-my-sessions',requireAuthenticated,async(req,res)=>{
+router.post('/revoke-my-sessions',requireAuthenticated,requireStepUp,async(req,res)=>{
  const pool=getPool();
  if(!pool){res.status(503).json({error:'Authentication service unavailable'});return;}
  const userId=(res.locals.auth as Session).userId;
