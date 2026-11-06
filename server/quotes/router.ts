@@ -8,7 +8,7 @@ import { calculateLine, paise, rupees, QuoteInputError } from './money';
 const router=Router();
 router.use(requireOwner);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const draftNumber=(id:string)=>'ADQ-'+id;
 class QuoteConflictError extends Error {}
 
