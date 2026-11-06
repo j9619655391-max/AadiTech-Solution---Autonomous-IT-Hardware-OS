@@ -13,7 +13,8 @@
     "owner:bootstrap": "tsx scripts/bootstrap-owner.ts",
     "db:migrate:crm": "tsx scripts/migrate-crm.ts",
     "test:mysql": "tsx --test tests/crm-mysql.integration.ts",
-    "db:migrate:quotes": "tsx scripts/migrate-quotes.ts"
+    "db:migrate:quotes": "tsx scripts/migrate-quotes.ts",
+    "db:migrate:quote-idempotency": "tsx scripts/migrate-quote-idempotency.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

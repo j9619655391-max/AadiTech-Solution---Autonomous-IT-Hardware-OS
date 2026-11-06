@@ -69,5 +69,9 @@ jobs:
         run: bun run db:migrate:quotes
       - name: Verify quotation draft migration is idempotent
         run: bun run db:migrate:quotes
+      - name: Apply quote idempotency migration
+        run: bun run db:migrate:quote-idempotency
+      - name: Verify quote idempotency migration rerun
+        run: bun run db:migrate:quote-idempotency
       - name: Run real MySQL integration tests
         run: bun run test:mysql
