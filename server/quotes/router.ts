@@ -17,9 +17,9 @@ function failed(res:import('express').Response,e:unknown) {
 router.get('/',async(req,res)=>{
   const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
   try{
-    const [rows]=await db.query<RowDataPacket[]>(\`SELECT q.id,q.customer_id,q.lead_id,q.subtotal,q.tax_estimate,q.total_estimate,q.created_at,
+    const [rows]=await db.query<RowDataPacket[]>(`SELECT q.id,q.customer_id,q.lead_id,q.subtotal,q.tax_estimate,q.total_estimate,q.created_at,
       c.name AS customer_name FROM sales_quote_drafts q JOIN crm_customers c ON c.id=q.customer_id
-      WHERE q.created_by=? ORDER BY q.created_at DESC,q.id DESC LIMIT 100\`,[res.locals.auth.userId]);
+      WHERE q.created_by=? ORDER BY q.created_at DESC,q.id DESC LIMIT 100`,[res.locals.auth.userId]);
     res.json({items:rows});
   }catch(e){failed(res,e);}
 });
@@ -27,10 +27,10 @@ router.get('/:id',async(req,res)=>{
   if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
   const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
   try{
-    const [rows]=await db.query<RowDataPacket[]>(\`SELECT * FROM sales_quote_drafts WHERE id=? AND created_by=? LIMIT 1\`,
+    const [rows]=await db.query<RowDataPacket[]>(`SELECT * FROM sales_quote_drafts WHERE id=? AND created_by=? LIMIT 1`,
       [req.params.id,res.locals.auth.userId]);
     if(!rows.length){res.status(404).json({error:'Draft not found'});return;}
-    const [items]=await db.query<RowDataPacket[]>(\`SELECT position,product_id,sku_snapshot,name_snapshot,hsn_snapshot,quantity,unit_price,gst_rate,line_subtotal,line_tax_estimate FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position\`,[req.params.id]);
+    const [items]=await db.query<RowDataPacket[]>(`SELECT position,product_id,sku_snapshot,name_snapshot,hsn_snapshot,quantity,unit_price,gst_rate,line_subtotal,line_tax_estimate FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position`,[req.params.id]);
     res.json({draft:rows[0],items});
   }catch(e){failed(res,e);}
 });
@@ -74,13 +74,13 @@ router.post('/',async(req,res)=>{
     // Addition overflow protection for aggregate.
     if(sum+tax>9999999999999999n)throw new QuoteInputError('Aggregate total too large');
     const id=randomUUID();
-    await connection.execute(\`INSERT INTO sales_quote_drafts (id,customer_id,lead_id,created_by,subtotal,tax_estimate,total_estimate)
-      VALUES (?,?,?,?,?,?,?)\`,[id,body.customerId,body.leadId??null,res.locals.auth.userId,rupees(sum),rupees(tax),rupees(sum+tax)]);
+    await connection.execute(`INSERT INTO sales_quote_drafts (id,customer_id,lead_id,created_by,subtotal,tax_estimate,total_estimate)
+      VALUES (?,?,?,?,?,?,?)`,[id,body.customerId,body.leadId??null,res.locals.auth.userId,rupees(sum),rupees(tax),rupees(sum+tax)]);
     for(let i=0;i<snapshot.length;i++){
       const p=snapshot[i];
-      await connection.execute(\`INSERT INTO sales_quote_draft_items
+      await connection.execute(`INSERT INTO sales_quote_draft_items
         (id,quote_id,position,product_id,sku_snapshot,name_snapshot,hsn_snapshot,quantity,unit_cost,unit_price,gst_rate,line_subtotal,line_tax_estimate)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)\`,[randomUUID(),id,i+1,p.id,p.sku,p.name,p.hsn,p.quantity,p.cost,p.price,p.gstRate,rupees(p.subtotal),rupees(p.tax)]);
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[randomUUID(),id,i+1,p.id,p.sku,p.name,p.hsn,p.quantity,p.cost,p.price,p.gstRate,rupees(p.subtotal),rupees(p.tax)]);
     }
     await connection.commit();
     res.status(201).json({id,status:'DRAFT',customerId:body.customerId,subtotal:rupees(sum),taxEstimate:rupees(tax),totalEstimate:rupees(sum+tax),lineCount:snapshot.length,
