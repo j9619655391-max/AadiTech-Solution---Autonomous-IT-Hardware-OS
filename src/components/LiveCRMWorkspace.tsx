@@ -176,7 +176,7 @@ export function LiveCRMWorkspace() {
       {importCandidate && <label className="block border border-amber-700 rounded-lg p-3 text-sm text-amber-200">
         <input type="checkbox" checked={approvedImport} onChange={e => setApprovedImport(e.target.checked)} className="mr-2" />
         I independently verified this is genuine business data (not demo) and approve saving this one record.
-      </label>
+      </label>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {crmFields[entity].map(field => <label key={field.key} className="text-xs text-slate-300 space-y-1">
           <span className="block font-medium">{field.label}{field.required ? ' *' : ''}</span>
