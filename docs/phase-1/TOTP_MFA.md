@@ -13,9 +13,12 @@
 - TOTP is phishable. Evaluate WebAuthn/passkeys for privileged user protection and risk review.
 - **Account recovery in case both authenticator and recovery codes are lost is not implemented.** Users must securely store recovery codes; manual administrator recovery policy, identity verification and auditing require future design.
 - Recovery-code rotation/replacement, MFA method/device inventory, admin MFA enforcement policy, account lockout incident playbooks, sensitive-change MFA step-up, enterprise identity policy and real HTTPS/browser E2E tests are pending.
-- OTP activation needs independent rate limiting and auditing before production; current password step-up throttling is not a complete substitute.
+- OTP activation now uses the shared MySQL step-up attempt budget (six attempts per 15-minute bucket). Dedicated MFA-specific risk controls, administrative audit events and monitoring remain pending.
 - Hard-coded CI test encryption key is not a production secret. Production key must be injected securely and persisted across all replicas.
 - MySQL SSL verification remains an existing blocker. No production deployments, migrations, or customer messaging.
 - Existing demo features remain non-authoritative. Never execute destructive legacy database/schema.sql on real data.
 
 Run migrations 0001–0010 first and then `bun run db:migrate:mfa` in disposable staging. Confirm backup/restore and stored-key recovery before real deployment.
+
+## Test verification
+CI includes the RFC6238 TOTP unit vector, AES-GCM tamper detection, real MySQL enrollment and session revocation, password-only session denial, TOTP counter replay rejection, five-attempt challenge limits, and single-use recovery codes. These automated tests do not replace real authenticator/browser/HTTPS staging E2E checks.
