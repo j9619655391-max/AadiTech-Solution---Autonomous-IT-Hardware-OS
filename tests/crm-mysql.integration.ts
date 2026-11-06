@@ -333,6 +333,29 @@ test('step-up requires correct password and creates session-bound short-lived to
   assert.equal(rows[0].step_up_token_hash,hashToken(stepUpToken));
 });
 
+test('privileged MFA policy rejects password-only sessions, retains journal and fails closed on invalid configuration',async()=>{
+  const previous=process.env.MFA_REQUIRE_PRIVILEGED;
+  try{
+    process.env.MFA_REQUIRE_PRIVILEGED='true';
+    const blocked=await call('/api/security/reviewers/'+reviewerId+'/revoke-sessions','POST',{},true,true);
+    assert.equal(blocked.status,403);
+    assert.match(blocked.data.error,/MFA-verified session/);
+    const policyDeniedReview=await call('/api/quotes/reviews/'+randomUUID(),'POST',{
+      expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Policy denial probe',overrideRequested:false
+    });
+    assert.equal(policyDeniedReview.status,403);
+    const [events]=await db.execute<any[]>(
+      'SELECT event_type FROM auth_security_events WHERE target_user_id IN (?,?) AND event_type=?',
+      [actor,reviewerId,'MFA_POLICY_DENIED']);
+    assert.ok(events.length>=2);
+    process.env.MFA_REQUIRE_PRIVILEGED='invalid';
+    assert.equal((await call('/api/security/reviewers/'+reviewerId+'/revoke-sessions','POST',{})).status,503);
+  }finally{
+    if(previous===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
+    else process.env.MFA_REQUIRE_PRIVILEGED=previous;
+  }
+});
+
 test('owner-only reviewer administration revokes sessions and appends immutable security events',async()=>{
   const baseRoute='/api/security/reviewers/'+reviewerId;
   assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,true,{'x-step-up-token':'invalid'})).status,403);
@@ -478,6 +501,14 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   },false);
   assert.equal(signed.status,200);
   assert.equal(signed.data.user.id,id);
+  const [verifiedSessions]=await db.execute<any[]>('SELECT mfa_verified_at FROM auth_sessions WHERE user_id=?',[id]);
+  assert.ok(verifiedSessions.some((row:any)=>row.mfa_verified_at));
+  const [mfaEvents]=await db.execute<any[]>('SELECT event_type FROM auth_security_events WHERE target_user_id=?',[id]);
+  const names=mfaEvents.map((row:any)=>row.event_type);
+  assert.ok(names.includes('MFA_ENROLLED'));
+  assert.ok(names.includes('MFA_LOGIN_SUCCEEDED'));
+  assert.ok(names.includes('MFA_LOGIN_FAILED'));
+  assert.ok(names.includes('MFA_RECOVERY_USED'));
   const reusedChallenge=await call('/api/auth/login','POST',{email,password},false);
   assert.equal(reusedChallenge.status,202);
   assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
