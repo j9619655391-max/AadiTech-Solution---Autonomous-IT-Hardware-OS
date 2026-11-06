@@ -4,6 +4,7 @@ import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getPool } from '../db';
 import { requireOwner } from '../auth/router';
 import { calculateLine, paise, rupees, QuoteInputError } from './money';
+import { evaluateRevision, type RevisionProduct } from './revisions';
 
 const router=Router();
 router.use(requireOwner);
@@ -132,4 +133,82 @@ router.post('/',async(req,res)=>{
   }catch(e){await connection.rollback();failed(res,e);}
   finally{connection.release();}
 });
+
+router.get('/:id/revisions',async(req,res)=>{
+  if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
+  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+  try {
+    const [owned]=await db.execute<RowDataPacket[]>(
+      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? LIMIT 1',
+      [req.params.id,res.locals.auth.userId]);
+    if(!owned.length){res.status(404).json({error:'Draft not found'});return;}
+    const [rows]=await db.execute<RowDataPacket[]>(
+      'SELECT revision_number,actor_id,reason,subtotal,tax_estimate,total_estimate,gross_margin_bps,review_status,line_snapshot,created_at FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number ASC',
+      [req.params.id]);
+    res.json({draftId:req.params.id,revisions:rows.map(row=>({...row,
+      line_snapshot:typeof row.line_snapshot==='string'?JSON.parse(row.line_snapshot):row.line_snapshot}))});
+  }catch(e){failed(res,e);}
+});
+
+router.post('/:id/revisions',async(req,res)=>{
+  if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
+  const body=req.body;
+  if(!body || typeof body!=='object' || Array.isArray(body) ||
+    Object.keys(body).some(k=>!['expectedRevision','reason','items'].includes(k)) ||
+    !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision<0 || body.expectedRevision>100000 ||
+    typeof body.reason!=='string' || !body.reason.trim() || body.reason.trim().length>500 ||
+    !Array.isArray(body.items) || body.items.length<1 || body.items.length>40 ||
+    body.items.some((item:unknown)=>!item || typeof item!=='object' || Array.isArray(item) ||
+      Object.keys(item as object).sort().join(',')!=='productId,quantity' ||
+      !uuid.test((item as any).productId) ||
+      !Number.isSafeInteger((item as any).quantity) || (item as any).quantity<1 || (item as any).quantity>1000)){
+    res.status(400).json({error:'Expected version, reason and valid product quantities required'});return;
+  }
+  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+  const conn=await db.getConnection();
+  try{
+    await conn.beginTransaction();
+    // This parent row serializes revision creation for this draft.
+    const [owned]=await conn.query<RowDataPacket[]>(
+      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? FOR UPDATE',
+      [req.params.id,res.locals.auth.userId]);
+    if(!owned.length){await conn.rollback();res.status(404).json({error:'Draft not found'});return;}
+    const [current]=await conn.query<RowDataPacket[]>(
+      'SELECT COALESCE(MAX(revision_number),0) AS revision FROM sales_quote_draft_revisions WHERE quote_id=?',
+      [req.params.id]);
+    const version=Number(current[0].revision);
+    if(version!==body.expectedRevision){
+      await conn.rollback();res.status(409).json({error:'Draft revision changed. Refresh history first.'});return;
+    }
+    const [original]=await conn.query<RowDataPacket[]>(
+      'SELECT product_id,sku_snapshot,name_snapshot,hsn_snapshot,unit_cost,unit_price,gst_rate FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position',
+      [req.params.id]);
+    const originalById=new Map(original.map(v=>[String(v.product_id),v]));
+    const provided=new Set<string>();
+    const snapshot:RevisionProduct[]=[];
+    for(const item of body.items as {productId:string;quantity:number}[]){
+      if(provided.has(item.productId))throw new QuoteInputError('Duplicate product in revision');
+      provided.add(item.productId);
+      const saved=originalById.get(item.productId);
+      if(!saved)throw new QuoteInputError('Revision product must belong to the saved original draft');
+      snapshot.push({productId:item.productId,sku:String(saved.sku_snapshot),
+        name:String(saved.name_snapshot),hsn:String(saved.hsn_snapshot),
+        quantity:item.quantity,unitCost:String(saved.unit_cost),
+        unitPrice:String(saved.unit_price),gstRate:String(saved.gst_rate)});
+    }
+    if(provided.size!==originalById.size)throw new QuoteInputError('Revision must contain every original product');
+    const rawPolicy=process.env.QUOTE_MIN_MARGIN_BPS??'1500';
+    if(!/^\\d{1,5}$/.test(rawPolicy))throw new Error('Invalid QUOTE_MIN_MARGIN_BPS configuration');
+    const result=evaluateRevision(snapshot,Number(rawPolicy));
+    await conn.execute(`INSERT INTO sales_quote_draft_revisions
+      (id,quote_id,revision_number,actor_id,reason,subtotal,tax_estimate,total_estimate,gross_margin_bps,review_status,line_snapshot)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [randomUUID(),req.params.id,version+1,res.locals.auth.userId,body.reason.trim(),
+        result.subtotal,result.taxEstimate,result.totalEstimate,result.grossMarginBps,result.reviewStatus,JSON.stringify(result.lines)]);
+    await conn.commit();
+    res.status(201).json({draftId:req.params.id,revision:version+1,...result,
+      message:'Internal draft revision saved. Not approved, sent, ordered or invoiced.'});
+  }catch(e){await conn.rollback();failed(res,e);}finally{conn.release();}
+});
+
 export default router;
