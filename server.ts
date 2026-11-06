@@ -10,6 +10,7 @@ import crmRouter from "./server/crm/router";
 import quoteDraftRouter from "./server/quotes/router";
 import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
+import securityAdminRouter from "./server/security/adminRouter";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ const PORT = 3000;
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
+app.use("/api/security", securityAdminRouter);
 app.use("/api/crm", crmRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
 app.use("/api/quotes/reviews", quoteReviewRouter);
