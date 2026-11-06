@@ -74,19 +74,14 @@ app.get("/api/db/status", async (_req, res) => {
 });
 
 // Hostinger phpMyAdmin Schema Download / Viewer Endpoint
-app.get("/api/db/schema-sql", (_req, res) => {
-  try {
-    const schemaPath = path.join(process.cwd(), "database", "schema.sql");
-    if (fs.existsSync(schemaPath)) {
-      const sqlContent = fs.readFileSync(schemaPath, "utf-8");
-      res.setHeader("Content-Type", "text/plain");
-      res.send(sqlContent);
-    } else {
-      res.status(404).send("-- schema.sql not found");
-    }
-  } catch (err: any) {
-    res.status(500).send(`-- Error reading schema: ${err.message}`);
-  }
+app.get("/api/db/schema-sql", (_req,res) => {
+  // The legacy schema creates demo tables and must never be offered as a
+  // deployment recipe. Modern schema changes are checksum-tracked migrations.
+  res.setHeader("Cache-Control","no-store");
+  res.status(410).json({
+    error:"Legacy schema download disabled to prevent destructive import",
+    safePath:"Use staging backup/restore rehearsal and additive migrations 0001-0013"
+  });
 });
 
 // Hostinger Deployment Checklist & Readiness Info
