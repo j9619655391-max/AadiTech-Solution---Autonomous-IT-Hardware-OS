@@ -147,7 +147,7 @@ export function LiveBOMWorkspace(){
         </button>
       </>}
     </div>
-    {revisionDraftId && <DraftRevisionPanel key={revisionDraftId} draftId={revisionDraftId} />}
+    {revisionDraftId && <DraftRevisionPanel draftId={revisionDraftId} />}
     <div className="rounded-xl border border-slate-700 bg-slate-900 p-5">
       <h3 className="font-semibold mb-3">Saved draft quotations (latest 100)</h3>
       {drafts.length===0 ? <p className="text-slate-400 text-sm">No persisted draft quotations yet.</p> :

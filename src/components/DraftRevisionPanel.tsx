@@ -36,8 +36,8 @@ export function DraftRevisionPanel({draftId}:Props){
     let cancelled=false;
     setLoaded(false);setError('');setSuccess('');
     Promise.all([
-      json<{items:DraftItem[]}>(authenticatedFetch('/api/quotes/drafts/'+draftId)),
-      json<{revisions:Revision[]}>(authenticatedFetch('/api/quotes/drafts/'+draftId+'/revisions'))
+      authenticatedFetch('/api/quotes/drafts/'+draftId).then(r=>json<{items:DraftItem[]}>(r)),
+      authenticatedFetch('/api/quotes/drafts/'+draftId+'/revisions').then(r=>json<{revisions:Revision[]}>(r))
     ]).then(([detail,log])=>{
       if(cancelled)return;
       setItems(detail.items);setHistory(log.revisions);
