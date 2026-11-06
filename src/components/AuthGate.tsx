@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { currentSession, loginOwner, logoutOwner, revokeMySessions, verifyCurrentPassword, type OwnerUser } from '../services/authClient';
+import { currentSession, loginOwner, completeMFALogin, logoutOwner, revokeMySessions, verifyCurrentPassword, type OwnerUser } from '../services/authClient';
 import { SecurityAdminPanel } from './SecurityAdminPanel';
 import { ReviewerWorkspace } from './ReviewerWorkspace';
 
 interface AuthGateProps { children: React.ReactNode }
-type State = { status: 'checking' } | { status: 'logged_out'; error?: string } | { status: 'authenticated'; user: OwnerUser };
+type State = { status: 'checking' } | { status: 'logged_out'; error?: string } | { status: 'mfa_challenge'; challengeToken:string; error?:string } | { status: 'authenticated'; user: OwnerUser };
 
 export function AuthGate({ children }: AuthGateProps) {
   const [state, setState] = useState<State>({ status: 'checking' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode,setMfaCode]=useState('');
+  const [showMFA,setShowMFA]=useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [showRevoke, setShowRevoke] = useState(false);
@@ -35,12 +37,27 @@ export function AuthGate({ children }: AuthGateProps) {
     try {
       const session = await loginOwner(email, password);
       setPassword('');
-      setState({ status: 'authenticated', user: session.user });
+      if('mfaRequired' in session){
+        setState({status:'mfa_challenge',challengeToken:session.challengeToken});
+      }else setState({ status: 'authenticated', user: session.user });
     } catch (error) {
       setState({ status: 'logged_out', error: error instanceof Error ? error.message : 'Unable to sign in.' });
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submitMFA(event:React.FormEvent){
+    event.preventDefault();
+    if(state.status!=='mfa_challenge')return;
+    setSubmitting(true);
+    try{
+      const verified=await completeMFALogin(state.challengeToken,mfaCode.trim());
+      setMfaCode('');setState({status:'authenticated',user:verified.user});
+    }catch(e){
+      setState({status:'mfa_challenge',challengeToken:state.challengeToken,
+        error:e instanceof Error?e.message:'MFA verification failed'});
+    }finally{setSubmitting(false);}
   }
 
   async function logout() {
@@ -70,6 +87,21 @@ export function AuthGate({ children }: AuthGateProps) {
     return <div className="min-h-screen bg-slate-950 text-slate-200 grid place-items-center" role="status">Checking secure session…</div>;
   }
 
+  if(state.status==='mfa_challenge'){
+    return <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-5">
+      <form onSubmit={submitMFA} className="rounded-xl border border-slate-700 bg-slate-900 p-7 w-full max-w-md space-y-4">
+        <h1 className="text-xl font-semibold">Authenticator verification</h1>
+        <p className="text-sm text-slate-400">Enter a six-digit authenticator code or one unused 20-character recovery code. No session is created until this succeeds.</p>
+        <input value={mfaCode} onChange={e=>setMfaCode(e.target.value)}
+          autoComplete="one-time-code" autoFocus required maxLength={20}
+          className="w-full bg-slate-950 border border-slate-600 rounded p-3" aria-label="Authenticator or recovery code"/>
+        {state.error&&<p role="alert" className="text-rose-300 text-sm">{state.error}</p>}
+        <button type="submit" disabled={submitting} className="bg-cyan-600 w-full rounded p-3 disabled:opacity-40">Verify and sign in</button>
+        <button type="button" onClick={()=>{setMfaCode('');setState({status:'logged_out'});}}
+          className="text-sm text-slate-400">Cancel and sign in again</button>
+      </form>
+    </main>;
+  }
   if (state.status === 'logged_out') {
     return <main className="min-h-screen bg-slate-950 text-slate-100 grid place-items-center p-5">
       <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-8 shadow-xl space-y-5">
