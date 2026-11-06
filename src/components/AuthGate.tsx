@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { currentSession, loginOwner, completeMFALogin, logoutOwner, revokeMySessions, verifyCurrentPassword, type OwnerUser } from '../services/authClient';
 import { SecurityAdminPanel } from './SecurityAdminPanel';
 import { ReviewerWorkspace } from './ReviewerWorkspace';
+import { MFASettings } from './MFASettings';
 
 interface AuthGateProps { children: React.ReactNode }
 type State = { status: 'checking' } | { status: 'logged_out'; error?: string } | { status: 'mfa_challenge'; challengeToken:string; error?:string } | { status: 'authenticated'; user: OwnerUser };
@@ -131,9 +132,11 @@ export function AuthGate({ children }: AuthGateProps) {
       <span>Signed in: {state.user.email} · {state.user.role}</span>
       {state.user.role === 'OWNER' && <button type="button" onClick={() => setShowSecurity(v => !v)}
         className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Reviewer security</button>}
+      <button type="button" onClick={()=>setShowMFA(v=>!v)} className="rounded border border-slate-700 px-3 py-1 text-cyan-300">Authenticator MFA</button>
       <button type="button" onClick={() => {setShowRevoke(v=>!v);setRevokeError('');}} className="rounded border border-amber-700 px-3 py-1 text-amber-200">Sign out all sessions</button>
       <button onClick={logout} className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Sign out</button>
     </div>
+    {showMFA && <div className="p-4"><MFASettings /></div>}
     {showRevoke && <form onSubmit={event => {event.preventDefault();void revokeAll();}}
       className="mx-auto max-w-3xl border border-amber-700 p-4 bg-slate-900 text-slate-100 space-y-2">
       <p className="text-sm">Confirm your password to revoke every active session on all devices.</p>
