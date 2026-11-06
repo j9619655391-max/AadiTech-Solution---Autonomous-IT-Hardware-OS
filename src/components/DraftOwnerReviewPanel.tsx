@@ -22,7 +22,7 @@ export function DraftOwnerReviewPanel({draftId}:{draftId:string}){
   },[draftId]);
   useEffect(()=>{
     let active=true;setReview(null);setError('');setMessage('');
-    parse<Review>(fetchGuard('/api/quotes/reviews/'+draftId))
+    fetchGuard('/api/quotes/reviews/'+draftId).then(response=>parse<Review>(response))
       .then(result=>{if(active)setReview(result);})
       .catch(e=>{if(active)setError(e instanceof Error?e.message:'Failed to load decisions');});
     return()=>{active=false;};
