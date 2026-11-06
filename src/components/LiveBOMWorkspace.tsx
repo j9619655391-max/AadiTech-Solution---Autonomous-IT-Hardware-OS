@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { crmClient, type CRMRecord } from '../services/crmClient';
 import { authenticatedFetch } from '../services/authClient';
 
 type Line = { productId: string; quantity: number };
-type DraftSummary = { id: string; customer_name: string; subtotal: string; tax_estimate: string; total_estimate: string; created_at: string };
-type DraftResponse = {id:string;status:'DRAFT';subtotal:string;taxEstimate:string;totalEstimate:string;message:string};
+type DraftSummary = { id: string; draftNumber: string; customer_name: string; subtotal: string; tax_estimate: string; total_estimate: string; created_at: string };
+type DraftResponse = {id:string;draftNumber:string;replayed:boolean;status:'DRAFT';subtotal:string;taxEstimate:string;totalEstimate:string;message:string};
 async function allRecords(kind: 'customers' | 'products'): Promise<CRMRecord[]> {
   const first=await crmClient.list(kind,1,100);
   if(first.total>2000)throw Error('Too many '+kind+' to safely select from; refine the catalog first.');
@@ -37,6 +37,7 @@ export function LiveBOMWorkspace(){
   const [error,setError]=useState('');
   const [confirmation,setConfirmation]=useState<DraftResponse | null>(null);
   const [drafts,setDrafts]=useState<DraftSummary[]>([]);
+  const pendingRequest=useRef<{payload:string;key:string} | null>(null);
 
   const reload=useCallback(async()=>{
     setError('');setLoading(true);
@@ -67,18 +68,24 @@ export function LiveBOMWorkspace(){
     if(!window.confirm('Create an INTERNAL DRAFT only? Nothing will be sent, approved, ordered or reserved.'))return;
     setSaving(true);setError('');setConfirmation(null);
     try{
+      const payload=JSON.stringify({customerId,items:lines});
+      // Retain key for same payload across uncertain network failures.
+      if(!pendingRequest.current || pendingRequest.current.payload!==payload)
+        pendingRequest.current={payload,key:crypto.randomUUID()};
       const response=await authenticatedFetch('/api/quotes/drafts',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({customerId,items:lines})
+        method:'POST',
+        headers:{'Content-Type':'application/json','Idempotency-Key':pendingRequest.current.key},
+        body:payload
       });
       const result=await parseResponse<DraftResponse>(response);
+      pendingRequest.current=null;
       setConfirmation(result);setLines([]);setCustomerId('');
       const updated=await authenticatedFetch('/api/quotes/drafts');
       const listed=await parseResponse<{items:DraftSummary[]}>(updated);
       setDrafts(listed.items);
     }catch(e){
       setError((e instanceof Error?e.message:'Draft save failed')+
-        ' If the network was interrupted, check Saved Drafts before retrying to avoid duplicates.');
+        ' Repeating the same form uses its original request key and should not create a duplicate.');
     }finally{setSaving(false);}
   }
   const selectedProduct=(id:string)=>products.find(p=>p.id===id);
@@ -92,7 +99,7 @@ export function LiveBOMWorkspace(){
     </div>
     {error && <p role="alert" className="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-rose-200 text-sm">{error}</p>}
     {confirmation && <div role="status" className="border border-emerald-700 rounded-lg p-4 bg-emerald-950/40">
-      <strong>Internal draft saved: {confirmation.id}</strong>
+      <strong>{confirmation.replayed ? 'Previously saved draft found:' : 'Internal draft saved:'} {confirmation.draftNumber}</strong>
       <p>Subtotal ₹{confirmation.subtotal} · Estimated GST ₹{confirmation.taxEstimate} · Estimated total ₹{confirmation.totalEstimate}</p>
       <p className="text-sm">{confirmation.message}</p>
     </div>}
@@ -146,7 +153,7 @@ export function LiveBOMWorkspace(){
             <th className="p-2">Draft ID</th><th className="p-2">Customer</th><th className="p-2">Subtotal</th><th className="p-2">Tax estimate</th><th className="p-2">Total estimate</th>
           </tr></thead>
           <tbody>{drafts.map(d=><tr key={d.id} className="border-b border-slate-800">
-            <td className="p-2 font-mono text-xs">{d.id}</td><td className="p-2">{d.customer_name}</td>
+            <td className="p-2 font-mono text-xs">{d.draftNumber}</td><td className="p-2">{d.customer_name}</td>
             <td className="p-2">₹{d.subtotal}</td><td className="p-2">₹{d.tax_estimate}</td><td className="p-2">₹{d.total_estimate}</td>
           </tr>)}</tbody>
         </table></div>}
