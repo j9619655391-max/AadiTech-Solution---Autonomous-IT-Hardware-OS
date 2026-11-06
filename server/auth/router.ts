@@ -28,7 +28,7 @@ function isSameOrigin(req: Request): boolean {
   try { return new URL(origin).origin === new URL(allowed).origin; } catch { return false; }
 }
 
-interface Session { userId: string; email: string; role: 'OWNER'; csrf: string; }
+export interface Session { userId: string; email: string; role: 'OWNER' | 'REVIEWER'; csrf: string; }
 async function getSession(req: Request): Promise<Session | null> {
   const cookie = getSessionCookie(req);
   const db = getPool();
@@ -39,16 +39,27 @@ async function getSession(req: Request): Promise<Session | null> {
   return rows.length ? rows[0] as Session : null;
 }
 
-export async function requireOwner(req: Request, res: Response, next: NextFunction) {
-  try {
-    const session = await getSession(req);
-    if (!session || session.role !== 'OWNER') { res.status(401).json({ error: 'Authentication required' }); return; }
-    if (['POST','PUT','PATCH','DELETE'].includes(req.method) && (!isSameOrigin(req) || req.header('x-csrf-token') !== session.csrf)) {
-      res.status(403).json({ error: 'Invalid request verification' }); return;
+async function enforceRole(req: Request,res: Response,next: NextFunction,allowed:readonly Session['role'][]){
+  try{
+    const session=await getSession(req);
+    if(!session){res.status(401).json({error:'Authentication required'});return;}
+    if(!allowed.includes(session.role)){res.status(403).json({error:'Insufficient role privileges'});return;}
+    if(['POST','PUT','PATCH','DELETE'].includes(req.method) &&
+      (!isSameOrigin(req)||req.header('x-csrf-token')!==session.csrf)){
+      res.status(403).json({error:'Invalid request verification'});return;
     }
-    res.locals.auth = session;
+    res.locals.auth=session;
     next();
-  } catch { res.status(503).json({ error: 'Authentication service unavailable' }); }
+  }catch{res.status(503).json({error:'Authentication service unavailable'});}
+}
+export function requireOwner(req:Request,res:Response,next:NextFunction){
+  return enforceRole(req,res,next,['OWNER']);
+}
+export function requireReviewer(req:Request,res:Response,next:NextFunction){
+  return enforceRole(req,res,next,['REVIEWER']);
+}
+export function requireAuthenticated(req:Request,res:Response,next:NextFunction){
+  return enforceRole(req,res,next,['OWNER','REVIEWER']);
 }
 
 router.post('/login', async (req, res) => {
@@ -88,13 +99,13 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', requireOwner, (req, res) => {
+router.get('/me', requireAuthenticated, (req, res) => {
   const { userId, email, role, csrf } = res.locals.auth as Session;
   res.setHeader('Cache-Control', 'no-store');
   res.json({ user: { id: userId, email, role }, csrfToken: csrf });
 });
 
-router.post('/logout', requireOwner, async (req, res) => {
+router.post('/logout', requireAuthenticated, async (req, res) => {
   const db = getPool();
   const token = getSessionCookie(req);
   if (!db || !token) { res.status(503).json({ error: 'Authentication service unavailable' }); return; }
