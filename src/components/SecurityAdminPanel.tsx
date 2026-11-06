@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {authenticatedFetch} from '../services/authClient';
+import {authenticatedFetch,sensitiveFetch,verifyCurrentPassword,hasRecentVerification} from '../services/authClient';
 
 type Reviewer={id:string;email:string;full_name:string;status:'ACTIVE'|'DISABLED';active_sessions:number};
 type EventRow={id:string;event_type:string;created_at:string;revoked_session_count:number;target_user_id:string};
@@ -17,6 +17,8 @@ export function SecurityAdminPanel(){
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  const [success,setSuccess]=useState('');
+ const [password,setPassword]=useState('');
+ const [verified,setVerified]=useState(false);
  async function refresh(){
   const [staff,log]=await Promise.all([
    parse<{items:Reviewer[]}>(await authenticatedFetch('/api/security/reviewers')),
@@ -33,8 +35,17 @@ export function SecurityAdminPanel(){
    .catch(e=>{if(active)setError(e instanceof Error?e.message:'Could not load staff security records');});
   return()=>{active=false;};
  },[]);
+ async function confirmPassword(e:React.FormEvent){
+  e.preventDefault();setBusy(true);setError('');setSuccess('');
+  try{
+   await verifyCurrentPassword(password);setPassword('');setVerified(true);
+   setSuccess('Current password verified for up to five minutes.');
+  }catch(e){setVerified(false);setError(e instanceof Error?e.message:'Verification failed');}
+  finally{setBusy(false);}
+ }
  async function change(item:Reviewer,action:'status'|'revoke'){
   if(busy)return;
+  if(!verified||!hasRecentVerification()){setVerified(false);setError('Verify your current password before changing staff access.');return;}
   const newStatus=item.status==='ACTIVE'?'DISABLED':'ACTIVE';
   const message=action==='status'
    ?(newStatus==='DISABLED'?'Disable this reviewer and revoke all their sessions?':'Reactivate this reviewer and invalidate any old sessions?')
@@ -44,7 +55,7 @@ export function SecurityAdminPanel(){
   try{
    const url='/api/security/reviewers/'+encodeURIComponent(item.id)+
     (action==='status'?'/status':'/revoke-sessions');
-   const response=await authenticatedFetch(url,{
+   const response=await sensitiveFetch(url,{
     method:action==='status'?'PATCH':'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(action==='status'?{status:newStatus}:{})
@@ -64,6 +75,15 @@ export function SecurityAdminPanel(){
   {success&&<p role="status" className="text-emerald-200 text-sm">{success}</p>}
   <button type="button" onClick={()=>void refresh().catch(e=>setError(String(e)))} disabled={busy}
    className="text-cyan-300 text-sm disabled:opacity-50">Refresh security data</button>
+  <form onSubmit={confirmPassword} className="border border-slate-700 rounded-lg p-3 flex flex-wrap gap-3 items-end">
+   <label className="text-sm flex-1 min-w-48">Confirm your current password
+    <input type="password" autoComplete="current-password" value={password}
+     onChange={e=>setPassword(e.target.value)} required
+     className="mt-1 block w-full border border-slate-600 bg-slate-950 rounded p-2"/>
+   </label>
+   <button type="submit" disabled={busy} className="rounded bg-cyan-700 px-3 py-2 text-sm disabled:opacity-50">Verify password</button>
+   <span className="text-xs text-slate-400">{verified&&hasRecentVerification()?'Verification active (max 5 min)':'Verification required for changes'}</span>
+  </form>
   <div className="space-y-2">
    {reviewers.length===0&&<p className="text-slate-400 text-sm">No reviewers provisioned. Use the restricted provisioning CLI.</p>}
    {reviewers.map(item=><div key={item.id} className="rounded-lg border border-slate-700 p-3 flex flex-wrap gap-3 items-center justify-between">
