@@ -4,7 +4,7 @@ let csrfToken: string | null = null;
 export interface OwnerUser {
   id: string;
   email: string;
-  role: 'OWNER';
+  role: 'OWNER' | 'REVIEWER';
 }
 
 interface SessionResponse {
@@ -17,7 +17,7 @@ async function parseResponse(response: Response): Promise<SessionResponse> {
   const value: unknown = await response.json();
   if (!value || typeof value !== 'object' || !('user' in value) || !('csrfToken' in value)) throw new Error('Invalid session response.');
   const session = value as SessionResponse;
-  if (session.user?.role !== 'OWNER' || typeof session.csrfToken !== 'string') throw new Error('Invalid session response.');
+  if (!['OWNER','REVIEWER'].includes(session.user?.role) || typeof session.csrfToken !== 'string') throw new Error('Invalid session response.');
   csrfToken = session.csrfToken;
   return session;
 }

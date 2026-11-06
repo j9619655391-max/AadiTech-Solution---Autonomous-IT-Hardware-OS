@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { currentSession, loginOwner, logoutOwner, type OwnerUser } from '../services/authClient';
+import { ReviewerWorkspace } from './ReviewerWorkspace';
 
 interface AuthGateProps { children: React.ReactNode }
 type State = { status: 'checking' } | { status: 'logged_out'; error?: string } | { status: 'authenticated'; user: OwnerUser };
@@ -47,7 +48,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (state.status === 'checking') {
-    return <div className="min-h-screen bg-slate-950 text-slate-200 grid place-items-center" role="status">Checking secure owner session…</div>;
+    return <div className="min-h-screen bg-slate-950 text-slate-200 grid place-items-center" role="status">Checking secure session…</div>;
   }
 
   if (state.status === 'logged_out') {
@@ -55,9 +56,9 @@ export function AuthGate({ children }: AuthGateProps) {
       <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-8 shadow-xl space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-white">AadiTech Solution</h1>
-          <p className="mt-1 text-sm text-slate-400">Private Hardware OS · Owner Sign In</p>
+          <p className="mt-1 text-sm text-slate-400">Private Hardware OS · Authorized Staff Sign In</p>
         </div>
-        <label className="block text-sm font-medium">Owner email
+        <label className="block text-sm font-medium">Work email
           <input autoComplete="username" type="email" required maxLength={191} value={email} onChange={e => setEmail(e.target.value)}
             className="mt-2 w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-3 outline-none focus:border-cyan-400" />
         </label>
@@ -76,9 +77,9 @@ export function AuthGate({ children }: AuthGateProps) {
 
   return <div>
     <div className="bg-slate-950 border-b border-slate-800 text-slate-400 text-xs flex items-center justify-end gap-3 px-4 py-2">
-      <span>Signed in: {state.user.email}</span>
+      <span>Signed in: {state.user.email} · {state.user.role}</span>
       <button onClick={logout} className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Sign out</button>
     </div>
-    {children}
+    {state.user.role === 'REVIEWER' ? <ReviewerWorkspace /> : children}
   </div>;
 }
