@@ -112,6 +112,8 @@ jobs:
         run: bun run db:migrate:mfa-recovery
       - name: Run real MySQL integration tests
         run: bun run test:mysql
+      - name: Isolated HTTP authentication and MFA smoke
+        run: bun run test:auth-smoke
       - name: Read-only disposable staging readiness preflight
         env:
           STAGING_PREFLIGHT: '1'
