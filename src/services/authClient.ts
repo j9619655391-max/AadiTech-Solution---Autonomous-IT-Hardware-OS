@@ -30,12 +30,27 @@ export async function currentSession(): Promise<SessionResponse> {
   return parseResponse(await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' }));
 }
 
-export async function loginOwner(email: string, password: string): Promise<SessionResponse> {
-  return parseResponse(await fetch('/api/auth/login', {
+export interface MFAChallenge {mfaRequired:true;challengeToken:string;expiresInSeconds:number}
+export async function loginOwner(email: string, password: string): Promise<SessionResponse | MFAChallenge> {
+  const response=await fetch('/api/auth/login', {
     method: 'POST', credentials: 'same-origin', cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
-  }));
+  });
+  if(response.status===202){
+    const value=await response.json() as MFAChallenge;
+    if(value.mfaRequired!==true||!/^[A-Za-z0-9_-]{43}$/.test(value.challengeToken))
+      throw Error('Invalid MFA challenge');
+    return value;
+  }
+  return parseResponse(response);
+}
+export async function completeMFALogin(challengeToken:string,code:string):Promise<SessionResponse>{
+ return parseResponse(await fetch('/api/auth/mfa/challenge/verify',{
+  method:'POST',credentials:'same-origin',cache:'no-store',
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({challengeToken,code})
+ }));
 }
 
 export async function logoutOwner(): Promise<void> {
