@@ -34,6 +34,7 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   const headers:Record<string,string>={...extraHeaders};
   if(authorized)headers.cookie=cookie;
   if(body!==undefined)headers['content-type']='application/json';
+  if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
   if(includeCsrf&& !['GET','HEAD'].includes(method))headers['x-csrf-token']=csrf;
   const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const raw=await response.text();
@@ -92,8 +93,16 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
   assert.equal((await call('/api/quotes/drafts','POST',body,true,false)).status,403);
   assert.equal((await call('/api/quotes/drafts','POST',{...body,totalEstimate:'0.01'})).status,400);
   assert.equal((await call('/api/quotes/drafts','POST',{...body,items:[{...body.items[0],unitPrice:'0.01'}]})).status,400);
-  const created=await call('/api/quotes/drafts','POST',body);
+  const key=randomUUID();
+  const created=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
   assert.equal(created.status,201);
+  assert.equal(created.data.draftNumber,'ADQ-'+created.data.id);
+  const replay=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
+  assert.equal(replay.status,200);
+  assert.equal(replay.data.replayed,true);
+  assert.equal(replay.data.id,created.data.id);
+  assert.equal((await call('/api/quotes/drafts','POST',
+    {...body,items:[{...body.items[0],quantity:3}]},true,true,{'idempotency-key':key})).status,409);
   assert.equal(created.data.status,'DRAFT');
   assert.equal(created.data.subtotal,'3000.00');
   assert.equal(created.data.taxEstimate,'540.00');
@@ -109,8 +118,14 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
   assert.equal(updated.status,200);
   const frozen=await call('/api/quotes/drafts/'+created.data.id);
   assert.equal(frozen.data.items[0].unit_price,'1500.00');
+  const replayAfterCatalogChange=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
+  assert.equal(replayAfterCatalogChange.status,200);
+  assert.equal(replayAfterCatalogChange.data.totalEstimate,'3540.00');
   const [dbRows]=await db.query<any[]>('SELECT status,total_estimate FROM sales_quote_drafts WHERE id=?',[created.data.id]);
   assert.equal(dbRows[0].status,'DRAFT');
   assert.equal(dbRows[0].total_estimate,'3540.00');
   assert.equal((await call('/api/quotes/drafts','POST',{...body,customerId:'00000000-0000-0000-0000-000000000000'})).status,400);
+  assert.equal((await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':'bad'})).status,400);
+  const [keys]=await db.query<any[]>('SELECT COUNT(*) AS n FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,key]);
+  assert.equal(Number(keys[0].n),1);
 });
