@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { currentSession, loginOwner, logoutOwner, revokeMySessions, type OwnerUser } from '../services/authClient';
+import { currentSession, loginOwner, logoutOwner, revokeMySessions, verifyCurrentPassword, type OwnerUser } from '../services/authClient';
 import { SecurityAdminPanel } from './SecurityAdminPanel';
 import { ReviewerWorkspace } from './ReviewerWorkspace';
 
@@ -12,6 +12,9 @@ export function AuthGate({ children }: AuthGateProps) {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showRevoke, setShowRevoke] = useState(false);
+  const [revokePassword, setRevokePassword] = useState('');
+  const [revokeError, setRevokeError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -52,11 +55,14 @@ export function AuthGate({ children }: AuthGateProps) {
   async function revokeAll() {
     if (!window.confirm('Revoke all your sessions, including this one, and sign out?')) return;
     try {
+      await verifyCurrentPassword(revokePassword);
       await revokeMySessions();
       setShowSecurity(false);
+      setShowRevoke(false);
+      setRevokePassword('');
       setState({ status: 'logged_out' });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Could not revoke sessions.');
+      setRevokeError(error instanceof Error ? error.message : 'Could not revoke sessions.');
     }
   }
 
@@ -93,9 +99,18 @@ export function AuthGate({ children }: AuthGateProps) {
       <span>Signed in: {state.user.email} · {state.user.role}</span>
       {state.user.role === 'OWNER' && <button type="button" onClick={() => setShowSecurity(v => !v)}
         className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Reviewer security</button>}
-      <button type="button" onClick={() => void revokeAll()} className="rounded border border-amber-700 px-3 py-1 text-amber-200">Sign out all sessions</button>
+      <button type="button" onClick={() => {setShowRevoke(v=>!v);setRevokeError('');}} className="rounded border border-amber-700 px-3 py-1 text-amber-200">Sign out all sessions</button>
       <button onClick={logout} className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Sign out</button>
     </div>
+    {showRevoke && <form onSubmit={event => {event.preventDefault();void revokeAll();}}
+      className="mx-auto max-w-3xl border border-amber-700 p-4 bg-slate-900 text-slate-100 space-y-2">
+      <p className="text-sm">Confirm your password to revoke every active session on all devices.</p>
+      <input type="password" autoComplete="current-password" required value={revokePassword}
+        onChange={e=>setRevokePassword(e.target.value)} className="bg-slate-950 border border-slate-600 p-2 rounded w-full"
+        aria-label="Current password for session revocation"/>
+      {revokeError && <p role="alert" className="text-rose-300 text-sm">{revokeError}</p>}
+      <button type="submit" className="bg-amber-700 rounded px-4 py-2 text-sm">Verify and revoke all sessions</button>
+    </form>}
     {state.user.role === 'OWNER' && showSecurity && <div className="mx-auto max-w-6xl p-4"><SecurityAdminPanel /></div>}
     {state.user.role === 'REVIEWER' ? <ReviewerWorkspace /> : children}
   </div>;
