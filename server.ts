@@ -107,12 +107,14 @@ app.get("/api/hostinger/readiness", async (_req, res) => {
       schemaSql: hasSchema,
       pm2Config: hasEcosystem
     },
+    warning: "READINESS INFORMATION ONLY. Do not execute legacy schema.sql or any production migration from this endpoint.",
+    productionReady: false,
     quickChecklist: [
       { step: 1, title: "Create MySQL Database in Hostinger hPanel", status: dbStatus.isConfigured ? "DONE" : "PENDING" },
-      { step: 2, title: "Import database/schema.sql via phpMyAdmin", status: dbStatus.isConnected && dbStatus.tableCount > 0 ? "DONE" : "PENDING" },
+      { step: 2, title: "Apply checksum-tracked additive migrations 0001–0013 after staging backup/restore rehearsal; NEVER import legacy database/schema.sql", status: "REQUIRES_VERIFIED_STAGING_REHEARSAL" },
       { step: 3, title: "Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME in .env", status: dbStatus.isConfigured ? "DONE" : "PENDING" },
       { step: 4, title: "Configure Node.js version 18+ in Hostinger Node.js Selector", status: "READY" },
-      { step: 5, title: "Run 'npm run build' & start via PM2 / Passenger", status: "READY" }
+      { step: 5, title: "Run build and verify isolated staging MFA/browser acceptance BEFORE any production deployment", status: "NOT_VERIFIED" }
     ]
   });
 });
