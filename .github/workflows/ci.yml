@@ -102,5 +102,9 @@ jobs:
         run: bun run db:migrate:mfa
       - name: Verify MFA migration rerun
         run: bun run db:migrate:mfa
+      - name: Apply MFA event audit migration
+        run: bun run db:migrate:mfa-audit
+      - name: Verify MFA audit migration rerun
+        run: bun run db:migrate:mfa-audit
       - name: Run real MySQL integration tests
         run: bun run test:mysql
