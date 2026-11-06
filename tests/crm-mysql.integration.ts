@@ -49,7 +49,7 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   if(authorized)headers.cookie=headers.cookie??(route.startsWith('/api/quotes/reviews')?reviewerCookie:cookie);
   if(body!==undefined)headers['content-type']='application/json';
   if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
-  if(includeCsrf&& !['GET','HEAD'].includes(method))headers['x-csrf-token']=csrf;
+  if(includeCsrf&& !['GET','HEAD'].includes(method)&&!('x-csrf-token' in headers))headers['x-csrf-token']=csrf;
   if(stepUpToken && !('x-step-up-token' in headers) && ((route.startsWith('/api/security/reviewers/')&&method!=='GET') || route==='/api/auth/revoke-my-sessions'))
     headers['x-step-up-token']=stepUpToken;
   const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
