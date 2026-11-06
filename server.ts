@@ -8,6 +8,7 @@ import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
 import authRouter, { requireOwner } from "./server/auth/router";
 import crmRouter from "./server/crm/router";
 import quoteDraftRouter from "./server/quotes/router";
+import quoteReviewRouter from "./server/quotes/reviewRouter";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: "256kb" }));
 app.use("/api/auth", authRouter);
 app.use("/api/crm", crmRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
+app.use("/api/quotes/reviews", quoteReviewRouter);
 
 // Fail closed: diagnostics and AI endpoints are restricted to an authenticated
 // owner. Public health remains an intentionally minimal liveness endpoint.
