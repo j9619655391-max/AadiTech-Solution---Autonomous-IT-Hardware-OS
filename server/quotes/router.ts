@@ -198,7 +198,7 @@ router.post('/:id/revisions',async(req,res)=>{
     }
     if(provided.size!==originalById.size)throw new QuoteInputError('Revision must contain every original product');
     const rawPolicy=process.env.QUOTE_MIN_MARGIN_BPS??'1500';
-    if(!/^\\d{1,5}$/.test(rawPolicy))throw new Error('Invalid QUOTE_MIN_MARGIN_BPS configuration');
+    if(!/^\d{1,5}$/.test(rawPolicy))throw new Error('Invalid QUOTE_MIN_MARGIN_BPS configuration');
     const result=evaluateRevision(snapshot,Number(rawPolicy));
     await conn.execute(`INSERT INTO sales_quote_draft_revisions
       (id,quote_id,revision_number,actor_id,reason,subtotal,tax_estimate,total_estimate,gross_margin_bps,review_status,line_snapshot)
