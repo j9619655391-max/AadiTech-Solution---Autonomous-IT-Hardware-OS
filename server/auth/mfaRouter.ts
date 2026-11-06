@@ -3,6 +3,7 @@ import type {RowDataPacket,ResultSetHeader} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireAuthenticated,requireStepUp} from './router';
 import {hashToken,newSecret} from './crypto';
+import {reserveStepUpAttempt} from './limiter';
 import {generateTotpSecret,encryptSecret,decryptSecret,matchTotp,newRecoveryCodes} from './totp';
 
 const router=Router();
@@ -51,6 +52,11 @@ router.post('/enroll/activate',requireAuthenticated,requireStepUp,async(req,res)
   res.status(400).json({error:'A six-digit authenticator code is required'});return;
  }
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ try{
+  if(!await reserveStepUpAttempt(db,res.locals.auth.userId)){
+   res.status(429).json({error:'Too many enrollment verification attempts'});return;
+  }
+ }catch(e){error(res,e);return;}
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
