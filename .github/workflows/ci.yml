@@ -77,5 +77,9 @@ jobs:
         run: bun run db:migrate:quote-revisions
       - name: Verify quote revisions migration rerun
         run: bun run db:migrate:quote-revisions
+      - name: Apply quote review migration
+        run: bun run db:migrate:quote-reviews
+      - name: Verify quote review migration rerun
+        run: bun run db:migrate:quote-reviews
       - name: Run real MySQL integration tests
         run: bun run test:mysql
