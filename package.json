@@ -16,7 +16,8 @@
     "db:migrate:quotes": "tsx scripts/migrate-quotes.ts",
     "db:migrate:quote-idempotency": "tsx scripts/migrate-quote-idempotency.ts",
     "db:migrate:quote-revisions": "tsx scripts/migrate-quote-revisions.ts",
-    "db:migrate:quote-reviews": "tsx scripts/migrate-quote-reviews.ts"
+    "db:migrate:quote-reviews": "tsx scripts/migrate-quote-reviews.ts",
+    "db:migrate:release-holds": "tsx scripts/migrate-release-holds.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

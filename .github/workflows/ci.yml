@@ -81,5 +81,9 @@ jobs:
         run: bun run db:migrate:quote-reviews
       - name: Verify quote review migration rerun
         run: bun run db:migrate:quote-reviews
+      - name: Apply release hold migration
+        run: bun run db:migrate:release-holds
+      - name: Verify release hold migration rerun
+        run: bun run db:migrate:release-holds
       - name: Run real MySQL integration tests
         run: bun run test:mysql
