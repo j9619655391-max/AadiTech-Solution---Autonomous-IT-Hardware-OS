@@ -1,9 +1,9 @@
 // Phase 1P: real Chromium UI journey on synthetic isolated MySQL; never connect to a deployment.
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,randomBytes} from 'node:crypto';
 import {chromium} from 'playwright';
 import {getPool} from '../server/db.ts';
-import {hashPassword} from '../server/auth/crypto.ts';
+import {hashPassword,hashToken} from '../server/auth/crypto.ts';
 import {generateTotpSecret,encryptSecret,totpAt} from '../server/auth/totp.ts';
 
 if(process.env.BROWSER_E2E_CI!=='1'||process.env.CRM_TEST_DB!=='1'||
@@ -25,16 +25,25 @@ async function createUser(role){
  created.push(id);
  return {id,email,secret,role};
 }
-async function signIn(page,user){
+async function beginPasswordLogin(page,user,providedPassword=password){
  await page.getByLabel('Work email').fill(user.email);
- await page.getByLabel('Password',{exact:true}).fill(password);
+ await page.getByLabel('Password',{exact:true}).fill(providedPassword);
  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+}
+async function signIn(page,user){
+ await beginPasswordLogin(page,user);
  await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
  // An MFA challenge is not an authenticated session.
  const pending=await page.request.get(base+'/api/auth/me');
  assert.equal(pending.status(),401);
+ // Enter an invalid recovery code first: the browser must render an error, not a session.
+ const factorInput=page.getByRole('textbox',{name:'Authenticator or recovery code'});
+ await factorInput.fill('FFFFFFFFFFFFFFFFFFFF');
+ await page.getByRole('button',{name:'Verify and sign in'}).click();
+ await page.getByRole('alert').waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
  const code=totpAt(user.secret,Math.floor(Date.now()/30000));
- await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(code);
+ await factorInput.fill(code);
  await page.getByRole('button',{name:'Verify and sign in'}).click();
  await page.getByText('Signed in: '+user.email+' · '+user.role).waitFor();
  const active=await page.request.get(base+'/api/auth/me');
@@ -64,6 +73,9 @@ try{
  const page=await context.newPage();
  await page.goto(base,{waitUntil:'domcontentloaded'});
  await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
+ await beginPasswordLogin(page,owner,'Incorrect-browser-test-password');
+ await page.getByRole('alert').waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
  await signIn(page,owner);
  await page.getByRole('button',{name:'Reviewer security'}).waitFor();
  assert.equal(await page.getByRole('heading',{name:'AadiTech · Independent Reviewer'}).count(),0);
@@ -75,9 +87,33 @@ try{
  assert.equal(crm.status(),403);
  const drafts=await page.request.get(base+'/api/quotes/drafts');
  assert.equal(drafts.status(),403);
+ assert.equal((await page.request.get(base+'/api/security/reviewers')).status(),403);
+ const blockedWrite=await page.request.post(base+'/api/crm/customers',{
+  data:{},headers:{'Content-Type':'application/json'}
+ });
+ assert.equal(blockedWrite.status(),403);
  await signOut(page);
+ // Recovery-code sign-in requires a fresh password challenge. Recovery codes
+ // are hashed in MySQL and cannot authenticate twice.
+ const recovery=randomBytes(10).toString('hex').toUpperCase();
+ await db.execute('INSERT INTO auth_totp_recovery_codes (user_id,code_hash) VALUES (?,?)',
+  [reviewer.id,hashToken(reviewer.id+':'+recovery)]);
+ await beginPasswordLogin(page,reviewer);
+ await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
+ await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
+ await page.getByRole('button',{name:'Verify and sign in'}).click();
+ await page.getByText('Signed in: '+reviewer.email+' · REVIEWER').waitFor();
+ await signOut(page);
+ await beginPasswordLogin(page,reviewer);
+ await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
+ await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
+ await page.getByRole('button',{name:'Verify and sign in'}).click();
+ await page.getByRole('alert').waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
+ await page.getByRole('button',{name:'Cancel and sign in again'}).click();
+ await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
  await context.close();
- console.log('Chromium UI smoke passed: owner/reviewer MFA, role isolation and logout (synthetic CI only)');
+ console.log('Chromium UI smoke passed: password denial, OWNER/REVIEWER TOTP, recovery one-use, roles and logout');
 }finally{
  if(browserInstance)await browserInstance.close();
  // All synthetic credentials are disposed with CI database; do not print secrets.
