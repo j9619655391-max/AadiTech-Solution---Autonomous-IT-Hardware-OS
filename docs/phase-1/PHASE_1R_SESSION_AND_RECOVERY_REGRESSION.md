@@ -21,7 +21,7 @@ This increment adds Chromium browser regression scenarios for **synthetic** OWNE
 | Previously consumed recovery code | Rejected on subsequent challenge |
 | Logout | Session invalidated and UI returns to login |
 
-Tests update only synthetic test rows inside disposable CI MySQL and cleanly separate expiry/disable checks from production administration. Account reactivation in this test directly updates disposable fixture rows; **this is not an owner/admin recovery endpoint or production account procedure**.
+Tests update only synthetic test rows inside disposable CI MySQL and cleanly separate expiry/disable checks from production administration. The synthetic disable fixture models the production owner-admin lifecycle transaction (account status change plus deletion of existing sessions). The fixture reactivation directly changes a disposable test row; **these fixtures are not owner/admin APIs or production recovery procedures**. A direct database status flip without revoking sessions is not supported operationally.
 
 These checks complement existing real-HTTP and MySQL integration suites. They do not validate production TLS, physical authenticators, password manager compatibility, cross-device session concurrency, screenshot accessibility, MFA lost-device recovery, or provider availability.
 
