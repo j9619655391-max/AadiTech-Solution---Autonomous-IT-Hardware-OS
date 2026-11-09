@@ -29,6 +29,8 @@ jobs:
           exit 0
       - name: Generate machine-readable dependency risk triage
         run: node scripts/triage-dependencies.mjs dependency-audit.json dependency-triage.json
+      - name: Block unreviewed new or escalated dependency advisories
+        run: node scripts/check-dependency-baseline.mjs dependency-audit.json dependency-triage.json docs/security/dependency-advisory-baseline.json
       - name: Upload dependency audit for human triage
         if: always()
         uses: actions/upload-artifact@v4
@@ -37,6 +39,7 @@ jobs:
           path: |
             dependency-audit.json
             dependency-triage.json
+            dependency-baseline-status.json
           if-no-files-found: warn
       - name: Record architecture blockers (non-gating)
         if: always()
