@@ -19,6 +19,21 @@ jobs:
         run: bun run test
       - name: Build
         run: bun run build
+      - name: Audit dependency advisories (non-gating, no auto-upgrades)
+        if: always()
+        run: |
+          set +e
+          bun audit --json > dependency-audit.json
+          exit_code=$?
+          echo "Dependency advisory audit exit status: $exit_code"
+          exit 0
+      - name: Upload dependency audit for human triage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: dependency-audit.json
+          if-no-files-found: warn
       - name: Record architecture blockers (non-gating)
         if: always()
         run: node scripts/audit-baseline.mjs
@@ -112,6 +127,10 @@ jobs:
         run: bun run db:migrate:mfa-recovery
       - name: Run real MySQL integration tests
         run: bun run test:mysql
+      - name: Verify bounded authentication retention on disposable MySQL
+        run: bun run test:retention-mysql
+      - name: Retention report defaults to read-only dry run
+        run: bun run auth:retention
       - name: Isolated HTTP authentication and MFA smoke
         run: bun run test:auth-smoke
       - name: Chromium browser MFA / role smoke (isolated CI only)

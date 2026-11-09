@@ -26,7 +26,9 @@
     "db:migrate:mfa-audit": "tsx scripts/migrate-mfa-audit.ts",
     "db:migrate:mfa-recovery": "tsx scripts/migrate-mfa-recovery.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
-    "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts"
+    "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
+    "auth:retention": "tsx scripts/auth-retention.ts",
+    "test:retention-mysql": "tsx --test tests/auth-retention-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
