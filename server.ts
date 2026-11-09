@@ -12,12 +12,19 @@ import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
 import securityAdminRouter from "./server/security/adminRouter";
 import mfaRouter from "./server/auth/mfaRouter";
+import {resolveDeploymentSecurity,securityTransportMiddleware} from "./server/security/deploymentGuards";
 
 dotenv.config();
 
+// Production startup fails closed unless the real TLS ingress and proxy boundary
+// are explicitly configured. Development and disposable CI keep HTTP loopback.
+const deploymentSecurity = resolveDeploymentSecurity(process.env);
 const app = express();
 const PORT = 3000;
-
+app.disable("x-powered-by");
+app.set("trust proxy", deploymentSecurity.trustedProxyCidrs.length
+  ? deploymentSecurity.trustedProxyCidrs : false);
+app.use(securityTransportMiddleware(deploymentSecurity));
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
@@ -344,8 +351,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Autonomous IT Hardware OS server running at http://0.0.0.0:${PORT}`);
+  app.listen(PORT, deploymentSecurity.bindHost, () => {
+    console.log(`AadiTech OS listening on ${deploymentSecurity.bindHost}:${PORT} (production TLS ingress enforced: ${deploymentSecurity.httpsRequired})`);
   });
 }
 

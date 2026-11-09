@@ -24,6 +24,9 @@ The server now configures Express `trust proxy` with the precise allowlisted CID
 
 ## CI evidence and test plan
 
+`bun run deployment:preflight` is an opt-in, **read-only and no-network** configuration contract check (requires `DEPLOYMENT_PREFLIGHT=1`). It reports only sanitized booleans and a trusted-proxy entry count. The CI baseline executes it with synthetic non-production placeholders; the check does not verify that a real reverse proxy or TLS certificate exists.
+
+
 Unit tests assert invalid production configurations fail, CIDRs cannot be broad/hostnames, untrusted forwarded headers do not force HTTPS or spoof client IP, only an explicitly trusted loopback proxy is accepted, and spoofed mixed proto is rejected. Existing CI also checks TypeScript, Bun patch audit, MySQL, MFA, retention, Chromium and read-only staging preflight. Tests use synthetic configuration only; no live infrastructure is contacted.
 
 **Before deployment** independently validate the actual Hostinger ingress IP, header rewrite behavior, public listener isolation, host firewall, TLS certificate, HSTS suitability for host domains, provider MySQL CA, MFA enrollment/recovery, encrypted backup+restore and real HTTPS browser tests. Security owner must sign off. No production migration, customer send, quote dispatch, merge or deployment is authorized.

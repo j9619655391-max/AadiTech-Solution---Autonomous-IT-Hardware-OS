@@ -28,7 +28,8 @@
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",
-    "test:retention-mysql": "tsx --test tests/auth-retention-mysql.integration.ts"
+    "test:retention-mysql": "tsx --test tests/auth-retention-mysql.integration.ts",
+    "deployment:preflight": "tsx scripts/deployment-preflight.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
