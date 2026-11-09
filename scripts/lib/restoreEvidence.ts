@@ -37,6 +37,12 @@ export function evaluateRestoreEvidence(e:RestoreEvidence,o:Objectives){
   rpoMinutes=(Date.parse(e.sourceAsOf)-Date.parse(e.recoveryPointAsOf))/60000;
   if(rtoMinutes<0||rtoMinutes>o.maxRtoMinutes)problems.push('RTO exceeded or time sequence invalid');
   if(rpoMinutes<0||rpoMinutes>o.maxRpoMinutes)problems.push('RPO exceeded or time sequence invalid');
+  if(Date.parse(e.sourceAsOf)>Date.parse(e.backupCompletedAt))
+   problems.push('Source snapshot timestamp is after backup completion');
+  if(Date.parse(e.recoveryPointAsOf)>Date.parse(e.restoreStartedAt))
+   problems.push('Recovery point is after restore start');
+  if(Date.parse(e.restoreCompletedAt)<Date.parse(e.backupCompletedAt))
+   problems.push('Restore completion is earlier than backup completion');
   if(Date.parse(e.restoreStartedAt)<Date.parse(e.backupCompletedAt))
    problems.push('Restore began before backup completed');
   if(Date.parse(e.reviewerSignoffAt)<Date.parse(e.restoreCompletedAt))
