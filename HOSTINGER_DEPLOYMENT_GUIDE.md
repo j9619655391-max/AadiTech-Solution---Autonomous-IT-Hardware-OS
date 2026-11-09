@@ -1,107 +1,38 @@
-# IT Hardware Platform - Hostinger Business Shared Web Hosting Deployment Guide
+# AadiTech Solution — Hostinger staging security acceptance guide (Phase 1W)
 
-This guide explains how to deploy **IT Hardware Platform** on a **Hostinger Business Shared Web Hosting** plan with **MySQL** database (managed via phpMyAdmin).
+**This is a gated operational review guide, NOT permission or instructions to deploy to a real site.** Phase 1W code is on a development branch in a **Draft PR**. No production migration, Hostinger configuration change, external dispatch or real account provisioning has taken place.
 
----
+## Stop: legacy instructions are unsafe
 
-## 📋 Hostinger Environment Overview
+Do **not** import or execute `database/schema.sql` on an existing database. The legacy demo schema contains seed/example objects and is NOT an upgrade path for the authenticated CRM/quote system. The legacy schema download API is disabled (HTTP 410). Use only checksum-tracked additive migrations 0001–0013 **after** a separately authorized encrypted backup/restore rehearsal. Do not install demo/master passwords or copied credentials.
 
-| Item | Details |
-| :--- | :--- |
-| **Hosting Plan** | Hostinger Business Web Hosting / Cloud Startup |
-| **Control Panel** | Hostinger hPanel |
-| **Web Server** | LiteSpeed Enterprise (uses `.htaccess`) |
-| **Database** | MySQL 8.0+ / MariaDB 10.4+ with phpMyAdmin |
-| **Runtime** | Node.js (via Hostinger Node.js Selector) or Static Frontend + Node API |
-| **App Name** | IT Hardware Platform (for AadiTech Solution) |
+The old deployment guide incorrectly suggested importing the legacy schema and configuring MySQL with TLS disabled. That advice is **superseded and withdrawn**. Do not copy old screenshots, YAML or configuration into a live service.
 
----
+## Release gates (manual — all currently NOT VERIFIED)
 
-## 🚀 Step 1: Create MySQL Database in Hostinger hPanel
+1. **Change authority:** Project owner, engineering approver and independent security reviewer approve the specific environment, deployment scope and rollback ticket. Confirm business outage constraints; PR must remain Draft until approvals.
+2. **Hosting capability:** Independently verify the actual hosting plan permits the required persistent Node.js runtime, trusted reverse-proxy headers, network restrictions and TLS. Do not assume a particular hPanel product tier, proxy address, document root or Node runtime is supported.
+3. **Ingress isolation:** Obtain **verified** actual ingress addresses from the provider. Configure proxy to replace client-supplied `X-Forwarded-For` and `X-Forwarded-Proto`. Prevent clients from connecting directly to the application listener. Only then set the explicit trusted CIDRs; NEVER set Express `trust proxy=true` or trust whole hosting networks.
+4. **HTTPS and environment:** Provision valid external HTTPS certificate and secure cookies. Set `APP_URL` to the HTTPS origin, `APP_REQUIRE_HTTPS=true`, narrow `APP_TRUSTED_PROXY_CIDRS`, verified `APP_BIND_HOST` (loopback by default), and `NODE_ENV=production`. Public binding requires an explicit documented firewall and `APP_ALLOW_PUBLIC_BIND=true`; avoid it whenever possible.
+5. **MySQL and MFA:** Require certificate-verified `DB_SSL=true`, provider-approved trusted CA bundle where needed, secure DB credentials, a consistent 32-byte `MFA_ENCRYPTION_KEY` securely backed up, and `MFA_REQUIRE_PRIVILEGED=true`. Securely enroll active OWNER/REVIEWER accounts in staging first; demonstrate device loss handling without introducing insecure bypasses.
+6. **Encrypted recovery drill:** Independently witness a real encrypted backup restore into a **brand-new isolated staging** database, reconcile record counts and hashes and measure actual RTO/RPO. The proposed 60-minute RTO / 5-minute RPO are only planning objectives. No real restore has yet been performed in this project workflow.
+7. **Staging acceptance:** Run the isolated staging preflight with explicit staging target safety variables, demonstrate real HTTPS browser MFA login, role/CSRF restrictions, session revocation and audit controls using disposable identities, confirm secure response headers and test origin spoof rejection. Run lockfile-frozen CI and review dependency audit artifacts.
+8. **Commercial safety:** Verify the quote outbox remains `HELD` / `DISABLED` with no dispatch workers, invoice/order automation, payment integration, supplier ordering or customer sends. Require distinct separate business approval for each future outbound capability.
 
-1. Log into your **Hostinger hPanel** (`hpanel.hostinger.com`).
-2. Go to **Databases** ➔ **MySQL Databases**.
-3. Create a new database:
-   - **MySQL Database Name**: e.g. `u123456789_ithardware`
-   - **MySQL Username**: e.g. `u123456789_admin`
-   - **Password**: Create a strong password (save this for `.env`)
-4. Click **Create**.
-5. Note the details:
-   - **Host**: `localhost` (in Hostinger, the database is on localhost)
-   - **Port**: `3306`
+## Read-only configuration contract checker
 
----
+After provisioning test-only environment variables in a restricted staging shell, the preflight command is:
 
-## 🗄️ Step 2: Import Database Schema into phpMyAdmin
-
-1. In hPanel ➔ **Databases**, find your new database and click **Enter phpMyAdmin**.
-2. Inside phpMyAdmin, click on your database name in the left sidebar.
-3. Click the **Import** tab in the top menu.
-4. Click **Choose File** and upload `/database/schema.sql` from this project.
-5. Click **Import / Go** at the bottom.
-6. ✅ All 10+ tables (`app_users`, `company_profiles`, `customers`, `leads`, `products_catalog`, `quotations`, `sales_orders`, `purchase_orders`, `gem_tenders`, `audit_logs`) will be created along with initial AadiTech Solution master credentials.
-
----
-
-## ⚙️ Step 3: Configure Environment Variables (`.env`)
-
-In your Hostinger app directory (or via File Manager / SSH):
-Create or update the `.env` file:
-
-```env
-NODE_ENV=production
-PORT=3000
-
-# Hostinger MySQL Database Credentials
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=u123456789_admin
-DB_PASSWORD=your_secure_mysql_password
-DB_NAME=u123456789_ithardware
-DB_SSL=false
-
-# Gemini AI Key (for Solution BOM & autonomous AI agents)
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Telegram Bot Hub (for Real-time Profit Margin Exception approvals)
-TELEGRAM_BOT_TOKEN=your_bot_father_token
-TELEGRAM_ADMIN_CHAT_ID=your_telegram_id_or_group_id
+```bash
+DEPLOYMENT_PREFLIGHT=1 bun run deployment:preflight
 ```
 
----
+It checks the *declared configuration only* and prints a sanitized report. It does **not** connect to Hostinger, MySQL, TLS, DNS, proxies, backing stores or external apps. **Passing this test cannot certify ingress isolation or production readiness.** Production startup itself now refuses invalid security environment settings, and middleware rejects non-HTTPS or malformed forwarded-protocol requests without open redirects.
 
-## 📦 Step 4: Hostinger Node.js App Setup (hPanel)
+Inspect `docs/phase-1/PHASE_1W_HTTPS_PROXY_HARDENING.md` for the complete contract and test evidence.
 
-Hostinger Business Plan includes a **Node.js Selector**:
+## Rollback and operator evidence
 
-1. In hPanel, search for **Node.js** in the search bar.
-2. Click **Create Application**:
-   - **Node.js version**: Choose `18.x`, `20.x`, or `22.x`.
-   - **Application mode**: `Production`.
-   - **Application root**: `public_html` (or a subdomain folder like `it-hardware`).
-   - **Application startup file**: `dist/server.cjs`
-3. Upload your project files (via Git, File Manager, or SSH).
-4. Run npm install and build:
-   ```bash
-   npm install
-   npm run build
-   ```
-5. Click **Start App** / **Restart App** in hPanel.
+Record approved change ticket, before/after dependency hashes, infrastructure reviewer confirmation, reverse proxy replacement rules, verified source CIDRs, certificate trust chain, app bind and firewall evidence, staging browser/test transcripts, restore time, backup location, two independent sign-offs and secure teardown. Keep private evidence out of the repository. Roll back by restoring the previously approved **application artifact and config** after human review; never drop tables, import legacy schema or edit production encryption keys as a routine rollback.
 
----
-
-## 🌐 Step 5: LiteSpeed / Apache Routing (`.htaccess`)
-
-The included `/public/.htaccess` file automatically handles:
-- **HTTPS Redirection**: Forces SSL encryption across all routes.
-- **SPA Fallback**: Ensures client-side routing works smoothly without 404 errors on browser page reloads.
-- **Security Headers**: Blocks direct browser access to `.env` and `schema.sql`.
-
----
-
-## 🔍 Verification & Diagnostics
-
-Once deployed on your Hostinger domain, you can check system health:
-- `https://yourdomain.com/api/health` ➔ Checks server and AI key status.
-- `https://yourdomain.com/api/db/status` ➔ Confirms MySQL connection and shows table count.
-- `https://yourdomain.com/api/hostinger/readiness` ➔ Live checklist of deployment readiness.
+**Status: NOT PRODUCTION READY.** Draft PR only, main branch unchanged, external services and customer communications disabled.
