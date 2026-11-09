@@ -122,7 +122,19 @@ try{
  await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
  await page.getByRole('button',{name:'Verify and sign in'}).click();
  await page.getByText('Signed in: '+reviewer.email+' · REVIEWER').waitFor();
- await signOut(page);
+ // Disabling a staff account must block even an otherwise valid session.
+ await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewer.id]);
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
+ await beginPasswordLogin(page,reviewer);
+ await page.getByRole('alert').waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
+ // Reactivation does not reinstate existing sessions or restore used codes.
+ await db.execute("UPDATE auth_users SET status='ACTIVE' WHERE id=? AND role='REVIEWER'",[reviewer.id]);
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
  await beginPasswordLogin(page,reviewer);
  await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
  await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
