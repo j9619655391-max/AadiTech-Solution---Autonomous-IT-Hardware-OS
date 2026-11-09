@@ -43,3 +43,7 @@ Do not upload credentials, customers' records, raw MFA material, encrypted backu
 - Add controlled real-device/browser staging suite only after isolated staging infrastructure and security approval.
 - Review session/event retention and stale challenge cleanup with measured workload.
 - Run a separate dependency audit/security review; CI testing alone does not constitute production readiness.
+
+## Follow-on Phase 1S
+
+Phase 1S adds a CI-only dry-run-first expired-auth retention tool, non-gating dependency advisory artifact and stricter synthetic recovery evidence chronology. See [PHASE_1S_RETENTION_AND_DEPENDENCY_REVIEW.md](./PHASE_1S_RETENTION_AND_DEPENDENCY_REVIEW.md). No production cleanup has been enabled.
