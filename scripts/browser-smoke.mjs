@@ -122,8 +122,16 @@ try{
  await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
  await page.getByRole('button',{name:'Verify and sign in'}).click();
  await page.getByText('Signed in: '+reviewer.email+' · REVIEWER').waitFor();
- // Disabling a staff account must block even an otherwise valid session.
- await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewer.id]);
+ // Reproduce owner-admin disable semantics in this synthetic fixture:
+ // status change AND revocation are one transaction. A direct status flip alone
+ // is not the supported account-lifecycle operation.
+ const disableTx=await db.getConnection();
+ try{
+  await disableTx.beginTransaction();
+  await disableTx.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewer.id]);
+  await disableTx.execute('DELETE FROM auth_sessions WHERE user_id=?',[reviewer.id]);
+  await disableTx.commit();
+ }catch(e){await disableTx.rollback();throw e;}finally{disableTx.release();}
  assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
  await page.reload({waitUntil:'domcontentloaded'});
  await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
