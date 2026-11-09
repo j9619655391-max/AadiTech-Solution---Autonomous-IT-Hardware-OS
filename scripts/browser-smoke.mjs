@@ -92,12 +92,31 @@ try{
   data:{},headers:{'Content-Type':'application/json'}
  });
  assert.equal(blockedWrite.status(),403);
- await signOut(page);
+ // Simulate reviewer session expiry in the disposable MySQL database. The
+ // next page load must land on login; no stale authenticated UI is allowed.
+ await db.execute('UPDATE auth_sessions SET expires_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 MINUTE) WHERE user_id=?',
+  [reviewer.id]);
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Reviewer security'}).count(),0);
  // Recovery-code sign-in requires a fresh password challenge. Recovery codes
  // are hashed in MySQL and cannot authenticate twice.
  const recovery=randomBytes(10).toString('hex').toUpperCase();
  await db.execute('INSERT INTO auth_totp_recovery_codes (user_id,code_hash) VALUES (?,?)',
   [reviewer.id,hashToken(reviewer.id+':'+recovery)]);
+ await beginPasswordLogin(page,reviewer);
+ await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
+ // Force the pending challenge to expire; even a correct recovery code must
+ // not create a session, and must remain unused for the next valid challenge.
+ await db.execute('UPDATE auth_mfa_challenges SET expires_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 MINUTE) WHERE user_id=?',
+  [reviewer.id]);
+ await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
+ await page.getByRole('button',{name:'Verify and sign in'}).click();
+ await page.getByRole('alert').waitFor();
+ assert.equal((await page.request.get(base+'/api/auth/me')).status(),401);
+ await page.getByRole('button',{name:'Cancel and sign in again'}).click();
+ await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
  await beginPasswordLogin(page,reviewer);
  await page.getByRole('heading',{name:'Authenticator verification'}).waitFor();
  await page.getByRole('textbox',{name:'Authenticator or recovery code'}).fill(recovery);
