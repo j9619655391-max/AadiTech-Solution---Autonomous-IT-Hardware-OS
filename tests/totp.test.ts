@@ -20,7 +20,7 @@ test('AES-GCM authentication roundtrip and failure on tampering',()=>{
   assert.notEqual(encrypted,secret);
   assert.equal(decryptSecret(encrypted),secret);
   const parts=encrypted.split('.');
-  parts[2]='A'+parts[2].slice(1);
+  parts[2]=(parts[2][0]==='A'?'B':'A')+parts[2].slice(1); // always modify ciphertext
   assert.throws(()=>decryptSecret(parts.join('.')));
   delete process.env.MFA_ENCRYPTION_KEY;
   assert.throws(()=>encryptSecret(secret),/MFA_ENCRYPTION_KEY/);
