@@ -35,3 +35,7 @@ The synthetic restore-evidence evaluator rejects impossible chronology, includin
 3. Review the dependency audit artifact and open risk-treatment tickets for significant findings. Never interpret the non-gating audit as clean or passing automatically.
 4. Perform independently witnessed encrypted backup and actual restore with TLS, MFA key backup, data reconciliation, real-browser HTTPS checks and **measured** RTO/RPO against approved objectives (60/5 minutes are planning assumptions only).
 5. Maintain customer quote outbox in HELD/DISABLED state. Do not merge/deploy without explicit business/security authorization.
+
+## Phase 1T follow-up
+
+The latest Phase 1T triage identifies 11 concrete advisories from GitHub Actions, adds manual retention-policy evidence and isolated recovery review gates. Read [PHASE_1T_SECURITY_TRIAGE_AND_RECOVERY_GATES.md](./PHASE_1T_SECURITY_TRIAGE_AND_RECOVERY_GATES.md). These governance checks do not enable live data retention or certify a real restore.
