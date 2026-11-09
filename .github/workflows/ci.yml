@@ -27,12 +27,16 @@ jobs:
           exit_code=$?
           echo "Dependency advisory audit exit status: $exit_code"
           exit 0
+      - name: Generate machine-readable dependency risk triage
+        run: node scripts/triage-dependencies.mjs dependency-audit.json dependency-triage.json
       - name: Upload dependency audit for human triage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dependency-audit
-          path: dependency-audit.json
+          path: |
+            dependency-audit.json
+            dependency-triage.json
           if-no-files-found: warn
       - name: Record architecture blockers (non-gating)
         if: always()
