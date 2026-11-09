@@ -4,8 +4,9 @@ import {getDatabaseConfig} from '../server/db';
 import {assertSafeRetentionEnvironment,runRetention} from './lib/authRetention';
 
 async function main(){
- const apply=process.argv.includes('--apply');
- if(process.argv.some(x=>x!=='--apply'))
+ const args=process.argv.slice(2);
+ const apply=args.includes('--apply');
+ if(args.some(x=>x!=='--apply'))
   throw Error('Supported option: --apply (disposable test database ONLY)');
  assertSafeRetentionEnvironment(process.env,apply);
  const config=getDatabaseConfig();
