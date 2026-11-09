@@ -31,6 +31,8 @@ jobs:
         run: node scripts/triage-dependencies.mjs dependency-audit.json dependency-triage.json
       - name: Block unreviewed new or escalated dependency advisories
         run: node scripts/check-dependency-baseline.mjs dependency-audit.json dependency-triage.json docs/security/dependency-advisory-baseline.json
+      - name: Verify patched dependency versions and zero critical/high advisory matches
+        run: node scripts/verify-patched-dependencies.mjs
       - name: Upload dependency audit for human triage
         if: always()
         uses: actions/upload-artifact@v4
