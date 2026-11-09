@@ -25,5 +25,7 @@ test('rehearsal evidence fails closed for unverified checks, invalid target or t
  assert.equal(evaluateRestoreEvidence({...sample,restoreCompletedAt:'2026-11-06T12:40:00Z'},{maxRtoMinutes:60,maxRpoMinutes:5}).accepted,false);
  assert.equal(evaluateRestoreEvidence({...sample,recoveryPointAsOf:'2026-11-06T08:00:00Z'},{maxRtoMinutes:60,maxRpoMinutes:5}).accepted,false);
  assert.equal(evaluateRestoreEvidence({...sample,reviewerSignoffAt:'2026-11-06T09:00:00Z'},{maxRtoMinutes:60,maxRpoMinutes:5}).accepted,false);
+ assert.equal(evaluateRestoreEvidence({...sample,sourceAsOf:'2026-11-06T11:00:00Z'},{maxRtoMinutes:60,maxRpoMinutes:5}).accepted,false);
+ assert.equal(evaluateRestoreEvidence({...sample,recoveryPointAsOf:'2026-11-06T09:20:00Z',sourceAsOf:'2026-11-06T09:25:00Z'},{maxRtoMinutes:60,maxRpoMinutes:5}).accepted,false);
  assert.throws(()=>evaluateRestoreEvidence(sample,{maxRtoMinutes:0,maxRpoMinutes:5}));
 });
