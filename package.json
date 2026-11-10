@@ -29,7 +29,10 @@
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",
     "test:retention-mysql": "tsx --test tests/auth-retention-mysql.integration.ts",
-    "deployment:preflight": "tsx scripts/deployment-preflight.ts"
+    "deployment:preflight": "tsx scripts/deployment-preflight.ts",
+    "staging:https-probe": "tsx scripts/staging-https-probe.ts",
+    "staging:acceptance-review": "tsx scripts/review-staging-acceptance.ts",
+    "test:staging-security": "tsx --test tests/staging-https-probe.test.ts tests/staging-acceptance.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -19,6 +19,8 @@ jobs:
         run: bun run test
       - name: Build
         run: bun run build
+      - name: Test staging HTTPS probe and independent sign-off evidence gates (offline only)
+        run: bun run test:staging-security
       - name: Validate fail-closed production configuration with synthetic values
         env:
           DEPLOYMENT_PREFLIGHT: '1'
