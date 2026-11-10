@@ -10,9 +10,10 @@ An operator must approve a real *isolated* staging hostname and change ticket be
       STAGING_CHANGE_TICKET=CHG-STAGING-APPROVED \
       STAGING_HTTPS_ORIGIN=https://staging.YOUR-APPROVED-HOST \
       STAGING_APPROVED_HOST=staging.YOUR-APPROVED-HOST \
+      STAGING_APPROVED_IPV4S=VERIFIED_PUBLIC_IPV4
       bun run staging:https-probe
 
-The hostname above is a **placeholder**, not an endpoint tested here. The script rejects production-looking hosts, non-HTTPS, IP literals, localhost, reserved example/test domains, credentials, paths and nonstandard ports. An exact approved hostname and ticket plus two independent opt-in flags are mandatory. No actual hostname has been supplied or probed.
+The hostname above is a **placeholder**, not an endpoint tested here. The script rejects production-looking hosts, non-HTTPS, IP literals, localhost, reserved example/test domains, credentials, paths and nonstandard ports. An exact approved hostname, **matching public IPv4 DNS inventory**, change ticket and two independent opt-in flags are mandatory. The probe verifies DNS answers against that inventory and pins all three TLS connections to one approved address, while preserving the approved SNI hostname for certificate validation. IPv6/private-only staging environments are intentionally unsupported until a separately reviewed transport policy is designed. No actual hostname has been supplied or probed.
 
 The HSTS max-age must be at least 31,536,000 seconds (one year); lower values fail the gate. The probe performs exactly three **anonymous, read-only HTTPS GET** requests: /api/health, /api/auth/me and /api/health with deliberately forged X-Forwarded-Proto and X-Forwarded-For headers. Node verifies TLS certificate trust and hostname. Redirects are not followed, each request has a 5-second timeout and response content is limited to 16 KiB. HTTP 200/401/200, HSTS, nosniff, no X-Powered-By and authentication no-store are checked. It prints sanitized observations, not cookies, credentials, or response bodies.
 
@@ -22,11 +23,11 @@ The spoofed-header observation alone **does not independently verify** client-IP
 
 An approved operator may submit a **private** local JSON evidence package (never add it to GitHub or CI):
 
-    STAGING_ACCEPTANCE_REVIEW=YES bun run staging:acceptance-review /private/path/staging-evidence.json
+    STAGING_ACCEPTANCE_REVIEW=YES bun run staging:acceptance-review /private/path/staging-evidence.json /private/path/evidence-manifest.json /private/evidence-root
 
 The package must contain an authorized change ticket, exact HTTPS staging origin, probe report (observed within 24 hours), distinct operator/security/infrastructure reviewers and separate restore witness, private approval references, reverse-proxy header overwrite and network isolation evidence, verified MySQL CA, real HTTPS device MFA/browser evidence, outbound dispatch blocked proof, and actual encrypted backup/restore results measured against the approved RTO/RPO objectives.
 
-Field/chronology consistency failures, mixed change tickets, stale observations, absent external infrastructure attestations or signer role conflicts reject the submission.
+Field/chronology consistency failures, mixed change tickets, stale observations, absent external infrastructure attestations or signer role conflicts reject the submission. Phase 1Y also requires matching SHA-256 digests for 12 private evidence files, stored outside the source checkout. These checks do **not** prove the truth of reported observations or the identity of a signer.
 
 **A JSON document can be falsified.** Even apparently complete evidence always returns independentIdentityAndSignaturesVerified:false, providerInfrastructureVerified:false, actualRestoreIndependentlyVerified:false and productionReleaseAuthorized:false. The evaluator does not verify actual signatures, restore bytes, certificate chain on any live host or firewall settings. Independent humans must validate underlying evidence outside this repository.
 
