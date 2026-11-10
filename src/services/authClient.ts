@@ -55,14 +55,19 @@ export async function completeMFALogin(challengeToken:string,code:string):Promis
 
 export async function logoutOwner(): Promise<void> {
   try {
-    if (!csrfToken) return;
+    // Never silently signal sign-out without contacting the server. Rehydrate
+    // the CSRF token from the current verified session if local state was lost.
+    if (!csrfToken) await currentSession();
+    if (!csrfToken) throw new Error('Unable to verify current session for sign out.');
     const response = await fetch('/api/auth/logout', {
       method: 'POST', credentials: 'same-origin',
-      headers: { 'x-csrf-token': csrfToken }
+      headers: { 'x-csrf-token': csrfToken },cache:'no-store'
     });
-    if (!response.ok) throw new Error('Logout could not be confirmed by the server. Please try again.');
+    if (response.status !== 204)
+      throw new Error('Server did not confirm session revocation. Please retry.');
   } finally {
-    // Do not retain a CSRF secret after logout has been attempted.
+    // A failed request cannot be treated as a completed sign-out. AuthGate
+    // rechecks /me to show the still-active session if needed.
     csrfToken = null;
     stepUpToken = null;
     stepUpExpiresAt = 0;

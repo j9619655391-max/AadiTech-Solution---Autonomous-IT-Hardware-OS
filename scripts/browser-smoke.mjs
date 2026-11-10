@@ -53,10 +53,14 @@ async function signIn(page,user){
  return data;
 }
 async function signOut(page){
+ const confirmed=page.waitForResponse(response=>
+  response.url().endsWith('/api/auth/logout')&&response.request().method()==='POST');
  await page.getByRole('button',{name:'Sign out',exact:true}).click();
+ const logoutReply=await confirmed;
+ assert.equal(logoutReply.status(),204,'Backend must confirm session revocation');
  await page.getByRole('heading',{name:'AadiTech Solution'}).waitFor();
  const loggedOut=await page.request.get(base+'/api/auth/me');
- assert.equal(loggedOut.status(),401);
+ assert.equal(loggedOut.status(),401,'Logout must invalidate server-side session');
 }
 
 try{

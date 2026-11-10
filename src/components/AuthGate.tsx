@@ -18,6 +18,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const [showRevoke, setShowRevoke] = useState(false);
   const [revokePassword, setRevokePassword] = useState('');
   const [revokeError, setRevokeError] = useState('');
+  const [logoutError, setLogoutError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -62,11 +63,20 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   async function logout() {
+    setLogoutError('');
     try {
       await logoutOwner();
       setState({ status: 'logged_out' });
-    } catch (error) {
-      setState({ status: 'logged_out', error: error instanceof Error ? error.message : 'Could not verify logout.' });
+    } catch {
+      // Never display a successful logout if the server may still have an
+      // authenticated session. Recover CSRF in case the request can be retried.
+      try {
+        const session = await currentSession();
+        setState({ status: 'authenticated', user: session.user });
+        setLogoutError('Sign out was not confirmed. Your session is still active. Please retry.');
+      } catch {
+        setState({ status: 'logged_out', error: 'Could not confirm sign out. Please verify your sessions before leaving this device.' });
+      }
     }
   }
 
@@ -136,6 +146,7 @@ export function AuthGate({ children }: AuthGateProps) {
       <button type="button" onClick={() => {setShowRevoke(v=>!v);setRevokeError('');}} className="rounded border border-amber-700 px-3 py-1 text-amber-200">Sign out all sessions</button>
       <button onClick={logout} className="rounded border border-slate-700 px-3 py-1 text-slate-200 hover:border-cyan-500">Sign out</button>
     </div>
+    {logoutError && <p role="alert" className="border border-amber-700 bg-amber-950 text-amber-200 p-3 text-sm">{logoutError}</p>}
     {showMFA && <div className="p-4"><MFASettings /></div>}
     {showRevoke && <form onSubmit={event => {event.preventDefault();void revokeAll();}}
       className="mx-auto max-w-3xl border border-amber-700 p-4 bg-slate-900 text-slate-100 space-y-2">
