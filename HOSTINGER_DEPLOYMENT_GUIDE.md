@@ -31,6 +31,10 @@ It checks the *declared configuration only* and prints a sanitized report. It do
 
 Inspect `docs/phase-1/PHASE_1W_HTTPS_PROXY_HARDENING.md` for the complete contract and test evidence.
 
+## Phase 1X staging acceptance tooling
+
+Phase 1X adds an opt-in, certificate-validating anonymous staging HTTPS probe and a separate local private-evidence review gate. See `docs/phase-1/PHASE_1X_STAGING_SECURITY_ACCEPTANCE.md` for the exact target allowlist, approval flags, manual review requirements and limitations. **Do not run against production** or infer that automated staging acceptance has occurred. No live staging host was contacted for the Phase 1X CI run.
+
 ## Rollback and operator evidence
 
 Record approved change ticket, before/after dependency hashes, infrastructure reviewer confirmation, reverse proxy replacement rules, verified source CIDRs, certificate trust chain, app bind and firewall evidence, staging browser/test transcripts, restore time, backup location, two independent sign-offs and secure teardown. Keep private evidence out of the repository. Roll back by restoring the previously approved **application artifact and config** after human review; never drop tables, import legacy schema or edit production encryption keys as a routine rollback.

@@ -36,6 +36,8 @@ test('probe assesses cert, HSTS, no-store, no branding and overwritten spoofed p
  assert.equal(checkProbeObservations(obs(200),obs(401),obs(403)).observedChecksPassed,false);
  assert.equal(checkProbeObservations({...obs(200),tlsPeerAuthorized:false},obs(401),obs(200)).observedChecksPassed,false);
  assert.equal(checkProbeObservations(obs(200),{...obs(401),headers:{}},obs(200)).observedChecksPassed,false);
+ assert.equal(checkProbeObservations({...obs(200),headers:{...headers,
+  'strict-transport-security':'max-age=30000000'}},obs(401),obs(200)).observedChecksPassed,false);
 });
 test('staging probe can use a mocked fetcher, never live network in tests',async()=>{
  const paths:string[]=[];

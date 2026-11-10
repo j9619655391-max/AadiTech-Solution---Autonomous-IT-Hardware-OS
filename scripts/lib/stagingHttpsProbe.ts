@@ -45,7 +45,8 @@ export function checkProbeObservations(health:ProbeObservation,auth:ProbeObserva
  if(spoofed.status!==200)failures.push('Ingress did not overwrite forged forwarded protocol');
  for(const [name,observation] of [['health',health],['auth',auth],['spoofed',spoofed]] as const){
   const hsts=observation.headers['strict-transport-security'];
-  if(typeof hsts!=='string'||!/max-age=(31536000|[3-9]\d{7,})/.test(hsts))
+  const maxAge=typeof hsts==='string'?Number(hsts.match(/(?:^|;)\s*max-age=(\d+)(?:;|$)/i)?.[1]):NaN;
+  if(!Number.isSafeInteger(maxAge)||maxAge<31536000)
    failures.push(name+' missing year-long HSTS');
   if(observation.headers['x-content-type-options']!=='nosniff')
    failures.push(name+' missing nosniff');
