@@ -33,7 +33,7 @@ export function parseTrustedProxyCidrs(value:string|undefined):string[]{
 export function resolveDeploymentSecurity(env:NodeJS.ProcessEnv):DeploymentSecurityConfig{
  const production=env.NODE_ENV==='production';
  if(!production){
-  return {production:false,bindHost:env.APP_BIND_HOST||'0.0.0.0',
+  return {production:false,bindHost:env.APP_BIND_HOST||'127.0.0.1',
    trustedProxyCidrs:[],httpsRequired:false,publicBind:false,appOrigin:null};
  }
  const errors:string[]=[];

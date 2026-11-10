@@ -126,7 +126,7 @@ export async function checkDatabaseConnection(): Promise<DatabaseStatus> {
       database: config.database,
       user: config.user,
       port: config.port,
-      message: `MySQL Connection Failed: ${err.message || String(err)}`,
+      message: 'MySQL connection failed; inspect protected server logs for diagnostics.',
       tableCount: 0,
       tables: []
     };
