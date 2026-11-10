@@ -51,6 +51,18 @@ jobs:
         run: node scripts/check-dependency-baseline.mjs dependency-audit.json dependency-triage.json docs/security/dependency-advisory-baseline.json
       - name: Verify patched dependency versions and zero critical/high advisory matches
         run: node scripts/verify-patched-dependencies.mjs
+      - name: Record held Phase 1Z release build provenance (no deployment)
+        if: github.ref == 'refs/heads/chore/phase0-foundation-20261106' || github.head_ref == 'chore/phase0-foundation-20261106'
+        env:
+          RELEASE_CANDIDATE_CI: '1'
+        run: bun run release:candidate
+      - name: Upload held release candidate hash inventory
+        if: github.ref == 'refs/heads/chore/phase0-foundation-20261106' || github.head_ref == 'chore/phase0-foundation-20261106'
+        uses: actions/upload-artifact@v4
+        with:
+          name: held-phase1z-release-candidate
+          path: release-candidate-manifest.json
+          if-no-files-found: error
       - name: Upload dependency audit for human triage
         if: always()
         uses: actions/upload-artifact@v4
