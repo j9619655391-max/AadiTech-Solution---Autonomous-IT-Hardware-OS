@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {mkdtempSync,mkdirSync,writeFileSync,rmSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
-import {assessReleaseCandidate,captureCandidateFiles,type CandidateSecurityAudit}
+import {assessReleaseCandidate,captureCandidateFiles,validateCandidatePushContext,type CandidateSecurityAudit}
  from '../scripts/lib/releaseCandidate';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
 
@@ -62,5 +62,39 @@ test('missing builds, symlinks, unsafe refs and security findings fail closed',(
   assert.throws(()=>captureCandidateFiles(root),/Incomplete/);
   symlinkSync(join(root,'package.json'),join(root,'dist/assets/client.js'));
   assert.throws(()=>captureCandidateFiles(root),/Symlinks forbidden/);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+// Phase 1Z provenance: CI must never label an ephemeral PR merge SHA as branch HEAD.
+const pushContext={
+ RELEASE_CANDIDATE_CI:'1',GITHUB_ACTIONS:'true',
+ GITHUB_REPOSITORY:'j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS',
+ GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/chore/phase0-foundation-20261106',
+ GITHUB_SHA:SHA
+};
+test('candidate source identity accepts only matching development branch push',()=>{
+ assert.deepEqual(validateCandidatePushContext(pushContext,SHA),{
+  sourceSha:SHA,sourceRef:'chore/phase0-foundation-20261106'
+ });
+});
+test('PR merge, fork, wrong branch and mismatched checkout SHA never generate manifest',()=>{
+ const bad=[
+  {...pushContext,GITHUB_EVENT_NAME:'pull_request',GITHUB_HEAD_REF:'chore/phase0-foundation-20261106'},
+  {...pushContext,GITHUB_EVENT_NAME:'workflow_dispatch'},
+  {...pushContext,GITHUB_REF:'refs/heads/main'},
+  {...pushContext,GITHUB_REPOSITORY:'attacker/fork'},
+  {...pushContext,GITHUB_ACTIONS:'false'},
+  {...pushContext,GITHUB_HEAD_REF:'unexpected'},
+  {...pushContext,GITHUB_SHA:'b'.repeat(40)}
+ ];
+ for(const env of bad)assert.throws(()=>validateCandidatePushContext(env,SHA));
+ assert.throws(()=>validateCandidatePushContext(pushContext,'short'));
+});
+test('unregistered SQL migration fails closed instead of silently omitting schema changes',()=>{
+ const {root}=fixture();
+ try{
+  writeFileSync(join(root,'database/migrations/0014_not_registered.sql'),
+   'CREATE TABLE should_not_ship(id INT);');
+  assert.throws(()=>captureCandidateFiles(root),/Unregistered SQL migration/);
  }finally{rmSync(root,{recursive:true,force:true});}
 });

@@ -1,26 +1,21 @@
 import 'dotenv/config';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync} from 'node:fs';
-import {assessReleaseCandidate,type CandidateSecurityAudit} from './lib/releaseCandidate';
+import {assessReleaseCandidate,validateCandidatePushContext,type CandidateSecurityAudit} from './lib/releaseCandidate';
 
 function main(){
  const env=process.env;
- if(env.RELEASE_CANDIDATE_CI!=='1'||env.GITHUB_ACTIONS!=='true'||
-    env.GITHUB_REPOSITORY!=='j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS')
-  throw Error('Held release candidate inventory requires the approved repository GitHub CI runner');
- const sourceRef=env.GITHUB_EVENT_NAME==='pull_request'?env.GITHUB_HEAD_REF:
-  env.GITHUB_EVENT_NAME==='push'&&env.GITHUB_REF?.startsWith('refs/heads/')?
-   env.GITHUB_REF.slice('refs/heads/'.length):'';
- if(sourceRef!=='chore/phase0-foundation-20261106')
-  throw Error('Candidate inventory not permitted outside Draft PR development branch');
+ // Reject local, fork, PR-merge and other-branch invocations before reading artifacts.
+ if(env.RELEASE_CANDIDATE_CI!=='1'||env.GITHUB_ACTIONS!=='true')
+  throw Error('Candidate inventory is GitHub Actions opt-in only');
  const gitSha=execFileSync('git',['rev-parse','HEAD'],{
   encoding:'utf8',timeout:5000,stdio:['ignore','pipe','ignore']
  }).trim();
- if(gitSha!==env.GITHUB_SHA)throw Error('GitHub job SHA does not match checked-out commit');
+ const {sourceSha,sourceRef}=validateCandidatePushContext(env,gitSha);
  const baseline=JSON.parse(readFileSync('dependency-baseline-status.json','utf8'));
  const triage=JSON.parse(readFileSync('dependency-triage.json','utf8'));
  const report=assessReleaseCandidate({
-  sourceSha:gitSha,sourceRef,root:process.cwd(),
+  sourceSha,sourceRef,root:process.cwd(),
   audit:{baseline,triage} as CandidateSecurityAudit,
   generatedAt:new Date().toISOString()
  });

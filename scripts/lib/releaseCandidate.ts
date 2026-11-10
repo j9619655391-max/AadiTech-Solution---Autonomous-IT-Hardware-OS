@@ -15,6 +15,27 @@ export interface CandidateSecurityAudit{
  triage:{schemaVersion:number;bySeverity:{
   critical:number;high:number;unknown:number;moderate:number;low:number}};
 }
+export const HELD_CANDIDATE_BRANCH='chore/phase0-foundation-20261106';
+export const HELD_CANDIDATE_REPOSITORY='j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS';
+
+/** Only a checked-out push commit on the approved development branch has stable
+ * source provenance. PR workflows check out synthetic merge commits and cannot
+ * generate a release-candidate hash inventory. This is not release approval. */
+export function validateCandidatePushContext(
+ env:NodeJS.ProcessEnv,checkedOutSha:string
+):{sourceSha:string;sourceRef:string}{
+ if(env.RELEASE_CANDIDATE_CI!=='1'||env.GITHUB_ACTIONS!=='true'||
+    env.GITHUB_REPOSITORY!==HELD_CANDIDATE_REPOSITORY)
+  throw Error('Candidate inventory requires approved repository GitHub CI');
+ if(env.GITHUB_EVENT_NAME!=='push'||
+    env.GITHUB_REF!=='refs/heads/'+HELD_CANDIDATE_BRANCH||
+    Boolean(env.GITHUB_HEAD_REF))
+  throw Error('Candidate inventory requires direct push to approved development branch');
+ if(!/^[a-f0-9]{40}$/.test(checkedOutSha)||env.GITHUB_SHA!==checkedOutSha)
+  throw Error('Candidate inventory requires exact checked-out GitHub push SHA');
+ return {sourceSha:checkedOutSha,sourceRef:HELD_CANDIDATE_BRANCH};
+}
+
 const MAX_ARTIFACTS=500;
 const MAX_FILE_BYTES=25*1024*1024;
 function checkedFile(root:string,rel:string):CandidateFile{
@@ -25,6 +46,7 @@ function checkedFile(root:string,rel:string):CandidateFile{
  if(!stat.isFile()||stat.isSymbolicLink()||stat.size<1||stat.size>MAX_FILE_BYTES)
   throw Error('Candidate artifact is missing, symlinked, empty or oversized: '+rel);
  const bytes=readFileSync(file);
+ if(bytes.length!==stat.size)throw Error('Candidate artifact changed during hashing: '+rel);
  return {path:rel.replace(/\\/g,'/'),
   sha256:createHash('sha256').update(bytes).digest('hex'),sizeBytes:stat.size};
 }
@@ -44,6 +66,16 @@ function walkDist(root:string,dir:string,out:string[]){
 export function captureCandidateFiles(rootPath:string):CandidateFile[]{
  const root=resolve(rootPath),paths:string[]=[];
  walkDist(root,'dist',paths);
+ const migrationDir=resolve(root,'database/migrations');
+ const migrationStat=lstatSync(migrationDir);
+ if(!migrationStat.isDirectory()||migrationStat.isSymbolicLink())
+  throw Error('Unsafe migration directory');
+ const expectedSql=new Set(MIGRATIONS.map(m=>m+'.sql'));
+ for(const entry of readdirSync(migrationDir,{withFileTypes:true})){
+  if(entry.isSymbolicLink())throw Error('Symlinks forbidden in migrations');
+  if(/\.sql$/i.test(entry.name)&&(!entry.isFile()||!expectedSql.has(entry.name)))
+   throw Error('Unregistered SQL migration in release candidate: '+entry.name);
+ }
  for(const p of ['package.json','bun.lock',...MIGRATIONS.map(m=>'database/migrations/'+m+'.sql')])
   paths.push(p);
  const unique=[...new Set(paths.map(p=>p.replace(/\\/g,'/')))].sort();
@@ -60,7 +92,7 @@ export function assessReleaseCandidate(args:{
  const problems:string[]=[];
  if(!/^[a-f0-9]{40}$/.test(args.sourceSha))
   throw Error('Full Git commit SHA is required');
- if(args.sourceRef!=='chore/phase0-foundation-20261106')
+ if(args.sourceRef!==HELD_CANDIDATE_BRANCH)
   throw Error('Release candidate must come from the development Draft PR branch');
  if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(args.generatedAt)||
     !Number.isFinite(Date.parse(args.generatedAt)))
