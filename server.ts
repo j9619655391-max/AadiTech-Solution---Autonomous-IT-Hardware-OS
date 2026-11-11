@@ -16,6 +16,8 @@ import dispatchOwnerRouter from "./server/dispatch/ownerRouter";
 import dispatchReviewRouter from "./server/dispatch/reviewRouter";
 import evidenceOwnerRouter from "./server/evidenceChain/ownerRouter";
 import evidenceReviewRouter from "./server/evidenceChain/reviewRouter";
+import stockOwnerRouter from "./server/stockFoundation/ownerRouter";
+import stockReviewRouter from "./server/stockFoundation/reviewRouter";
 import quoteDraftRouter from "./server/quotes/router";
 import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
@@ -51,6 +53,8 @@ app.use("/api/po-dispatch/review", dispatchReviewRouter);
 app.use("/api/po-dispatch", dispatchOwnerRouter);
 app.use("/api/evidence-chain/review", evidenceReviewRouter);
 app.use("/api/evidence-chain", evidenceOwnerRouter);
+app.use("/api/stock-foundation/review", stockReviewRouter);
+app.use("/api/stock-foundation", stockOwnerRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
 app.use("/api/quotes/reviews", quoteReviewRouter);
 app.use("/api/quotes/release-preparations", quoteReleaseHoldRouter);
@@ -106,7 +110,7 @@ app.get("/api/db/schema-sql", (_req,res) => {
   res.setHeader("Cache-Control","no-store");
   res.status(410).json({
     error:"Legacy schema download disabled to prevent destructive import",
-    safePath:"Use staging backup/restore rehearsal and checksum-tracked migrations 0001-0018"
+    safePath:"Use staging backup/restore rehearsal and checksum-tracked migrations 0001-0019"
   });
 });
 

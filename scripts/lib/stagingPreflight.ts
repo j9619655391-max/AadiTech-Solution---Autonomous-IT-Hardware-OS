@@ -102,6 +102,43 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(heldGrn[0].unsafe)!==0||Number(unheldGrn[0].total)!==0||
     Number(unreviewedAcknowledgments[0].total)!==0)
   problems.push('Supplier claim or GRN evidence HELD/DISABLED invariant mismatch');
+ // Phase 1AG: hard-zero stock positions and no orphaned, ENABLED or
+ // unreviewed internal release evidence. No actual stock receipt exists.
+ const [stockGate]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN available_quantity<>0 OR reserved_quantity<>0
+    OR picked_quantity<>0 OR posted_quantity<>0 THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_stock_position_gates`);
+ const [releaseHolds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN i.id IS NULL OR d.id IS NULL
+    OR h.state<>'HELD' OR h.posting_state<>'DISABLED'
+    OR i.status<>'REVIEWED_HELD' OR d.decision<>'REVIEWED_HELD'
+    OR h.decision_id<>d.id
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.intentSha256'))<>i.intent_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.postingState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPosted'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_stock_release_holds h
+   LEFT JOIN inv_stock_release_intents i ON i.id=h.release_intent_id
+   LEFT JOIN inv_stock_release_decisions d ON d.id=h.decision_id`);
+ const [missingReleaseHolds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM inv_stock_release_intents i
+   LEFT JOIN inv_stock_release_holds h ON h.release_intent_id=i.id
+   WHERE i.status='REVIEWED_HELD' AND h.id IS NULL`);
+ const [plans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.state<>'HELD' OR p.reservation_state<>'DISABLED'
+    OR i.status<>'REVIEWED_HELD' OR l.observed_quantity<p.requested_quantity
+    OR g.available_quantity<>0 OR g.reserved_quantity<>0 OR g.posted_quantity<>0
+    OR g.picked_quantity<>0 OR l.id IS NULL OR i.id IS NULL OR g.site_id IS NULL
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_reservation_planning_intents p
+   LEFT JOIN inv_stock_release_intents i ON i.id=p.release_intent_id
+   LEFT JOIN inv_stock_release_intent_lines l
+    ON l.release_intent_id=p.release_intent_id AND l.product_id=p.product_id
+   LEFT JOIN inv_stock_position_gates g
+    ON g.site_id=p.site_id AND g.product_id=p.product_id`);
+ if(Number(stockGate[0].unsafe)!==0||Number(releaseHolds[0].unsafe)!==0||
+    Number(missingReleaseHolds[0].total)!==0||Number(plans[0].unsafe)!==0)
+  problems.push('Hard-zero stock foundation, HELD release or disabled reservation plan invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -123,6 +160,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   heldPreparations:Number(holds[0].total),
   heldSupplierDispatchOutboxes:Number(supplierOutbox[0].total),
   heldGrnReconciliationEvidence:Number(heldGrn[0].total),
+  hardZeroStockPositions:Number(stockGate[0].total),
+  heldStockReleaseOutboxes:Number(releaseHolds[0].total),
+  nonallocatingReservationPlans:Number(plans[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',

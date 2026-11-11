@@ -13,6 +13,7 @@ This repository is a modular Express + React + MySQL platform for hardware sales
 - Phase 1AD owner-entered **unverified inbound observations**, independent quarantine witness, append-only quarantine custody evidence and serial/lot registry. This is NOT goods receipt, real stock, stock reservation, available-to-sell, valuation or logistics authorization.
 - Phase 1AE supplier destination provenance and independent INTERNAL verification, HELD PO dispatch review and immutable, DISABLED outbox preparations. **No external supplier order or acknowledgment has been sent or established.**
 - Phase 1AF manual and **UNVERIFIED** supplier acknowledgment claims with offline document checksum, independent internal claim review and full-SKU/serial/lot reconciliation to Phase 1AD quarantine, resulting only in immutable **HELD / stock posting DISABLED** evidence packs. No issued supplier PO, externally authenticated acknowledgment, official GRN or saleable inventory exists.
+- Phase 1AG inventory ledger *foundation*, with hard-zero authoritative site/SKU position gates, immutable non-posting stock-release intentions, independent reviewer HELD decision and nonallocating demand plans. SQL enforces zero sellable/reserved/posted units; no real movement, available stock, customer reservation or stock issue is possible.
 - Hardened HTTPS/proxy production preflight, dependency/security CI, disposable MySQL integration tests and Chromium smoke.
 - AI BOM and marketing **drafts only**, requiring provider credentials and human verification. No trustworthy AI business dashboards, autonomous negotiations or customer dispatch.
 - Fresh browser starts with no seeded business records. Legacy browser-local demo screens are marked explicitly, destructive "production reset" is blocked, and existing stored records are not silently erased.
@@ -45,6 +46,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 | Phase 1AD `/api/intake` | Owner-observed inbound count and independent reviewer quarantine evidence; no true GRN, movement authority, available stock, reservations or COGS |
 | Phase 1AE `/api/po-dispatch` | Server-backed internal supplier destination evidence, independent PO dispatch-review records, DISABLED held outbox only; no actual sending, acknowledgment, real goods receipt or stock issue |
 | Phase 1AF `/api/evidence-chain` | Unverified offline supplier ACK claim, independent internal review and quarantined GRN-reconciliation HOLD; official GRN, stock postings and available-to-sell disabled |
+| Phase 1AG `/api/stock-foundation` | Hard-zero stock positions, independent non-posting release review and HELD demand planning; stock release, reservation and movement posting disabled |
 | Legacy `src/data/mockData.ts`, browser storage and old dashboards | DEMO / BROWSER ONLY; no verified stock, finance, telemetry or approval authority |
 | `/api/ai/command` and `/api/ai/negotiate` | Explicitly unavailable until verified backend facts and approval workflow |
 | `/api/ai/bom` and `/api/ai/campaign` | Unverified AI drafts; no verified prices, HSN/GST, performance, compatibility or dispatch |
@@ -58,6 +60,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 - [Phase 1AD quarantine observation and serial-custody evidence](docs/phase-1/PHASE_1AD_QUARANTINE_INTAKE.md)
 - [Phase 1AE supplier destination and PO dispatch HOLD boundary](docs/phase-1/PHASE_1AE_SUPPLIER_DISPATCH_HOLDS.md)
 - [Phase 1AF unverified supplier evidence and GRN-reconciliation HOLD](docs/phase-1/PHASE_1AF_SUPPLIER_EVIDENCE_GRN_HOLD.md)
+- [Phase 1AG hard-zero stock ledger foundation and release-intent controls](docs/phase-1/PHASE_1AG_ZERO_STOCK_LEDGER_FOUNDATION.md)
 - [Phase 1Z held release candidate and real staging checklist](docs/phase-1/PHASE_1Z_HELD_RELEASE_CANDIDATE.md)
 - [Production deployment guide (hold-gated)](HOSTINGER_DEPLOYMENT_GUIDE.md)
 - [Threat model](docs/security/THREAT_MODEL.md)

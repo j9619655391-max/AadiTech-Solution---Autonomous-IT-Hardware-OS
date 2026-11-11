@@ -15,7 +15,7 @@ export function evidenceChainMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stagin
 }
 async function main(){
  evidenceChainMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0018_acknowledgment_grn_holds')
+ if(MIGRATIONS[17]!=='0018_acknowledgment_grn_holds')
   throw Error('Evidence chain migration must be final registered schema');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -27,7 +27,7 @@ async function main(){
   locked=true;
   const [rows]=await db.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,17)){
    const hash=createHash('sha256').update(readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==hash)throw Error('Missing/modified prerequisite migration: '+id);
   }

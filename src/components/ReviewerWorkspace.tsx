@@ -4,6 +4,7 @@ import {ProcurementReviewerPanel} from './ProcurementReviewerPanel';
 import {InboundWitnessPanel} from './InboundWitnessPanel';
 import {SupplierDispatchReviewerPanel} from './SupplierDispatchReviewerPanel';
 import {SupplierEvidenceReviewerPanel} from './SupplierEvidenceReviewerPanel';
+import {StockFoundationReviewerPanel} from './StockFoundationReviewerPanel';
 type Queued={id:string;created_by:string;current_revision:number;review_state:string};
 type Brief={draftId:string;drafterId:string;revision:number;subtotal:string;taxEstimate:string;totalEstimate:string;items:unknown[]};
 type Review={currentRevision:number;effectiveDecision:unknown;history:{revision_number:number;decision:string;reason:string}[]};
@@ -99,6 +100,7 @@ export function ReviewerWorkspace(){
   <InboundWitnessPanel />
   <SupplierDispatchReviewerPanel />
   <SupplierEvidenceReviewerPanel />
+  <StockFoundationReviewerPanel />
   <p className="text-xs text-amber-300">Independent internal approval does not authorize customer communication or supplier purchase orders. Outbound dispatch remains disabled.</p>
  </main>;
 }
