@@ -30,7 +30,9 @@ async function call(path:string,method='GET',body?:unknown,options:{
  const response=await fetch(base+path,{method,headers,
   body:body===undefined?undefined:JSON.stringify(body)});
  const raw=await response.text();
- return {status:response.status,data:raw?JSON.parse(raw):null};
+ let data:unknown=null;
+ if(raw){try{data=JSON.parse(raw);}catch{data={error:'Non-JSON response',contentType:response.headers.get('content-type')};}}
+ return {status:response.status,data};
 }
 test('isolated stock setup uses existing server auth and product master',async()=>{
  await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
@@ -49,6 +51,7 @@ test('isolated stock setup uses existing server auth and product master',async()
    '100.00','120.00','100.00','8471']);
  const app=express();app.use(express.json());app.use('/api/auth',authRouter);
  app.use('/api/inventory',inventoryRouter);
+ app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
  const listener=app.listen(0,'127.0.0.1');
  await new Promise<void>(resolve=>listener.once('listening',resolve));
  const address=listener.address();assert.ok(address&&typeof address!=='string');
@@ -105,5 +108,7 @@ test('count requires exact schema, evidence reference and idempotency key',async
  const [rows]=await db.query<any[]>('SELECT COUNT(*) AS n FROM inventory_opening_counts WHERE product_id=? AND site_id=?',
   [productId,siteId]);
  assert.equal(Number(rows[0].n),1);
- assert.equal((await call('/api/inventory/opening-counts','DELETE',body)).status,404);
+ const unsupported=await call('/api/inventory/opening-counts','DELETE',body);
+ assert.equal(unsupported.status,404);
+ assert.equal(unsupported.data.error,'Unknown API endpoint');
 });

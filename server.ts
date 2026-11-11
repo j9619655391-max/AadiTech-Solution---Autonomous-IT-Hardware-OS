@@ -199,6 +199,12 @@ headline, whatsappMessage, emailSubject, emailBody (all strings).`,
  }
 });
 
+// Never serve a successful SPA HTML response to an unknown API request.
+app.use('/api',(_req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  res.status(404).json({error:'Unknown API endpoint'});
+});
+
 // Vite middleware / static files setup
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
