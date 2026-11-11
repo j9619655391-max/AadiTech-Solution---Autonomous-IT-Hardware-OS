@@ -73,3 +73,29 @@ export function rejectLiveAllocation(requested:number){
  // This is intentionally invoked even for a user-visible, internally reviewed HELD plan.
  return noNegativeProjection({available:0,reserved:0,picked:0,posted:0,request:requested});
 }
+
+/** Deep JSON equality: unordered object keys, ordered arrays and exact primitive values.
+ *  Only trusted, re-constructed canonical snapshots may be passed as expected. */
+function jsonEquals(actual:unknown,expected:unknown):boolean{
+ if(actual===expected)return true;
+ if(Array.isArray(actual)||Array.isArray(expected)){
+  return Array.isArray(actual)&&Array.isArray(expected)&&
+   actual.length===expected.length&&
+   actual.every((item,index)=>jsonEquals(item,expected[index]));
+ }
+ if(!actual||!expected||typeof actual!=='object'||typeof expected!=='object')
+  return false;
+ const a=actual as Record<string,unknown>,b=expected as Record<string,unknown>;
+ const keysA=Object.keys(a).sort(),keysB=Object.keys(b).sort();
+ return keysA.length===keysB.length&&keysA.every((key,index)=>
+  key===keysB[index]&&jsonEquals(a[key],b[key]));
+}
+export function verifyDeepFrozenSnapshot(raw:unknown,expected:object,digest:string){
+ let stored:unknown=raw;
+ if(typeof stored==='string'){
+  try{stored=JSON.parse(stored);}catch{throw new ChainConflictError('Unparseable stock snapshot');}
+ }
+ if(!jsonEquals(stored,expected)||sha(JSON.stringify(expected))!==digest)
+  throw new ChainConflictError('Nested stock line or snapshot checksum mismatch');
+ return expected;
+}

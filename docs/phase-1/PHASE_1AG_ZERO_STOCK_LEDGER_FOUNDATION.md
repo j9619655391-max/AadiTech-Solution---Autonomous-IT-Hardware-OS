@@ -41,7 +41,7 @@ Unique held-GRN/observation release binding, unique released SKU lines, one revi
 
 ## Source evidence verification
 
-Release creation and independent review reconstruct 1AF GRN HELD snapshot digest, attached pack, claim, 1AE PO manifest/outbox, 1AC original purchase-review hash and independently witnessed 1AD original SKU/quantity/lot/serial identifiers. They reject missing or duplicated custody events, modified serial lists, unexpected sites, non-independent decisions and source hash mismatch. SHA-256 detects unexpected divergence from captured internal bytes; it is NOT an external digital signature or proof of supplier/warehouse authenticity. Direct DB privileges still require independent governance and immutable off-system evidence.
+Release creation and independent review use recursive JSON comparison for frozen nested SKU/serial arrays (object key order tolerant, strict array identity/order), and reconstruct 1AF GRN HELD snapshot digest, attached pack, claim, 1AE PO manifest/outbox, 1AC original purchase-review hash and independently witnessed 1AD original SKU/quantity/lot/serial identifiers. They reject missing or duplicated custody events, modified serial lists, unexpected sites, non-independent decisions and source hash mismatch. SHA-256 detects unexpected divergence from captured internal bytes; it is NOT an external digital signature or proof of supplier/warehouse authenticity. Direct DB privileges still require independent governance and immutable off-system evidence.
 
 ## Verification
 

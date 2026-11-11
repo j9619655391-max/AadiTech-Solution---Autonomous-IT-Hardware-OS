@@ -3,7 +3,7 @@ import {sha} from '../dispatch/validation';
 import {verifyExactSnapshot,heldGrnSnapshot} from '../evidenceChain/validation';
 import {checkHeldSource,checkClaim,checkInternallyAttestedClaim,
  checkQuarantine,makePack,verifyPersistedPack} from '../evidenceChain/integrity';
-import {ChainConflictError,releaseSnapshot,releaseHoldSnapshot,
+import {ChainConflictError,verifyDeepFrozenSnapshot,releaseSnapshot,releaseHoldSnapshot,
  type ReleaseSource,type ReleaseLine} from './validation';
 function deny():never{
  throw new ChainConflictError('Unverified supplier/GRN source, modified custody or stock ledger boundary');
@@ -75,7 +75,7 @@ export async function checkReleaseIntent(conn:PoolConnection,id:string){
   r.preparedBy!==source.ownerId||r.sourceSha256!==source.heldGrnSha256||
   r.intentSha256!==hash||locked[0].intentSha256!==hash||
   r.status!==locked[0].status)deny();
- verifyExactSnapshot(locked[0].intentJson,expected,hash);
+ verifyDeepFrozenSnapshot(locked[0].intentJson,expected,hash);
  const [lines]=await conn.query<RowDataPacket[]>(`SELECT product_id AS productId,
   site_id AS siteId,observed_quantity AS quantity,tracking_mode AS trackingMode,
   lot_code AS lotCode,serials_json AS serialNumbers FROM inv_stock_release_intent_lines

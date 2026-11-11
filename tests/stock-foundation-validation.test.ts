@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {sha} from '../server/dispatch/validation';
 import {releaseInput,releaseDecisionInput,planInput,
  releaseSnapshot,releaseHoldSnapshot,planDigest,noNegativeProjection,
- rejectLiveAllocation,ChainInputError,ChainConflictError} from '../server/stockFoundation/validation';
+ rejectLiveAllocation,verifyDeepFrozenSnapshot,ChainInputError,ChainConflictError} from '../server/stockFoundation/validation';
 import {stockFoundationMigrationTarget} from '../scripts/migrate-stock-foundation';
 const heldGrnId=randomUUID(),releaseIntentId=randomUUID(),productId=randomUUID();
 test('strict stock release and reservation-plan contracts deny posting or allocation flags',()=>{
@@ -32,6 +33,14 @@ test('frozen release and plan hashes capture serial identity and remain disabled
  assert.deepEqual(snapshot.lines[0].serialNumbers,['SERIAL-A-2026','SERIAL-B-2026']);
  assert.equal(snapshot.postingState,'DISABLED');
  assert.equal(snapshot.stockPosted,false);assert.equal(snapshot.availableToSell,null);
+ const reversed={...snapshot,lines:snapshot.lines.map(l=>({...l,serialNumbers:[...l.serialNumbers]}))};
+ assert.deepEqual(verifyDeepFrozenSnapshot(reversed,snapshot,sha(JSON.stringify(snapshot))),snapshot);
+ assert.throws(()=>verifyDeepFrozenSnapshot({...reversed,lines:[{...reversed.lines[0],
+  serialNumbers:['FORGED-SERIAL-2026','SERIAL-B-2026']}]},snapshot,sha(JSON.stringify(snapshot))),
+  ChainConflictError);
+ assert.throws(()=>verifyDeepFrozenSnapshot({...reversed,lines:[{...reversed.lines[0],
+  serialNumbers:[...reversed.lines[0].serialNumbers,'EXTRA-SERIAL']}]},snapshot,sha(JSON.stringify(snapshot))),
+  ChainConflictError);
  assert.equal(releaseHoldSnapshot(releaseIntentId,'a'.repeat(64),randomUUID()).postingState,'DISABLED');
  const req={releaseIntentId,productId,quantity:2,planningRef:'PLANNING-REF-2026'};
  assert.notEqual(planDigest(req,'a'.repeat(64),source.siteId),
