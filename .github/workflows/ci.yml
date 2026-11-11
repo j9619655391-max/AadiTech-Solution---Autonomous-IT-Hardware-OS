@@ -172,12 +172,18 @@ jobs:
         run: bun run db:migrate:procurement
       - name: Verify procurement migration checksum and idempotent rerun
         run: bun run db:migrate:procurement
+      - name: Apply quarantine intake migration on disposable CI only
+        run: bun run db:migrate:intake
+      - name: Verify quarantine intake migration checksum and idempotent rerun
+        run: bun run db:migrate:intake
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
         run: bun run test:inventory-mysql
       - name: Verify supplier attestation, independent purchase review and held PO
         run: bun run test:procurement-mysql
+      - name: Verify immutable intake, independent quarantine witness and serial uniqueness
+        run: bun run test:intake-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run

@@ -29,6 +29,8 @@
     "test:inventory-mysql": "tsx --test tests/inventory-mysql.integration.ts",
     "db:migrate:procurement": "tsx scripts/migrate-procurement.ts",
     "test:procurement-mysql": "tsx --test tests/procurement-mysql.integration.ts",
+    "db:migrate:intake": "tsx scripts/migrate-intake.ts",
+    "test:intake-mysql": "tsx --test tests/intake-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

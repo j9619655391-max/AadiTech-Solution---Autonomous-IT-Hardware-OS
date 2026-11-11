@@ -14,7 +14,7 @@ export function procurementMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'
 }
 async function main(){
  procurementMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0015_procurement_internal')
+ if(MIGRATIONS[14]!=='0015_procurement_internal')
   throw Error('Procurement migration must be final registered schema');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
@@ -24,7 +24,7 @@ async function main(){
   const [locks]=await db.query<any[]>("SELECT GET_LOCK('aaditech-auth-migrations',15) AS acquired");
   if(locks[0]?.acquired!==1)throw Error('Migration lock unavailable');
   locked=true;
-  const ids=MIGRATIONS.slice(0,-1);
+  const ids=MIGRATIONS.slice(0,14);
   const [rows]=await db.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(row=>[String(row.id),String(row.checksum)]));
   for(const id of ids){
