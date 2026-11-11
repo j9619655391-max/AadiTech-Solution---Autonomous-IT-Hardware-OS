@@ -33,6 +33,8 @@
     "test:intake-mysql": "tsx --test tests/intake-mysql.integration.ts",
     "db:migrate:dispatch-holds": "tsx scripts/migrate-dispatch-holds.ts",
     "test:dispatch-mysql": "tsx --test tests/dispatch-mysql.integration.ts",
+    "db:migrate:evidence-chain": "tsx scripts/migrate-evidence-chain.ts",
+    "test:evidence-chain-mysql": "tsx --test tests/evidence-chain-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

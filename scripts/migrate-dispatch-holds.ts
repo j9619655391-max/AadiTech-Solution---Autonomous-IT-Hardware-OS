@@ -14,7 +14,7 @@ export function dispatchMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 }
 async function main(){
  dispatchMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0017_supplier_dispatch_holds')
+ if(MIGRATIONS[16]!=='0017_supplier_dispatch_holds')
   throw Error('Dispatch holds migration must be last registered schema');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
@@ -26,7 +26,7 @@ async function main(){
   locked=true;
   const [rows]=await db.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,16)){
    const checksum=createHash('sha256').update(
     readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==checksum)throw Error('Missing/altered prerequisite migration: '+id);

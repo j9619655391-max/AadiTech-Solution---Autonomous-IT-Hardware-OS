@@ -9,6 +9,7 @@ import { LiveInventoryWorkspace } from './components/LiveInventoryWorkspace';
 import { LiveProcurementWorkspace } from './components/LiveProcurementWorkspace';
 import { InboundObservationWorkspace } from './components/InboundObservationWorkspace';
 import { SupplierDispatchOwnerPanel } from './components/SupplierDispatchOwnerPanel';
+import { SupplierEvidenceOwnerPanel } from './components/SupplierEvidenceOwnerPanel';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
 import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
@@ -1098,6 +1099,7 @@ export default function App() {
             <LiveProcurementWorkspace />
             <InboundObservationWorkspace />
             <SupplierDispatchOwnerPanel />
+            <SupplierEvidenceOwnerPanel />
             <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
               <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
                 Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)

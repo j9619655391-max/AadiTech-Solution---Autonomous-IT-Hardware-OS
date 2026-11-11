@@ -180,6 +180,10 @@ jobs:
         run: bun run db:migrate:dispatch-holds
       - name: Verify supplier dispatch HOLD migration checksum and rerun
         run: bun run db:migrate:dispatch-holds
+      - name: Apply internal acknowledgment/GRN evidence migration on disposable CI
+        run: bun run db:migrate:evidence-chain
+      - name: Verify evidence chain migration checksum and idempotent rerun
+        run: bun run db:migrate:evidence-chain
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -190,6 +194,8 @@ jobs:
         run: bun run test:intake-mysql
       - name: Verify separated supplier destination and disabled dispatch outbox on MySQL
         run: bun run test:dispatch-mysql
+      - name: Verify claimed supplier acknowledgment and GRN evidence HOLD on MySQL
+        run: bun run test:evidence-chain-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run

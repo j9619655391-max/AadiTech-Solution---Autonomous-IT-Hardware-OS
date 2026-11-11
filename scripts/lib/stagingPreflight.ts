@@ -8,7 +8,8 @@ export const MIGRATIONS=[
  '0008_reviewer_roles','0009_auth_security_events','0010_auth_login_security',
  '0011_totp_mfa','0012_mfa_audit_events','0013_mfa_recovery_rotation',
  '0014_inventory_opening_counts','0015_procurement_internal',
- '0016_quarantine_intake','0017_supplier_dispatch_holds'
+ '0016_quarantine_intake','0017_supplier_dispatch_holds',
+ '0018_acknowledgment_grn_holds'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -72,6 +73,35 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   WHERE p.status='APPROVED_INTERNAL' AND o.id IS NULL`);
  if(Number(supplierOutbox[0].unsafe)!==0||Number(missingSupplierHolds[0].n)!==0)
   problems.push('Supplier dispatch HELD/DISABLED outbox invariant mismatch');
+ // Phase 1AF: any approved GRN-reconciliation pack must have exactly one
+ // evidence-only HELD row, permanently DISABLED and source-linked. This check
+ // does NOT authorize stock availability, supplier acknowledgment or GRN posting.
+ const [heldGrn]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.id IS NULL OR d.id IS NULL
+    OR h.status<>'HELD' OR h.stock_posting_state<>'DISABLED'
+    OR p.status<>'HELD_INTERNAL' OR d.decision<>'HELD_INTERNAL'
+    OR d.id<>h.decision_id
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.packSha256'))<>p.pack_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPostingState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.officialGrnCreated'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_grn_held_records h
+   LEFT JOIN inv_grn_reconciliation_packs p ON p.id=h.pack_id
+   LEFT JOIN inv_grn_reconciliation_decisions d ON d.id=h.decision_id`);
+ const [unheldGrn]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM inv_grn_reconciliation_packs p
+   LEFT JOIN inv_grn_held_records h ON h.pack_id=p.id
+   WHERE p.status='HELD_INTERNAL' AND h.id IS NULL`);
+ const [unreviewedAcknowledgments]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM proc_ack_claims c
+   LEFT JOIN proc_ack_claim_decisions d ON d.claim_id=c.id
+   WHERE (c.status='ATTESTED_INTERNAL' AND
+     (d.id IS NULL OR d.decision<>'ATTESTED_INTERNAL' OR NOT d.document_inspected))
+   OR (c.status='DISPUTED_INTERNAL' AND
+     (d.id IS NULL OR d.decision<>'DISPUTED_INTERNAL'))`);
+ if(Number(heldGrn[0].unsafe)!==0||Number(unheldGrn[0].total)!==0||
+    Number(unreviewedAcknowledgments[0].total)!==0)
+  problems.push('Supplier claim or GRN evidence HELD/DISABLED invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -91,7 +121,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   ready:problems.length===0,target,
   migrationCount:actual.size,expectedMigrationCount:expected.length,
   heldPreparations:Number(holds[0].total),
-  heldSupplierDispatchOutboxes:Number(supplierOutbox[0].total),activeOwnerCount:activeOwners,
+  heldSupplierDispatchOutboxes:Number(supplierOutbox[0].total),
+  heldGrnReconciliationEvidence:Number(heldGrn[0].total),
+  activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
