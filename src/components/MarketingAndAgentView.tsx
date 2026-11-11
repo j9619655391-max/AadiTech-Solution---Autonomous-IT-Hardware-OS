@@ -32,29 +32,20 @@ export const MarketingAndAgentView: React.FC<MarketingAndAgentViewProps> = ({
   const [activeTab, setActiveTab] = useState<'AGENTS' | 'CAMPAIGNS' | 'CONTENT_STUDIO'>('AGENTS');
 
   // AI Content Generator state (Section 41)
-  const [targetSegment, setTargetSegment] = useState('73 Accounts with Laptop/Server Warranty expiring < 60 days');
+  const [targetSegment, setTargetSegment] = useState('B2B hardware accounts (verify needs and contact consent before outreach)');
   const [campaignObjective, setCampaignObjective] = useState('ProActive 1-Year Comprehensive AMC Upgrade');
   const [selectedChannel, setSelectedChannel] = useState<'WHATSAPP' | 'EMAIL'>('WHATSAPP');
   const [isGeneratingContent, setIsGeneratingContent] = useState(false);
 
+  const [contentError,setContentError]=useState<string|null>(null);
   const [generatedContent, setGeneratedContent] = useState<{
-    headline: string;
-    whatsappMessage: string;
-    emailSubject: string;
-    emailBody: string;
-    projectedConversion: string;
-    estimatedPipelineValue: string;
-  } | null>({
-    headline: 'Prevent Hardware Downtime with ProActive 4-Hr AMC',
-    whatsappMessage: `Hi *{Customer_Name}*, your OEM warranty for *{Asset_Count} Workstations* expires in 30 days. Don't risk motherboard or PSU failures. Renew this week to lock in *15% early-bird discount* + free bi-monthly preventive thermal paste service! 🚀 Reply *QUOTE* for instant proposal.`,
-    emailSubject: 'Notice: OEM Warranty Expiration & AMC Renewal for {Company_Name}',
-    emailBody: 'Dear {Customer_Name},\n\nOur hardware telemetry shows your systems will cross warranty boundaries next month. We have prepared an automated, GST-compliant AMC contract with 4-hour on-site standby replacements...',
-    projectedConversion: '18.4%',
-    estimatedPipelineValue: '₹4,80,000'
-  });
+    headline:string;whatsappMessage:string;emailSubject:string;emailBody:string;
+    projectedConversion:string;estimatedPipelineValue:string;
+  }|null>(null);
 
   const handleGenerateAIContent = async () => {
     setIsGeneratingContent(true);
+    setContentError(null);
     try {
       const res = await authenticatedFetch('/api/ai/campaign', {
         method: 'POST',
@@ -66,9 +57,11 @@ export const MarketingAndAgentView: React.FC<MarketingAndAgentViewProps> = ({
         })
       });
       const data = await res.json();
+      if(!res.ok)throw new Error(data.error || 'Campaign drafting unavailable');
       setGeneratedContent(data);
     } catch (err) {
-      console.error(err);
+      setGeneratedContent(null);
+      setContentError(err instanceof Error ? err.message : 'Campaign drafting unavailable');
     } finally {
       setIsGeneratingContent(false);
     }
@@ -297,12 +290,13 @@ export const MarketingAndAgentView: React.FC<MarketingAndAgentViewProps> = ({
               <h3 className="text-sm font-bold text-white">Campaign Output Preview</h3>
               {generatedContent && (
                 <div className="flex items-center gap-3 text-xs">
-                  <span className="text-slate-400">Projected Conv: <strong className="text-emerald-400">{generatedContent.projectedConversion}</strong></span>
-                  <span className="text-slate-400">Est. Pipeline: <strong className="text-purple-300">{generatedContent.estimatedPipelineValue}</strong></span>
+                  <span className="text-slate-400">Measured conversion: <strong className="text-emerald-400">{generatedContent.projectedConversion}</strong></span>
+                  <span className="text-slate-400">Measured pipeline: <strong className="text-purple-300">{generatedContent.estimatedPipelineValue}</strong></span>
                 </div>
               )}
             </div>
 
+            {contentError && <p role="alert" className="text-xs text-amber-300">{contentError}</p>}
             {generatedContent && (
               <div className="space-y-4 text-xs">
                 {/* WhatsApp Format */}
@@ -328,9 +322,9 @@ export const MarketingAndAgentView: React.FC<MarketingAndAgentViewProps> = ({
                   </div>
                 </div>
 
-                <button className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all">
+                <button disabled title="No verified audience consent or dispatch connector" className="w-full py-2.5 rounded-xl bg-slate-700 opacity-60 cursor-not-allowed text-slate-300 font-bold text-xs flex items-center justify-center gap-2">
                   <Send className="w-4 h-4" />
-                  <span>Dispatch Omnichannel Campaign to Audience</span>
+                  <span>Dispatch disabled — approval and consent required</span>
                 </button>
               </div>
             )}

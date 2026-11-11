@@ -42,9 +42,9 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
 
   // Compatibility engine state
   const [compatibilityError, setCompatibilityError] = useState<string | null>(null);
-  const [compatibilityStatus, setCompatibilityStatus] = useState<'PASSED' | 'WARNING' | 'ERROR'>('PASSED');
+  const [compatibilityStatus, setCompatibilityStatus] = useState<'PASSED' | 'WARNING' | 'ERROR'>('WARNING');
   const [compatibilityReport, setCompatibilityReport] = useState<string>(
-    'All hardware validated: Switch PoE+ power budget (370W) covers 3x APs (66W); Online UPS rated 2700W peak provides 32-min graceful shutdown.'
+    'NOT VERIFIED: Check vendor prices, OEM compatibility, tax/HSN and availability with authoritative records.'
   );
 
   // Preset solutions
@@ -76,6 +76,7 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
         body: JSON.stringify({ requirement: prompt })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'BOM drafting unavailable');
 
       if (data.items && Array.isArray(data.items)) {
         const newItems: BOMItem[] = data.items.map((it: any, index: number) => ({
@@ -83,17 +84,20 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
           category: it.category || 'General Hardware',
           name: it.name,
           qty: it.qty || 1,
-          unitCost: it.unitCost || 10000,
-          unitSell: it.unitSell || Math.round((it.unitCost || 10000) * 1.18),
-          hsn: it.hsn || '8471',
-          gstRate: 18
+          unitCost: 0,
+          unitSell: 0,
+          hsn: '',
+          gstRate: 0
         }));
         setCurrentBOM(newItems);
-        setCompatibilityStatus(data.compatibilityStatus === 'FLAGGED' ? 'WARNING' : 'PASSED');
-        setCompatibilityReport(data.compatibilityNotes || 'Automated hardware compatibility checks verified.');
+        setCompatibilityStatus('WARNING');
+        setCompatibilityError(null);
+        setCompatibilityReport('UNVERIFIED AI DRAFT: Prices, GST/HSN and OEM compatibility need independent human verification.');
       }
     } catch (err) {
-      console.error('BOM fetch error:', err);
+      setCompatibilityStatus('ERROR');
+      setCompatibilityError(err instanceof Error ? err.message : 'BOM drafting unavailable');
+      setCompatibilityReport('No verified BOM generated');
     } finally {
       setIsGenerating(false);
     }
@@ -378,8 +382,8 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
                 <ShieldCheck className="w-4 h-4" />
                 <span>
                   {marginPct >= 15
-                    ? 'Margin ≥ 15% (Autonomous Auto-Approve Allowed)'
-                    : 'Margin < 15% (Telegram Owner Authorization Required)'}
+                    ? 'Margin ≥ 15% (Approval still requires server-backed review)'
+                    : 'Margin < 15% (Server-backed owner authorization required)'}
                 </span>
               </div>
             </div>
@@ -406,6 +410,8 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
             <button
               id="btn-bom-convert-quote"
               onClick={() => onGenerateQuote(currentBOM, marginPct)}
+              disabled={!currentBOM.length || currentBOM.some(i => !(i.unitCost > 0 && i.unitSell > 0 && i.gstRate > 0 && !!i.hsn.trim()))}
+              title="Add verified prices, GST and HSN before generating a quotation"
               className="w-full mt-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
             >
               <span>Generate Official GST Quotation</span>

@@ -20,3 +20,13 @@ test('browser-local command and approvals cannot forge business workflow',()=>{
  assert.equal(neg.includes('onSendToTelegram(card)'),false);
  assert.match(neg,/Negotiation automation unavailable/);
 });
+
+test('AI BOM and campaign screens never backfill unverified prices or forecasts',()=>{
+ const bom=readFileSync('src/components/SalesAndBOMBuilder.tsx','utf8');
+ assert.equal(bom.includes('it.unitCost || 10000'),false);
+ assert.equal(bom.includes('Autonomous Auto-Approve Allowed'),false);
+ assert.match(bom,/disabled=\{!currentBOM.length/);
+ const market=readFileSync('src/components/MarketingAndAgentView.tsx','utf8');
+ assert.equal(market.includes("projectedConversion: '18.4%'"),false);
+ assert.match(market,/Dispatch disabled — approval and consent required/);
+});
