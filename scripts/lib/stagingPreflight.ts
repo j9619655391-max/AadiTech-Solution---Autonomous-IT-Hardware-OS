@@ -9,7 +9,8 @@ export const MIGRATIONS=[
  '0011_totp_mfa','0012_mfa_audit_events','0013_mfa_recovery_rotation',
  '0014_inventory_opening_counts','0015_procurement_internal',
  '0016_quarantine_intake','0017_supplier_dispatch_holds',
- '0018_acknowledgment_grn_holds'
+ '0018_acknowledgment_grn_holds','0019_stock_release_planning',
+ '0020_unposted_double_entry_journals'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -139,6 +140,58 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(stockGate[0].unsafe)!==0||Number(releaseHolds[0].unsafe)!==0||
     Number(missingReleaseHolds[0].total)!==0||Number(plans[0].unsafe)!==0)
   problems.push('Hard-zero stock foundation, HELD release or disabled reservation plan invariant mismatch');
+ // Phase 1AH: do not certify operational stock; all journal and serial states
+ // must remain UNPOSTED, external trust unavailable and stock hard-zero.
+ const [journalSummary]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN b.journal_id IS NULL OR j.posting_state<>'DISABLED'
+   OR b.external_po_verified<>'NO' OR b.supplier_ack_authenticated<>'NO'
+   OR b.official_grn_verified<>'NO' OR b.warehouse_release_authorized<>'NO'
+   OR b.stock_credit_state<>'DISABLED'
+   OR (j.status='REVIEWED_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_HELD' OR NOT r.balancing_inspected
+      OR h.id IS NULL OR h.review_id<>r.id OR h.state<>'HELD'
+      OR h.posting_state<>'DISABLED'
+      OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.manifestSha256'))<>j.manifest_sha256
+      OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPosted'))<>'false'))
+   OR (j.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL' OR h.id IS NOT NULL))
+   OR (j.status='PENDING_INTERNAL' AND (r.id IS NOT NULL OR h.id IS NOT NULL))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_unposted_journal_headers j
+  LEFT JOIN inv_unposted_source_blockers b ON b.journal_id=j.id
+  LEFT JOIN inv_unposted_journal_reviews r ON r.journal_id=j.id
+  LEFT JOIN inv_unposted_journal_holds h ON h.journal_id=j.id`);
+ const [unbalancedJournal]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe FROM (
+   SELECT journal_id,product_id
+   FROM inv_unposted_journal_legs
+   GROUP BY journal_id,product_id HAVING COUNT(*)<>2
+   OR SUM(CASE WHEN entry_side='CREDIT' AND account_code='QUARANTINE_EVIDENCE'
+    THEN 1 ELSE 0 END)<>1
+   OR SUM(CASE WHEN entry_side='DEBIT' AND account_code='RELEASE_CANDIDATE_EVIDENCE'
+    THEN 1 ELSE 0 END)<>1
+   OR SUM(CASE WHEN entry_side='CREDIT' THEN quantity ELSE -quantity END)<>0
+   OR SUM(CASE WHEN posting_state<>'DISABLED' THEN 1 ELSE 0 END)<>0
+ ) mismatches`);
+ const [missingLegs]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+  FROM inv_unposted_journal_headers j LEFT JOIN inv_unposted_journal_legs l
+  ON l.journal_id=j.id WHERE l.id IS NULL`);
+ const [badCandidates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+  FROM inv_unposted_serial_candidates WHERE provenance_state<>'UNVERIFIED'
+  OR ownership_state<>'NOT_ESTABLISHED'`);
+ const [serialMismatch]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM (
+  SELECT j.id,
+   COALESCE(SUM(CASE WHEN l.account_code='QUARANTINE_EVIDENCE' AND
+    l.tracking_mode='SERIAL' THEN JSON_LENGTH(l.serials_json) ELSE 0 END),0) AS expected
+  FROM inv_unposted_journal_headers j
+  LEFT JOIN inv_unposted_journal_legs l ON l.journal_id=j.id
+  GROUP BY j.id
+ ) counted LEFT JOIN (
+   SELECT journal_id,COUNT(*) AS found FROM inv_unposted_serial_candidates GROUP BY journal_id
+ ) c ON c.journal_id=counted.id WHERE counted.expected<>COALESCE(c.found,0)`);
+ if(Number(journalSummary[0].unsafe)!==0||Number(unbalancedJournal[0].unsafe)!==0||
+    Number(missingLegs[0].total)!==0||Number(badCandidates[0].total)!==0||
+    Number(serialMismatch[0].total)!==0)
+  problems.push('UNPOSTED double-entry, serial provenance or HELD journal authority invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -163,6 +216,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   hardZeroStockPositions:Number(stockGate[0].total),
   heldStockReleaseOutboxes:Number(releaseHolds[0].total),
   nonallocatingReservationPlans:Number(plans[0].total),
+  unpostedBalancedJournalProposals:Number(journalSummary[0].total),
+  unverifiedSerialCandidatesCheck:Number(badCandidates[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',

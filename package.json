@@ -37,6 +37,8 @@
     "test:evidence-chain-mysql": "tsx --test tests/evidence-chain-mysql.integration.ts",
     "db:migrate:stock-foundation": "tsx scripts/migrate-stock-foundation.ts",
     "test:stock-foundation-mysql": "tsx --test tests/stock-foundation-mysql.integration.ts",
+    "db:migrate:journal-foundation": "tsx scripts/migrate-journal-foundation.ts",
+    "test:journal-foundation-mysql": "tsx --test tests/journal-foundation-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

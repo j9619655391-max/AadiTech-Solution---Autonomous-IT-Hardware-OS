@@ -15,7 +15,7 @@ export function stockFoundationMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stag
 }
 async function main(){
  stockFoundationMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0019_stock_release_planning')
+ if(MIGRATIONS[18]!=='0019_stock_release_planning')
   throw Error('Stock foundation migration must be final registered schema');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -28,7 +28,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,18)){
    const checksum=createHash('sha256').update(
     readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==checksum)throw Error('Missing/mismatched prerequisite migration: '+id);
