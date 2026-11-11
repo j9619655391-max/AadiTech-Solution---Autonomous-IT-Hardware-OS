@@ -74,17 +74,17 @@ export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
   name: 'AadiTech Solution',
   tagline: 'Enterprise IT Infrastructure, Turnkey Power Systems & High-Reliability Hardware Solutions',
   website: 'https://aaditechs.in',
-  phone: '+91 9250960063',
-  email: 'info@aaditechs.in',
-  gstin: '27AABCA9988K1Z5',
-  pan: 'AABCA9988K',
-  address: 'Unit 204, Tech Park, Andheri-Kurla Road, Mumbai, Maharashtra - 400072',
-  bankName: 'ICICI Bank Ltd',
-  accountName: 'AadiTech Solution',
-  accountNumber: '001105018920',
-  ifscCode: 'ICIC0000011',
-  branch: 'Andheri East Corporate Branch, Mumbai',
-  upiId: 'aaditech@icici',
+  phone: '',
+  email: '',
+  gstin: '',
+  pan: '',
+  address: '',
+  bankName: '',
+  accountName: '',
+  accountNumber: '',
+  ifscCode: '',
+  branch: '',
+  upiId: '',
   defaultMarginThreshold: 15.0
 };
 
@@ -234,20 +234,14 @@ const STORAGE_KEYS = {
 };
 
 export const storageService = {
+  // A browser-local flag cannot confer production authority or deployment approval.
   getEnvironmentMode(): 'TESTING' | 'PRODUCTION' {
-    try {
-      const mode = localStorage.getItem(STORAGE_KEYS.ENVIRONMENT_MODE);
-      return mode === 'PRODUCTION' ? 'PRODUCTION' : 'TESTING';
-    } catch {
-      return 'TESTING';
-    }
+    return 'TESTING';
   },
   setEnvironmentMode(mode: 'TESTING' | 'PRODUCTION') {
-    try {
-      localStorage.setItem(STORAGE_KEYS.ENVIRONMENT_MODE, mode);
-    } catch (e) {
-      console.error(e);
-    }
+    if(mode!=='TESTING')throw Error('Production mode requires independently verified server-side release authorization');
+    try {localStorage.setItem(STORAGE_KEYS.ENVIRONMENT_MODE,'TESTING');}
+    catch(e){console.error(e);}
   },
 
   loadCompanyProfile(): CompanyProfile {
@@ -269,9 +263,9 @@ export const storageService = {
   loadLeads(): Lead[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.LEADS);
-      return data ? JSON.parse(data) : INITIAL_LEADS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_LEADS;
+      return [];
     }
   },
   saveLeads(leads: Lead[]) {
@@ -285,9 +279,9 @@ export const storageService = {
   loadCustomers(): Customer360[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-      return data ? JSON.parse(data) : INITIAL_CUSTOMERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_CUSTOMERS;
+      return [];
     }
   },
   saveCustomers(customers: Customer360[]) {
@@ -301,9 +295,9 @@ export const storageService = {
   loadProducts(): Product[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      return data ? JSON.parse(data) : AADITECH_SPECIALIZED_PRODUCTS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return AADITECH_SPECIALIZED_PRODUCTS;
+      return [];
     }
   },
   saveProducts(products: Product[]) {
@@ -317,9 +311,9 @@ export const storageService = {
   loadQuotations(): Quotation[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.QUOTATIONS);
-      return data ? JSON.parse(data) : INITIAL_QUOTATIONS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_QUOTATIONS;
+      return [];
     }
   },
   saveQuotations(quotations: Quotation[]) {
@@ -333,9 +327,9 @@ export const storageService = {
   loadPurchaseOrders(): PurchaseOrder[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.POS);
-      return data ? JSON.parse(data) : INITIAL_PURCHASE_ORDERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_PURCHASE_ORDERS;
+      return [];
     }
   },
   savePurchaseOrders(pos: PurchaseOrder[]) {
@@ -349,9 +343,9 @@ export const storageService = {
   loadInventory(): SerialInventory[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.INVENTORY);
-      return data ? JSON.parse(data) : INITIAL_INVENTORY;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_INVENTORY;
+      return [];
     }
   },
   saveInventory(inv: SerialInventory[]) {
@@ -365,9 +359,9 @@ export const storageService = {
   loadSuppliers(): Supplier[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SUPPLIERS);
-      return data ? JSON.parse(data) : INITIAL_SUPPLIERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_SUPPLIERS;
+      return [];
     }
   },
   saveSuppliers(suppliers: Supplier[]) {
@@ -381,9 +375,9 @@ export const storageService = {
   loadRfqs(): RFQ[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.RFQS);
-      return data ? JSON.parse(data) : INITIAL_RFQS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_RFQS;
+      return [];
     }
   },
   saveRfqs(rfqs: RFQ[]) {
@@ -397,9 +391,9 @@ export const storageService = {
   loadWarranties(): WarrantyAsset[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.WARRANTIES);
-      return data ? JSON.parse(data) : INITIAL_WARRANTIES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_WARRANTIES;
+      return [];
     }
   },
   saveWarranties(warranties: WarrantyAsset[]) {
@@ -413,9 +407,9 @@ export const storageService = {
   loadAMCs(): AMCContract[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.AMCS);
-      return data ? JSON.parse(data) : INITIAL_AMCS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_AMCS;
+      return [];
     }
   },
   saveAMCs(amcs: AMCContract[]) {
@@ -429,9 +423,9 @@ export const storageService = {
   loadTickets(): ServiceTicket[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TICKETS);
-      return data ? JSON.parse(data) : INITIAL_TICKETS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_TICKETS;
+      return [];
     }
   },
   saveTickets(tickets: ServiceTicket[]) {
@@ -445,9 +439,9 @@ export const storageService = {
   loadTelegramMessages(): TelegramMessage[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TELEGRAM_MESSAGES);
-      return data ? JSON.parse(data) : INITIAL_TELEGRAM_MESSAGES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_TELEGRAM_MESSAGES;
+      return [];
     }
   },
   saveTelegramMessages(messages: TelegramMessage[]) {
@@ -461,9 +455,9 @@ export const storageService = {
   loadCampaigns(): MarketingCampaign[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.CAMPAIGNS);
-      return data ? JSON.parse(data) : INITIAL_CAMPAIGNS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_CAMPAIGNS;
+      return [];
     }
   },
   saveCampaigns(campaigns: MarketingCampaign[]) {
@@ -477,9 +471,9 @@ export const storageService = {
   loadGeMTenders(): GeMTenderBid[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.GEM_TENDERS);
-      return data ? JSON.parse(data) : INITIAL_GEM_TENDERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_GEM_TENDERS;
+      return [];
     }
   },
   saveGeMTenders(tenders: GeMTenderBid[]) {
@@ -493,9 +487,9 @@ export const storageService = {
   loadOutboundTargets(): OutboundProspectAccount[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.OUTBOUND_TARGETS);
-      return data ? JSON.parse(data) : INITIAL_OUTBOUND_TARGETS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_OUTBOUND_TARGETS;
+      return [];
     }
   },
   saveOutboundTargets(targets: OutboundProspectAccount[]) {
@@ -509,9 +503,9 @@ export const storageService = {
   loadHardwareRefreshAssets(): HardwareRefreshAsset[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.HARDWARE_REFRESH);
-      return data ? JSON.parse(data) : INITIAL_HARDWARE_REFRESH_ASSETS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_HARDWARE_REFRESH_ASSETS;
+      return [];
     }
   },
   saveHardwareRefreshAssets(assets: HardwareRefreshAsset[]) {
@@ -525,9 +519,9 @@ export const storageService = {
   loadAuditLogs(): AuditEvent[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
-      return data ? JSON.parse(data) : INITIAL_AUDIT_LOGS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_AUDIT_LOGS;
+      return [];
     }
   },
   saveAuditLogs(logs: AuditEvent[]) {
@@ -541,9 +535,9 @@ export const storageService = {
   loadSalesOrders(): SalesOrder[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SALES_ORDERS);
-      return data ? JSON.parse(data) : INITIAL_SALES_ORDERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_SALES_ORDERS;
+      return [];
     }
   },
   saveSalesOrders(orders: SalesOrder[]) {
@@ -557,9 +551,9 @@ export const storageService = {
   loadWorkOrders(): InstallationWorkOrder[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.WORK_ORDERS);
-      return data ? JSON.parse(data) : INITIAL_WORK_ORDERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_WORK_ORDERS;
+      return [];
     }
   },
   saveWorkOrders(orders: InstallationWorkOrder[]) {
@@ -573,9 +567,9 @@ export const storageService = {
   loadRMAs(): RMARequest[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.RMAS);
-      return data ? JSON.parse(data) : INITIAL_RMAS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_RMAS;
+      return [];
     }
   },
   saveRMAs(rmas: RMARequest[]) {
@@ -589,9 +583,9 @@ export const storageService = {
   loadPartners(): PartnerAccount[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.PARTNERS);
-      return data ? JSON.parse(data) : INITIAL_PARTNERS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_PARTNERS;
+      return [];
     }
   },
   savePartners(partners: PartnerAccount[]) {
@@ -605,9 +599,9 @@ export const storageService = {
   loadDealRegistrations(): DealRegistration[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DEAL_REGISTRATIONS);
-      return data ? JSON.parse(data) : INITIAL_DEAL_REGISTRATIONS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_DEAL_REGISTRATIONS;
+      return [];
     }
   },
   saveDealRegistrations(deals: DealRegistration[]) {
@@ -621,9 +615,9 @@ export const storageService = {
   loadCommissions(): CommissionRecord[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.COMMISSIONS);
-      return data ? JSON.parse(data) : INITIAL_COMMISSIONS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_COMMISSIONS;
+      return [];
     }
   },
   saveCommissions(commissions: CommissionRecord[]) {
@@ -637,9 +631,9 @@ export const storageService = {
   loadWorkflowRules(): WorkflowRule[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.WORKFLOW_RULES);
-      return data ? JSON.parse(data) : INITIAL_WORKFLOW_RULES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_WORKFLOW_RULES;
+      return [];
     }
   },
   saveWorkflowRules(rules: WorkflowRule[]) {
@@ -653,9 +647,9 @@ export const storageService = {
   loadEventBusMessages(): EventBusMessage[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.EVENT_BUS_MESSAGES);
-      return data ? JSON.parse(data) : INITIAL_EVENT_BUS_MESSAGES;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_EVENT_BUS_MESSAGES;
+      return [];
     }
   },
   saveEventBusMessages(events: EventBusMessage[]) {
@@ -669,9 +663,9 @@ export const storageService = {
   loadKnowledgeDocs(): KnowledgeDocument[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.KNOWLEDGE_DOCS);
-      return data ? JSON.parse(data) : INITIAL_KNOWLEDGE_DOCS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_KNOWLEDGE_DOCS;
+      return [];
     }
   },
   saveKnowledgeDocs(docs: KnowledgeDocument[]) {
@@ -685,9 +679,9 @@ export const storageService = {
   loadDeadStock(): DeadStockItem[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DEAD_STOCK);
-      return data ? JSON.parse(data) : INITIAL_DEAD_STOCK;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_DEAD_STOCK;
+      return [];
     }
   },
   saveDeadStock(items: DeadStockItem[]) {
@@ -701,9 +695,9 @@ export const storageService = {
   loadDemandForecasts(): DemandForecast[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DEMAND_FORECASTS);
-      return data ? JSON.parse(data) : INITIAL_DEMAND_FORECASTS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_DEMAND_FORECASTS;
+      return [];
     }
   },
   saveDemandForecasts(forecasts: DemandForecast[]) {
@@ -717,9 +711,9 @@ export const storageService = {
   loadNextBestActions(): NextBestAction[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.NEXT_BEST_ACTIONS);
-      return data ? JSON.parse(data) : INITIAL_NEXT_BEST_ACTIONS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_NEXT_BEST_ACTIONS;
+      return [];
     }
   },
   saveNextBestActions(actions: NextBestAction[]) {
@@ -733,9 +727,9 @@ export const storageService = {
   loadTenants(): TenantAccount[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TENANTS);
-      return data ? JSON.parse(data) : INITIAL_TENANTS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_TENANTS;
+      return [];
     }
   },
   saveTenants(tenants: TenantAccount[]) {
@@ -749,9 +743,9 @@ export const storageService = {
   loadDeadLetterJobs(): DeadLetterJob[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DEAD_LETTER_JOBS);
-      return data ? JSON.parse(data) : INITIAL_DEAD_LETTER_JOBS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_DEAD_LETTER_JOBS;
+      return [];
     }
   },
   saveDeadLetterJobs(jobs: DeadLetterJob[]) {
@@ -765,9 +759,9 @@ export const storageService = {
   loadIntegrations(): IntegrationConnector[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.INTEGRATIONS);
-      return data ? JSON.parse(data) : INITIAL_INTEGRATIONS;
+      return data ? JSON.parse(data) : [];
     } catch {
-      return INITIAL_INTEGRATIONS;
+      return [];
     }
   },
   saveIntegrations(integrations: IntegrationConnector[]) {
@@ -848,64 +842,16 @@ export const storageService = {
     }
   },
 
-  // Wipe all mock/test data for a pristine fresh production start
+  // Legacy browser reset is destructive, cannot validate live MySQL, and
+  // previously forged a production-ready status. Refuse without side effects.
   wipeToCleanProductionState() {
-    this.saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
-    this.saveLeads([]);
-    this.saveCustomers([]);
-    this.saveProducts(AADITECH_SPECIALIZED_PRODUCTS);
-    this.saveQuotations([]);
-    this.saveInventory([]);
-    this.savePurchaseOrders([]);
-    this.saveSalesOrders([]);
-    this.saveWorkOrders([]);
-    this.saveRMAs([]);
-    this.savePartners([]);
-    this.saveDealRegistrations([]);
-    this.saveCommissions([]);
-    this.saveWorkflowRules(INITIAL_WORKFLOW_RULES);
-    this.saveDeadStock([]);
-    this.saveDemandForecasts([]);
-    this.saveNextBestActions([]);
-    this.saveTenants(INITIAL_TENANTS);
-    this.saveDeadLetterJobs([]);
-    this.saveIntegrations(INITIAL_INTEGRATIONS);
-    this.saveSuppliers(INITIAL_SUPPLIERS);
-    this.saveRfqs([]);
-    this.saveWarranties([]);
-    this.saveAMCs([]);
-    this.saveTickets([]);
-    this.saveCampaigns([]);
-    this.saveGeMTenders([]);
-    this.saveOutboundTargets([]);
-    this.saveHardwareRefreshAssets([]);
-    this.saveTelegramMessages([
-      {
-        id: 'tg-prod-init',
-        sender: 'bot',
-        text: '🟢 **SYSTEM READY FOR PRODUCTION OPERATION**\n\nAadiTech Solution Autonomous IT Hardware OS is now running in **Pristine Clean Production Mode**.\n\n• Zero test leads, mock quotes, or simulated orders\n• Real Product Master Catalog active (including ATS Hi-REL Power Systems)\n• Telegram Exception Gate armed for margin < 15%\n• Omnichannel Inbound listener active for WhatsApp, Website, IndiaMART & Email.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
-    ]);
-    this.saveAuditLogs([
-      {
-        id: `AUD-INIT-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'System Administrator',
-        action: 'PRODUCTION_INITIALIZATION',
-        entityType: 'SYSTEM',
-        entityId: 'ATS-PROD-001',
-        details: 'All simulated testing artifacts, mock leads, quotes, and orders completely wiped. System switched to fresh live production environment with zero test artifacts.',
-        rulesChecked: 'Rule #64: Production Data Integrity & Sanitization',
-        approvalRequired: false,
-        status: 'AUTO_EXECUTED'
-      }
-    ]);
-    this.setEnvironmentMode('PRODUCTION');
+    throw Error('Destructive browser production reset disabled. Use reviewed server-backed migration, independent backup and staging release authorization.');
   },
 
   // Load comprehensive testing dataset for end-to-end evaluation
-  loadTestingDemoState() {
+  loadTestingDemoState(confirmation?:string) {
+    if(confirmation!=='OVERWRITE_BROWSER_DATA')
+      throw Error('Explicit confirmation required: loading demo data overwrites browser-local records');
     this.saveCompanyProfile(DEFAULT_COMPANY_PROFILE);
     this.saveLeads(INITIAL_LEADS);
     this.saveCustomers(INITIAL_CUSTOMERS);
@@ -941,7 +887,9 @@ export const storageService = {
   },
 
   // Reset to factory defaults
-  resetAllData() {
+  resetAllData(confirmation?:string) {
+    if(confirmation!=='DELETE_BROWSER_DATA')
+      throw Error('Explicit confirmation required before deleting browser-local data');
     Object.values(STORAGE_KEYS).forEach(k => {
       localStorage.removeItem(k);
     });

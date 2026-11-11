@@ -95,7 +95,7 @@ export default function App() {
   const [amcs, setAmcs] = useState<AMCContract[]>(() => storageService.loadAMCs());
   const [tickets, setTickets] = useState<ServiceTicket[]>(() => storageService.loadTickets());
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>(() => storageService.loadCampaigns());
-  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS);
+  const [agents, setAgents] = useState<AIAgent[]>([]); // No live agent health is verified
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => storageService.loadAuditLogs());
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => storageService.loadSalesOrders());
   const [workOrders, setWorkOrders] = useState<InstallationWorkOrder[]>(() => storageService.loadWorkOrders());
