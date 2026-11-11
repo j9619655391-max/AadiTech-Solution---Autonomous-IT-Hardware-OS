@@ -10,7 +10,8 @@ export const MIGRATIONS=[
  '0014_inventory_opening_counts','0015_procurement_internal',
  '0016_quarantine_intake','0017_supplier_dispatch_holds',
  '0018_acknowledgment_grn_holds','0019_stock_release_planning',
- '0020_unposted_double_entry_journals'
+ '0020_unposted_double_entry_journals',
+ '0021_signed_proof_prerequisites'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -192,6 +193,48 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
     Number(missingLegs[0].total)!==0||Number(badCandidates[0].total)!==0||
     Number(serialMismatch[0].total)!==0)
   problems.push('UNPOSTED double-entry, serial provenance or HELD journal authority invariant mismatch');
+ // Phase 1AI: offline key proof candidate is cryptographic only, never a real
+ // external trust root; all attestations/GRNs/stock must remain hard-denied.
+ const [proofKeys]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   fingerprint_sha256<>SHA2(FROM_BASE64(public_key_spki_b64),256)
+   OR (party_kind='SUPPLIER' AND (supplier_id IS NULL OR site_id IS NOT NULL))
+   OR (party_kind='WAREHOUSE' AND (site_id IS NULL OR supplier_id IS NOT NULL))
+   OR (status='REVIEWED_UNTRUSTED' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_UNTRUSTED'
+      OR r.reviewer_id=k.registered_by OR NOT r.document_inspected))
+   OR (status='REJECTED_INTERNAL' AND
+     (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_proof_key_candidates k
+  LEFT JOIN inv_proof_key_reviews r ON r.key_id=k.id`);
+ const [proofClaims]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   b.claim_id IS NULL OR c.signature_matched<>1 OR
+   b.party_identity<>'UNVERIFIED' OR b.actual_po_issued<>'NO' OR
+   b.supplier_ack_authenticated<>'NO' OR
+   b.official_grn_authenticated<>'NO' OR b.stock_posting<>'DISABLED'
+   OR k.status<>'REVIEWED_UNTRUSTED'
+   OR (c.status='REVIEWED_CRYPTO_ONLY' AND
+      (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_ONLY'
+       OR r.reviewer_id=c.created_by OR NOT r.signature_inspected
+       OR h.id IS NULL OR h.review_id<>r.id
+       OR h.status<>'HELD' OR h.external_trust_state<>'UNVERIFIED'
+       OR h.stock_posting<>'DISABLED'
+       OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.messageSha256'))<>c.message_sha256
+       OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.officialGrnVerified'))<>'false'))
+   OR (c.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL' OR h.id IS NOT NULL))
+   OR (c.status='PENDING_INTERNAL' AND (r.id IS NOT NULL OR h.id IS NOT NULL))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_signed_proof_claims c
+  JOIN inv_proof_key_candidates k ON k.id=c.key_id
+  LEFT JOIN inv_signed_proof_blockers b ON b.claim_id=c.id
+  LEFT JOIN inv_signed_proof_reviews r ON r.claim_id=c.id
+  LEFT JOIN inv_signed_proof_holds h ON h.claim_id=c.id`);
+ if(Number(proofKeys[0].unsafe)!==0||Number(proofClaims[0].unsafe)!==0)
+  problems.push('Untrusted offline proof key, signature claim or HELD external authority invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -218,6 +261,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   nonallocatingReservationPlans:Number(plans[0].total),
   unpostedBalancedJournalProposals:Number(journalSummary[0].total),
   unverifiedSerialCandidatesCheck:Number(badCandidates[0].total),
+  untrustedProofKeyCandidates:Number(proofKeys[0].total),
+  cryptographicallyMatchedUntrustedClaims:Number(proofClaims[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',

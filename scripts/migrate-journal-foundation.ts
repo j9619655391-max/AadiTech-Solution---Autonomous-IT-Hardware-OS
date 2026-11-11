@@ -15,7 +15,7 @@ export function journalFoundationMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'st
 }
 async function main(){
  journalFoundationMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0020_unposted_double_entry_journals')
+ if(MIGRATIONS[19]!=='0020_unposted_double_entry_journals')
   throw Error('Journal foundation must be final registered migration');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -27,7 +27,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(r=>[String(r.id),String(r.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,19)){
    const checksum=createHash('sha256').update(
     readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==checksum)throw Error('Missing/modified prerequisite migration: '+id);

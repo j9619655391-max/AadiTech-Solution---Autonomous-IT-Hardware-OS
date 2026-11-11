@@ -192,6 +192,10 @@ jobs:
         run: bun run db:migrate:journal-foundation
       - name: Verify unposted journal migration checksum and idempotent rerun
         run: bun run db:migrate:journal-foundation
+      - name: Apply untrusted signed-proof prerequisites to disposable CI
+        run: bun run db:migrate:signed-proof
+      - name: Verify signed proof migration checksum/idempotent rerun
+        run: bun run db:migrate:signed-proof
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -208,6 +212,8 @@ jobs:
         run: bun run test:stock-foundation-mysql
       - name: Verify balanced, unposted journal proposals and unverified serial candidates on MySQL
         run: bun run test:journal-foundation-mysql
+      - name: Verify Ed25519 self-registered key signatures and hard-denied supplier/warehouse trust
+        run: bun run test:signed-proof-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run

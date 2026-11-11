@@ -15,6 +15,7 @@ This repository is a modular Express + React + MySQL platform for hardware sales
 - Phase 1AF manual and **UNVERIFIED** supplier acknowledgment claims with offline document checksum, independent internal claim review and full-SKU/serial/lot reconciliation to Phase 1AD quarantine, resulting only in immutable **HELD / stock posting DISABLED** evidence packs. No issued supplier PO, externally authenticated acknowledgment, official GRN or saleable inventory exists.
 - Phase 1AG inventory ledger *foundation*, with hard-zero authoritative site/SKU position gates, immutable non-posting stock-release intentions, independent reviewer HELD decision and nonallocating demand plans. SQL enforces zero sellable/reserved/posted units; no real movement, available stock, customer reservation or stock issue is possible.
 - Phase 1AH **UNPOSTED** double-entry inventory evidence model: balanced debit/credit pairs by original quarantined SKU, SQL-unique serial candidates marked ownership NOT_ESTABLISHED, explicit supplier/GRN/warehouse authority blockers, and independently reviewed HELD/DISABLED journals. Operational financial or inventory posting, transfer, actual serial title and reservation remain unavailable.
+- Phase 1AI cryptographic prerequisites: owner-registered Ed25519 **UNTRUSTED** public-key candidates, independent internal key-format review, source-bound canonical offline detached signature proof checks, independent **CRYPTO_ONLY** review and immutable HELD evidence. Signature match never proves supplier identity, issued PO or official GRN, and stock posting remains SQL DISABLED.
 - Hardened HTTPS/proxy production preflight, dependency/security CI, disposable MySQL integration tests and Chromium smoke.
 - AI BOM and marketing **drafts only**, requiring provider credentials and human verification. No trustworthy AI business dashboards, autonomous negotiations or customer dispatch.
 - Fresh browser starts with no seeded business records. Legacy browser-local demo screens are marked explicitly, destructive "production reset" is blocked, and existing stored records are not silently erased.
@@ -49,6 +50,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 | Phase 1AF `/api/evidence-chain` | Unverified offline supplier ACK claim, independent internal review and quarantined GRN-reconciliation HOLD; official GRN, stock postings and available-to-sell disabled |
 | Phase 1AG `/api/stock-foundation` | Hard-zero stock positions, independent non-posting release review and HELD demand planning; stock release, reservation and movement posting disabled |
 | Phase 1AH `/api/journal-foundation` | Immutable balanced UNPOSTED debit/credit evidence journals, independently reviewed HELD outbox and unverified serial candidates; no operational ledger, supplier authority, stock credit or debit |
+| Phase 1AI `/api/proof-foundation` | Cryptographically checked detached Ed25519 offline signatures bound to earlier HELD evidence and self-registered UNTRUSTED keys; external authority blocked by SQL enums |
 | Legacy `src/data/mockData.ts`, browser storage and old dashboards | DEMO / BROWSER ONLY; no verified stock, finance, telemetry or approval authority |
 | `/api/ai/command` and `/api/ai/negotiate` | Explicitly unavailable until verified backend facts and approval workflow |
 | `/api/ai/bom` and `/api/ai/campaign` | Unverified AI drafts; no verified prices, HSN/GST, performance, compatibility or dispatch |
@@ -64,6 +66,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 - [Phase 1AF unverified supplier evidence and GRN-reconciliation HOLD](docs/phase-1/PHASE_1AF_SUPPLIER_EVIDENCE_GRN_HOLD.md)
 - [Phase 1AG hard-zero stock ledger foundation and release-intent controls](docs/phase-1/PHASE_1AG_ZERO_STOCK_LEDGER_FOUNDATION.md)
 - [Phase 1AH balanced unposted journal and serial provenance gate](docs/phase-1/PHASE_1AH_UNPOSTED_DOUBLE_ENTRY_JOURNAL.md)
+- [Phase 1AI offline signed proof prerequisites and external trust hold](docs/phase-1/PHASE_1AI_SIGNED_PROOF_TRUST_HOLDS.md)
 - [Phase 1Z held release candidate and real staging checklist](docs/phase-1/PHASE_1Z_HELD_RELEASE_CANDIDATE.md)
 - [Production deployment guide (hold-gated)](HOSTINGER_DEPLOYMENT_GUIDE.md)
 - [Threat model](docs/security/THREAT_MODEL.md)

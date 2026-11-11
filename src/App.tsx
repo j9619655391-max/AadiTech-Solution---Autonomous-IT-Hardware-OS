@@ -12,6 +12,7 @@ import { SupplierDispatchOwnerPanel } from './components/SupplierDispatchOwnerPa
 import { SupplierEvidenceOwnerPanel } from './components/SupplierEvidenceOwnerPanel';
 import { StockFoundationOwnerPanel } from './components/StockFoundationOwnerPanel';
 import { JournalFoundationOwnerPanel } from './components/JournalFoundationOwnerPanel';
+import { SignedProofOwnerPanel } from './components/SignedProofOwnerPanel';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
 import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
@@ -1104,6 +1105,7 @@ export default function App() {
             <SupplierEvidenceOwnerPanel />
             <StockFoundationOwnerPanel />
             <JournalFoundationOwnerPanel />
+            <SignedProofOwnerPanel />
             <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
               <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
                 Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)
