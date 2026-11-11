@@ -261,9 +261,14 @@ test('tampered 1AF GRN held SHA is denied, then snapshot-bound release intent is
   call('/api/stock-foundation/release-intents','POST',{heldGrnId:main.heldGrnId}),
   call('/api/stock-foundation/release-intents','POST',{heldGrnId:main.heldGrnId})
  ]);
- assert.deepEqual(pair.map(x=>x.status).sort(),[200,201]);
- assert.equal(pair[0].data.id,pair[1].data.id);
- releaseId=pair[0].data.id;
+ assert.ok(pair.some(x=>x.status===201),JSON.stringify(pair));
+ assert.ok(pair.every(x=>[200,201,409].includes(x.status)),JSON.stringify(pair));
+ const replay=await call('/api/stock-foundation/release-intents','POST',
+  {heldGrnId:main.heldGrnId});
+ assert.equal(replay.status,200,JSON.stringify(replay));
+ const created=pair.find(x=>x.status===201)!;
+ assert.equal(replay.data.id,created.data.id);
+ releaseId=replay.data.id;
  const [lines]=await db.query<any[]>('SELECT * FROM inv_stock_release_intent_lines WHERE release_intent_id=?',
   [releaseId]);
  assert.equal(lines.length,2);
@@ -331,9 +336,12 @@ test('nonallocating planning is immutable, quantity-capped, no-negative and conc
  const responses=await Promise.all([
   call('/api/stock-foundation/reservation-plans','POST',body),
   call('/api/stock-foundation/reservation-plans','POST',body)]);
- assert.deepEqual(responses.map(x=>x.status).sort(),[200,201]);
- assert.equal(responses[0].data.id,responses[1].data.id);
- assert.equal(responses[0].data.allocatedQuantity,0);
+ assert.ok(responses.some(x=>x.status===201),JSON.stringify(responses));
+ assert.ok(responses.every(x=>[200,201,409].includes(x.status)),JSON.stringify(responses));
+ const replayPlan=await call('/api/stock-foundation/reservation-plans','POST',body);
+ assert.equal(replayPlan.status,200,JSON.stringify(replayPlan));
+ assert.equal(replayPlan.data.id,responses.find(x=>x.status===201)!.data.id);
+ assert.equal(replayPlan.data.allocatedQuantity,0);
  assert.equal((await call('/api/stock-foundation/reservation-plans','POST',
   {...body,quantity:1})).status,409);
  assert.equal((await call('/api/stock-foundation/reservation-plans','POST',

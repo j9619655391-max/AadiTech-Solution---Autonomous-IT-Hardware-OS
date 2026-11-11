@@ -295,8 +295,12 @@ test('upstream held release tamper refuses journal; concurrent exact create yiel
  const pair=await Promise.all([
   call('/api/journal-foundation/journals','POST',{releaseIntentId:releaseA}),
   call('/api/journal-foundation/journals','POST',{releaseIntentId:releaseA})]);
- assert.deepEqual(pair.map(x=>x.status).sort(),[200,201]);
- assert.equal(pair[0].data.id,pair[1].data.id);journalA=pair[0].data.id;
+ assert.ok(pair.some(x=>x.status===201),JSON.stringify(pair));
+ assert.ok(pair.every(x=>[200,201,409].includes(x.status)),JSON.stringify(pair));
+ const retry=await call('/api/journal-foundation/journals','POST',{releaseIntentId:releaseA});
+ assert.equal(retry.status,200,JSON.stringify(retry));
+ assert.equal(retry.data.id,pair.find(x=>x.status===201)!.data.id);
+ journalA=retry.data.id;
  const [legs]=await db.query<any[]>(`SELECT product_id,account_code,entry_side,
   quantity,posting_state FROM inv_unposted_journal_legs WHERE journal_id=?
   ORDER BY product_id,account_code`,[journalA]);

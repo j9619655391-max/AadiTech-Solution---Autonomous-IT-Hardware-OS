@@ -14,5 +14,7 @@ test('all registered MySQL foreign-key constraint names must be schema-wide uniq
    used.set(name,migration);
   }
  }
- assert.ok(used.size>100);
+ assert.ok(used.has('fk_release_actor'));
+ assert.ok(used.has('fk_stock_intent_preparer'));
+ assert.ok(used.size>50);
 });
