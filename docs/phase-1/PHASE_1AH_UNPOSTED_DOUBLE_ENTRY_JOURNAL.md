@@ -71,3 +71,7 @@ GitHub workflows apply migration 0020, rerun it for checksum/idempotency, run al
 4. Valuation, FIFO/weighted-average/COGS policy, landed costs, AP and GST, customer order/reservation fulfillment, automated security tests, TLS proxy staging, encrypted backup/restore rehearsal, measured RTO/RPO, supplier/ops/legal approval and owner release sign-off.
 
 **Production release HOLD.** Issue #2 OPEN, Draft PR #1 open/draft/unmerged, main unchanged. No production migration, Hostinger deploy, real supplier contact, official GRN, warehouse stock posting, live stock reservation or payment is performed.
+
+### 2026-11-12 CI corrective note
+
+The CI run for Phase 1AH exposed a prerequisite Phase 1AG migration 0019 schema-wide FK collision: `fk_release_actor` also exists in migration 0007. The un-applied 0019 definition is corrected to `fk_stock_intent_preparer` and its checksum is intentionally updated. The old 0019 never successfully applied on disposable CI; any separately maintained staging database with a recorded old checksum must be investigated before applying the change—no blanket historical checksum overwrite.

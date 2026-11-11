@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS inv_stock_release_intents (
  CONSTRAINT fk_release_held_grn FOREIGN KEY(held_grn_id) REFERENCES inv_grn_held_records(id),
  CONSTRAINT fk_release_obs FOREIGN KEY(observation_id) REFERENCES inv_inbound_observations(id),
  CONSTRAINT fk_release_site FOREIGN KEY(site_id) REFERENCES inventory_sites(id),
- CONSTRAINT fk_release_actor FOREIGN KEY(prepared_by) REFERENCES auth_users(id)
+ CONSTRAINT fk_stock_intent_preparer FOREIGN KEY(prepared_by) REFERENCES auth_users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS inv_stock_release_intent_lines (
