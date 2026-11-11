@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import express from 'express';
 import {getPool} from '../server/db';
-import {hashPassword,hashToken} from '../server/auth/crypto';
+import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/procurement/ownerRouter';
 import reviewRouter from '../server/procurement/reviewRouter';
@@ -12,8 +12,8 @@ if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.e
  throw Error('Procurement integration only permitted on disposable aaditech_ci');
 const db=getPool();
 if(!db)throw Error('Disposable MySQL unavailable');
-const owner=randomUUID(),reviewer=randomUUID(),ownerToken='o'.repeat(43),
- reviewerToken='r'.repeat(43),csrf='q'.repeat(43);
+const owner=randomUUID(),reviewer=randomUUID(),ownerToken=newSecret(),
+ reviewerToken=newSecret(),csrf=newSecret();
 const ownerPass='CI-procurement-owner-strong-2026',reviewerPass='CI-procurement-reviewer-strong-2026';
 let base='',ownerStep='',reviewerStep='',siteId='',productId='',supplierId='',requestId='';
 let close:undefined|(()=>Promise<void>);
