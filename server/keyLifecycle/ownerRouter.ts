@@ -173,8 +173,12 @@ router.post('/rotations',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId);
-  const old=await independentlyReviewedPossession(c,data.oldKeyId);
-  const fresh=await independentlyReviewedPossession(c,data.newKeyId);
+  // Deterministic candidate locking prevents reverse-order rotation deadlocks.
+  const [firstId,secondId]=[data.oldKeyId,data.newKeyId].sort();
+  const first=await independentlyReviewedPossession(c,firstId);
+  const second=await independentlyReviewedPossession(c,secondId);
+  const old=data.oldKeyId===firstId?first:second;
+  const fresh=data.newKeyId===firstId?first:second;
   if(old.key.registeredBy!==actor||fresh.key.registeredBy!==actor||
    old.key.partyKind!==fresh.key.partyKind||old.key.partyId!==fresh.key.partyId)
    throw new ChainConflictError('Rotated candidate must have same owner/party and separate reviewed possession');

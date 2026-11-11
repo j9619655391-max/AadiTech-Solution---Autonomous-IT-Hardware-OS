@@ -244,8 +244,7 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    (c.status='ISSUED' AND (c.consumed_at IS NOT NULL OR p.id IS NOT NULL))
    OR (c.status='MATCHED_INTERNAL' AND
     (c.consumed_at IS NULL OR c.consumed_at>c.expires_at OR p.id IS NULL))
-   OR (p.id IS NOT NULL AND (p.key_id<>c.key_id OR p.status<>'MATCHED_INTERNAL'
-      OR r.id IS NULL AND FALSE))
+   OR (p.id IS NOT NULL AND (p.key_id<>c.key_id OR p.status<>'MATCHED_INTERNAL'))
    OR (r.id IS NOT NULL AND
     (r.reviewer_id=k.registered_by OR
      (r.decision='REVIEWED_UNTRUSTED' AND NOT r.possession_inspected)))

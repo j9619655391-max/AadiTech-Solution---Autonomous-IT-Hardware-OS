@@ -14,10 +14,12 @@ async function decoded<T>(r:Response):Promise<T>{
 export function KeyLifecycleOwnerPanel(){
  const [keys,setKeys]=useState<Key[]>([]),[receipts,setReceipts]=useState<Receipt[]>([]);
  const [rotations,setRotations]=useState<Rotation[]>([]);
- const [keyId,setKeyId]=useState(''),[oldKeyId,setOldKeyId]=useState(''),
+ const [keyId,setKeyId]=useState(''),[retireKeyId,setRetireKeyId]=useState(''),
+ [oldKeyId,setOldKeyId]=useState(''),
  [newKeyId,setNewKeyId]=useState(''),[sig,setSig]=useState(''),
  [challenge,setChallenge]=useState<Challenge|null>(null);
  const [reason,setReason]=useState(''),[evidence,setEvidence]=useState(''),
+ [retireReason,setRetireReason]=useState(''),[retireEvidence,setRetireEvidence]=useState(''),
  [password,setPassword]=useState(''),[verified,setVerified]=useState(false),
  [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const refresh=useCallback(async()=>{
@@ -64,13 +66,13 @@ export function KeyLifecycleOwnerPanel(){
   e.preventDefault();setBusy(true);setError('');
   try{
    step();
-   if(!window.confirm('IMMEDIATELY and irreversibly REVOKE the selected candidate key? New proof claims with it will be denied.'))return;
+   if(!window.confirm('IMMEDIATELY and irreversibly REVOKE candidate '+retireKeyId+'? New proof claims with it will be denied.'))return;
    const v=await decoded<{status:string}>(
-    await sensitiveFetch('/api/key-lifecycle/keys/'+encodeURIComponent(keyId)+'/revoke',{
+    await sensitiveFetch('/api/key-lifecycle/keys/'+encodeURIComponent(retireKeyId)+'/revoke',{
      method:'POST',headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({reason,evidenceRef:evidence})}));
+     body:JSON.stringify({reason:retireReason,evidenceRef:retireEvidence})}));
    setNotice(v.status+' · no key reactivation possible. Existing signed claims remain historical internal records only.');
-   setKeyId('');setReason('');setEvidence('');setChallenge(null);await refresh();
+   setRetireKeyId('');setRetireReason('');setRetireEvidence('');setChallenge(null);await refresh();
   }catch(e){setError(String(e));}finally{setBusy(false);}
  }
  async function rotate(e:React.FormEvent){
@@ -170,14 +172,20 @@ export function KeyLifecycleOwnerPanel(){
   <form onSubmit={retire} className="border border-rose-800 p-3 rounded space-y-2">
    <h3 className="font-semibold text-sm text-rose-200">Emergency irrevocable key retirement</h3>
    <p className="text-xs text-rose-200">Use for loss, exposure or suspected compromise. It blocks future source proof checks immediately, without waiting for review.</p>
-   <label className="block text-xs">Candidate to revoke
-    <select required value={keyId} onChange={e=>setKeyId(e.target.value)}
+   <label className="block text-xs">Candidate to revoke (separate from challenge selection)
+    <select required value={retireKeyId} onChange={e=>setRetireKeyId(e.target.value)}
      className="block mt-1 w-full rounded p-2 bg-slate-950 border border-slate-700">
      <option value="">Choose key</option>
      {keys.filter(k=>!k.retirement).map(k=><option key={k.id} value={k.id}>{k.id.slice(0,14)} · {k.partyKind}</option>)}
     </select></label>
-   <p className="text-xs text-slate-400">Reason and evidence ticket are shared with the rotation form above.</p>
-   <button disabled={busy||!verified||!keyId||reason.trim().length<12||!evidence}
+   <label className="text-xs block">Emergency revocation reason
+    <textarea required minLength={12} maxLength={1000} value={retireReason}
+     onChange={e=>setRetireReason(e.target.value)}
+     className="block mt-1 w-full p-2 rounded bg-slate-950 border border-slate-700"/></label>
+   <label className="text-xs block">Independent incident evidence ticket
+    <input required value={retireEvidence} onChange={e=>setRetireEvidence(e.target.value)}
+     className="block mt-1 w-full p-2 rounded bg-slate-950 border border-slate-700"/></label>
+   <button disabled={busy||!verified||!retireKeyId||retireReason.trim().length<12||!retireEvidence}
     className="text-xs rounded px-3 py-2 bg-rose-800 disabled:opacity-50">EMERGENCY REVOKE key</button>
   </form>
  </section>;

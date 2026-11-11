@@ -28,11 +28,12 @@ export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:bo
    Number(reviews[0].inspected)!==1)deny();
  }
  const [revoked]=await conn.query<RowDataPacket[]>(`SELECT key_id FROM inv_key_retirements
-  WHERE key_id=?`,[keyId]);
+  WHERE key_id=? FOR UPDATE`,[keyId]);
  if(revoked.length)deny();
  if(!allowPendingRotation){
   const [pending]=await conn.query<RowDataPacket[]>(`SELECT id FROM inv_key_rotation_proposals
-   WHERE status='PENDING_INTERNAL' AND (old_key_id=? OR new_key_id=?)`,
+   WHERE status='PENDING_INTERNAL' AND (old_key_id=? OR new_key_id=?)
+   FOR UPDATE`,
    [keyId,keyId]);
   if(pending.length)deny();
  }
