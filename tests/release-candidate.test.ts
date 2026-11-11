@@ -32,11 +32,12 @@ test('candidate hashes compiled assets, lock and every migration, but never auth
   assert.equal(a.buildHashManifestComplete,true);
   assert.equal(a.productionReleaseAuthorized,false);
   assert.equal(a.productionReleaseBlocked,true);
-  assert.equal(a.fileCount,19);
+  assert.equal(a.fileCount,20);
   assert.ok(a.files.every(f=>/^[a-f0-9]{64}$/.test(f.sha256)));
   assert.ok(a.files.some(f=>f.path==='dist/index.html'));
   assert.ok(a.files.some(f=>f.path==='database/migrations/0013_mfa_recovery_rotation.sql'));
   assert.ok(a.files.some(f=>f.path==='database/migrations/0014_inventory_opening_counts.sql'));
+  assert.ok(a.files.some(f=>f.path==='database/migrations/0015_procurement_internal.sql'));
  }finally{rmSync(root,{recursive:true,force:true});}
 });
 test('tampered compiled code changes artifact digest while source SHA alone remains unchanged',()=>{

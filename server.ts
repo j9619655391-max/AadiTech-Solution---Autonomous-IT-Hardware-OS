@@ -8,6 +8,8 @@ import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
 import authRouter, { requireOwner } from "./server/auth/router";
 import crmRouter from "./server/crm/router";
 import inventoryRouter from "./server/inventory/router";
+import procurementOwnerRouter from "./server/procurement/ownerRouter";
+import procurementReviewRouter from "./server/procurement/reviewRouter";
 import quoteDraftRouter from "./server/quotes/router";
 import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
@@ -35,6 +37,8 @@ app.use("/api/auth/mfa", mfaRouter);
 app.use("/api/security", securityAdminRouter);
 app.use("/api/crm", crmRouter);
 app.use("/api/inventory", inventoryRouter);
+app.use("/api/procurement/review", procurementReviewRouter);
+app.use("/api/procurement", procurementOwnerRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
 app.use("/api/quotes/reviews", quoteReviewRouter);
 app.use("/api/quotes/release-preparations", quoteReleaseHoldRouter);
@@ -90,7 +94,7 @@ app.get("/api/db/schema-sql", (_req,res) => {
   res.setHeader("Cache-Control","no-store");
   res.status(410).json({
     error:"Legacy schema download disabled to prevent destructive import",
-    safePath:"Use staging backup/restore rehearsal and additive migrations 0001-0013"
+    safePath:"Use staging backup/restore rehearsal and checksum-tracked migrations 0001-0015"
   });
 });
 

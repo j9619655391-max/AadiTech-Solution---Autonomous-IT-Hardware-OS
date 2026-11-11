@@ -6,6 +6,7 @@ import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { CRMAndLeadsView } from './components/CRMAndLeadsView';
 import { LiveCRMWorkspace } from './components/LiveCRMWorkspace';
 import { LiveInventoryWorkspace } from './components/LiveInventoryWorkspace';
+import { LiveProcurementWorkspace } from './components/LiveProcurementWorkspace';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
 import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
@@ -1092,6 +1093,7 @@ export default function App() {
         {activeTab === 'procurement' && (
           <div className="space-y-5">
             <LiveInventoryWorkspace />
+            <LiveProcurementWorkspace />
             <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
               <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
                 Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)

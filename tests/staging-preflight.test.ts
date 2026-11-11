@@ -13,7 +13,7 @@ test('read-only readiness is denied by default and outside disposable DB',()=>{
 });
 test('all known migration checksums derive from checked-in SQL bytes',()=>{
  const entries=migrationChecksums();
- assert.equal(entries.length,14);
+ assert.equal(entries.length,15);
  assert.equal(new Set(entries.map(x=>x.id)).size,entries.length);
  assert.deepEqual(entries.map(x=>x.id),[...MIGRATIONS]);
  assert.ok(entries.every(x=>/^[a-f0-9]{64}$/.test(x.checksum)));

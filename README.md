@@ -9,6 +9,7 @@ This repository is a modular Express + React + MySQL platform for hardware sales
 - Server-backed role-scoped authentication, CSRF, MFA/recovery, reviewer lifecycle and internal session controls.
 - MySQL-backed CRM and internal quotation draft/revision/review with held, **DISABLED** dispatch outbox. A held draft is **not** customer-issued.
 - Phase 1AB owner-entered inventory sites and immutable MySQL **opening counts only**. No available-to-sell stock, procurement receipt, reservation, issue or cost-of-goods is asserted.
+- Phase 1AC internal MySQL supplier registry, independent identity attestation, owner purchase requisitions, separate reviewer decisions and **HELD** PO snapshots; supplier dispatch is permanently disabled. Neither a real PO nor a receipt is issued.
 - Hardened HTTPS/proxy production preflight, dependency/security CI, disposable MySQL integration tests and Chromium smoke.
 - AI BOM and marketing **drafts only**, requiring provider credentials and human verification. No trustworthy AI business dashboards, autonomous negotiations or customer dispatch.
 - Fresh browser starts with no seeded business records. Legacy browser-local demo screens are marked explicitly, destructive "production reset" is blocked, and existing stored records are not silently erased.
@@ -37,6 +38,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 |---|---|
 | Real `/api/auth`, `/api/crm`, `/api/quotes`, `/api/security` | Server + MySQL, still subject to independent staging acceptance |
 | Phase 1AB `/api/inventory` | Authenticated owner-entered sites and historical opening-count records ONLY; no live stock availability |
+| Phase 1AC `/api/procurement` | Owner/reviewer supplier identity evidence, quote-backed requisitions, immutable decisions and HELD PO hash; no supplier dispatch, goods receipt, reservation or payment |
 | Legacy `src/data/mockData.ts`, browser storage and old dashboards | DEMO / BROWSER ONLY; no verified stock, finance, telemetry or approval authority |
 | `/api/ai/command` and `/api/ai/negotiate` | Explicitly unavailable until verified backend facts and approval workflow |
 | `/api/ai/bom` and `/api/ai/campaign` | Unverified AI drafts; no verified prices, HSN/GST, performance, compatibility or dispatch |
@@ -46,6 +48,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 
 - [Phase 1AA cross-module code audit](docs/security/PHASE_1AA_CODE_AUDIT.md)
 - [Phase 1AB MySQL inventory opening-count boundary](docs/phase-1/PHASE_1AB_INVENTORY_OPENING_COUNTS.md)
+- [Phase 1AC internal procurement and held PO boundary](docs/phase-1/PHASE_1AC_PROCUREMENT_REVIEW_HOLD.md)
 - [Phase 1Z held release candidate and real staging checklist](docs/phase-1/PHASE_1Z_HELD_RELEASE_CANDIDATE.md)
 - [Production deployment guide (hold-gated)](HOSTINGER_DEPLOYMENT_GUIDE.md)
 - [Threat model](docs/security/THREAT_MODEL.md)

@@ -25,9 +25,9 @@ async function main(){
   const [locks]=await db.query<any[]>("SELECT GET_LOCK('aaditech-auth-migrations',15) AS acquired");
   if(locks[0]?.acquired!==1)throw Error('Migration lock unavailable');
   locked=true;
-  if(MIGRATIONS[MIGRATIONS.length-1]!=='0014_inventory_opening_counts')
+  if(MIGRATIONS[13]!=='0014_inventory_opening_counts')
    throw Error('Inventory migration must be last in registry');
-  const previous=MIGRATIONS.slice(0,-1);
+  const previous=MIGRATIONS.slice(0,13);
   const [deps]=await db.query<any[]>('SELECT COUNT(*) AS n FROM schema_migrations WHERE id IN ('+
    previous.map(()=>'?').join(',')+')',previous);
   if(Number(deps[0]?.n)!==previous.length)
