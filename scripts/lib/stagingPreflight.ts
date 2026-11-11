@@ -8,7 +8,7 @@ export const MIGRATIONS=[
  '0008_reviewer_roles','0009_auth_security_events','0010_auth_login_security',
  '0011_totp_mfa','0012_mfa_audit_events','0013_mfa_recovery_rotation',
  '0014_inventory_opening_counts','0015_procurement_internal',
- '0016_quarantine_intake'
+ '0016_quarantine_intake','0017_supplier_dispatch_holds'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
