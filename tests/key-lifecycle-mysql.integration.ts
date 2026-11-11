@@ -332,7 +332,9 @@ async function possession(keyId:string,privateKey:typeof pairOld.privateKey){
  assert.equal(sent.data.externallyVerifiedKeyOwner,false);
  assert.equal((await call('/api/key-lifecycle/responses','POST',claim)).status,409);
  const id=sent.data.receiptId as string;
- const inspected=await call('/api/key-lifecycle/review/receipts/'+id);
+ assert.equal((await call('/api/key-lifecycle/review/receipts/'+id)).status,403);
+ const inspected=await call('/api/key-lifecycle/review/receipts/'+id,
+  'GET',undefined,'reviewer');
  assert.equal(inspected.status,200,JSON.stringify(inspected));
  assert.equal(inspected.data.signatureMatched,true);
  assert.equal(inspected.data.actualSupplierIdentityVerified,false);
