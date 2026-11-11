@@ -30,7 +30,7 @@ async function call(path:string,method='GET',body?:unknown,options:{
  const response=await fetch(base+path,{method,headers,
   body:body===undefined?undefined:JSON.stringify(body)});
  const raw=await response.text();
- let data:unknown=null;
+ let data:Record<string,any>= {};
  if(raw){try{data=JSON.parse(raw);}catch{data={error:'Non-JSON response',contentType:response.headers.get('content-type')};}}
  return {status:response.status,data};
 }
