@@ -65,7 +65,10 @@ async function signOut(page){
 
 try{
  const owner=await createUser('OWNER'),reviewer=await createUser('REVIEWER');
- browserInstance=await chromium.launch({headless:true});
+ // GitHub-hosted runner's installed Chrome avoids flaky apt mirror dependency downloads.
+ // Still perform the full real browser smoke; never replace it with a mock or skip.
+ const channel=process.env.BROWSER_E2E_CHROME_CHANNEL==='chrome'?'chrome':undefined;
+ browserInstance=await chromium.launch({headless:true,...(channel?{channel}:{})});
  const context=await browserInstance.newContext({baseURL:base});
  // Abort any off-host request; no internet, provider dispatch or tracking during UI smoke.
  await context.route('**/*',route=>{

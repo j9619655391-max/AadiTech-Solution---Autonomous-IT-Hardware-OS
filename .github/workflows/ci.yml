@@ -176,6 +176,10 @@ jobs:
         run: bun run db:migrate:intake
       - name: Verify quarantine intake migration checksum and idempotent rerun
         run: bun run db:migrate:intake
+      - name: Apply internal supplier dispatch HOLD migration to disposable CI
+        run: bun run db:migrate:dispatch-holds
+      - name: Verify supplier dispatch HOLD migration checksum and rerun
+        run: bun run db:migrate:dispatch-holds
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -184,6 +188,8 @@ jobs:
         run: bun run test:procurement-mysql
       - name: Verify immutable intake, independent quarantine witness and serial uniqueness
         run: bun run test:intake-mysql
+      - name: Verify separated supplier destination and disabled dispatch outbox on MySQL
+        run: bun run test:dispatch-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run
@@ -194,9 +200,13 @@ jobs:
         env:
           BROWSER_E2E_CI: '1'
           BROWSER_E2E_BASE_URL: 'http://127.0.0.1:3000'
+          BROWSER_E2E_CHROME_CHANNEL: 'chrome'
         run: |
           npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
-          ./node_modules/.bin/playwright install --with-deps chromium
+          # ubuntu-24.04 GitHub runner provides Google Chrome; avoid flaky external apt mirrors.
+          # Still run the real browser MFA/role smoke, never skip or mock it.
+          command -v google-chrome
+          google-chrome --version
           bun run dev > "$RUNNER_TEMP/aaditech-browser-server.log" 2>&1 &
           APP_PID=$!
           trap 'kill "$APP_PID" 2>/dev/null || true' EXIT

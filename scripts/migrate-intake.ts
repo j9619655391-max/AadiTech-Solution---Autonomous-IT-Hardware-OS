@@ -15,7 +15,7 @@ export function intakeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 }
 async function main(){
  intakeMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0016_quarantine_intake')
+ if(MIGRATIONS[15]!=='0016_quarantine_intake')
   throw Error('Inbound quarantine migration must be final registered schema');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
@@ -25,7 +25,7 @@ async function main(){
   const [locks]=await db.query<any[]>("SELECT GET_LOCK('aaditech-auth-migrations',15) AS acquired");
   if(locks[0]?.acquired!==1)throw Error('Migration lock unavailable');
   locked=true;
-  const ids=MIGRATIONS.slice(0,-1);
+  const ids=MIGRATIONS.slice(0,15);
   const [rows]=await db.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(row=>[String(row.id),String(row.checksum)]));
   for(const id of ids){

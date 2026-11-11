@@ -52,6 +52,26 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    ON o.release_preparation_id=p.id WHERE o.id IS NULL`);
  if(Number(holds[0].unsafe)!==0||Number(orphaned[0].n)!==0||
    Number(missingEvents[0].n)!==0)problems.push('Held/outbox invariant mismatch');
+ // No externally executable supplier outbox exists; an approved internal
+ // dispatch preparation MUST have exactly one HELD/DISABLED outbox.
+ const [supplierOutbox]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.id IS NULL OR d.id IS NULL
+    OR o.state<>'HELD' OR o.dispatch_state<>'DISABLED'
+    OR p.status<>'APPROVED_INTERNAL' OR d.decision<>'APPROVED_INTERNAL'
+    OR o.decision_id<>d.id
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.manifestSha256'))<>p.manifest_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.dispatchState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.externalPoIssued'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM proc_dispatch_outbox_holds o
+   LEFT JOIN proc_dispatch_preparations p ON p.id=o.preparation_id
+   LEFT JOIN proc_dispatch_review_decisions d ON d.id=o.decision_id`);
+ const [missingSupplierHolds]=await db.query<RowDataPacket[]>(`
+  SELECT COUNT(*) AS n FROM proc_dispatch_preparations p
+  LEFT JOIN proc_dispatch_outbox_holds o ON o.preparation_id=p.id
+  WHERE p.status='APPROVED_INTERNAL' AND o.id IS NULL`);
+ if(Number(supplierOutbox[0].unsafe)!==0||Number(missingSupplierHolds[0].n)!==0)
+  problems.push('Supplier dispatch HELD/DISABLED outbox invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -70,7 +90,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  return {
   ready:problems.length===0,target,
   migrationCount:actual.size,expectedMigrationCount:expected.length,
-  heldPreparations:Number(holds[0].total),activeOwnerCount:activeOwners,
+  heldPreparations:Number(holds[0].total),
+  heldSupplierDispatchOutboxes:Number(supplierOutbox[0].total),activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
