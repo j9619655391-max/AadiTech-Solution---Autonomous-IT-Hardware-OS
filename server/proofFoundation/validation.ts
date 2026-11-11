@@ -73,8 +73,8 @@ export function validateClaim(raw:unknown){
   throw new ChainInputError('Canonical UTC timestamp with .000Z required');
  strictBase64(v.signatureB64,64);
  return {keyId:v.keyId as string,kind:v.kind as ProofKind,sourceId:v.sourceId as string,
-  reference:v.reference,documentSha256:v.documentSha256,
-  issuedAt:v.issuedAt,signatureB64:v.signatureB64};
+  reference:v.reference as string,documentSha256:v.documentSha256 as string,
+  issuedAt:v.issuedAt as string,signatureB64:v.signatureB64 as string};
 }
 export function validateTemplate(raw:unknown){
  const v=exact(raw,['keyId','kind','sourceId','reference','documentSha256','issuedAt']);
