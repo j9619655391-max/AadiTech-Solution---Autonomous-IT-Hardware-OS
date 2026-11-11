@@ -24,11 +24,18 @@ function serials(value:unknown):string[]{
   throw new IntakeConflictError('Corrupt serial evidence');
  return value as string[];
 }
-async function details(conn:PoolConnection|import('mysql2/promise').Pool,id:string){
+type IntakeDbLine={id:string;productId:string;quantity:number;
+ trackingMode:'SERIAL'|'LOT';lotCode:string|null;serialNumbers:string[]};
+async function details(conn:PoolConnection|import('mysql2/promise').Pool,id:string):Promise<IntakeDbLine[]>{
  const [lines]=await conn.query<RowDataPacket[]>(`SELECT id,product_id AS productId,quantity,
    tracking_mode AS trackingMode,lot_code AS lotCode,serials_json AS serialNumbers
    FROM inv_inbound_lines WHERE observation_id=? ORDER BY product_id`,[id]);
- return lines.map(l=>({...l,serialNumbers:serials(l.serialNumbers)}));
+ return lines.map((line):IntakeDbLine=>({
+  id:String(line.id),productId:String(line.productId),quantity:Number(line.quantity),
+  trackingMode:line.trackingMode as 'SERIAL'|'LOT',
+  lotCode:line.lotCode===null?null:String(line.lotCode),
+  serialNumbers:serials(line.serialNumbers)
+ }));
 }
 router.get('/observations',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
