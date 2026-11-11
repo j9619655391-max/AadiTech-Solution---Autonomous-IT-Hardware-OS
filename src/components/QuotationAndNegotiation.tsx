@@ -77,47 +77,29 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
     }
   };
 
-  const handleTestNegotiation = async () => {
+  // Client-supplied margin numbers are not pricing authorization.
+  // No Telegram card or customer acceptance is emitted by this preview.
+  const handleTestNegotiation=async()=>{
     setIsNegotiating(true);
-    try {
-      const res = await authenticatedFetch('/api/ai/negotiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPrice: negotiationNormalPrice,
-          customerOffer: customerOfferInput,
-          costPrice: negotiationCostPrice,
-          minPrice: negotiationMinPrice,
-          productName: negotiatingProduct,
-          minMarginThreshold: companyProfile.defaultMarginThreshold
-        })
+    try{
+      const res=await authenticatedFetch('/api/ai/negotiate',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({currentPrice:negotiationNormalPrice,
+          customerOffer:customerOfferInput,costPrice:negotiationCostPrice,
+          minPrice:negotiationMinPrice,productName:negotiatingProduct})
       });
-      const data = await res.json();
-      setNegotiationResult(data);
-
-      if (data.action === 'TELEGRAM_APPROVAL_REQUIRED') {
-        const card: TelegramApprovalCard = {
-          id: `appr-neg-${Date.now()}`,
-          type: 'DISCOUNT_EXCEPTION',
-          title: `Negotiation Counter-Offer Override: ₹${customerOfferInput.toLocaleString('en-IN')}`,
-          referenceId: currentQuote.quoteNumber,
-          amount: customerOfferInput * 15,
-          marginPct: Number((((customerOfferInput - negotiationCostPrice) / customerOfferInput) * 100).toFixed(1)),
-          customerName: currentQuote.customerName,
-          requestedBy: 'AI Negotiation Agent (WhatsApp Inbound)',
-          reason: `Customer counter-offered ₹${customerOfferInput.toLocaleString('en-IN')} (Target: ₹${negotiationNormalPrice.toLocaleString('en-IN')}, Min: ₹${negotiationMinPrice.toLocaleString('en-IN')}). Deal margin ${(((customerOfferInput - negotiationCostPrice) / customerOfferInput) * 100).toFixed(1)}% is below guardrail (${companyProfile.defaultMarginThreshold}%) and requires Owner Authorization.`,
-          status: 'PENDING',
-          timeoutMinutes: 10,
-          createdAt: new Date().toLocaleTimeString(),
-          escalationLevel: 'OWNER_ESCALATED'
-        };
-        onSendToTelegram(card);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsNegotiating(false);
-    }
+      const result=await res.json();
+      if(!res.ok||result.allowed!==false)
+        throw new Error(typeof result.error==='string'?result.error:
+          'Negotiation automation unavailable — no action executed');
+      setNegotiationResult({action:'UNAVAILABLE',allowed:false,
+        reason:String(result.error||'Server-side approval required'),
+        suggestedPitch:''});
+    }catch(err){
+      setNegotiationResult({action:'UNAVAILABLE',allowed:false,
+        reason:err instanceof Error?err.message:'Negotiation unavailable',
+        suggestedPitch:''});
+    }finally{setIsNegotiating(false);}
   };
 
   const handlePrint = () => {
@@ -464,7 +446,7 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
             }`}>
               <div className="flex items-center justify-between">
                 <span className="font-bold uppercase tracking-wider text-[10px]">
-                  Autonomous Decision:
+                  Server-side decision required:
                 </span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
                   negotiationResult.action === 'ACCEPT_OFFER'

@@ -176,17 +176,10 @@ export default function App() {
       const res = await authenticatedFetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: text,
-          context: {
-            revenueToday: '₹8.42 Lakh',
-            margin: '17.2%',
-            pendingApprovalsCount: pendingApprovals.length,
-            lowStockItems: ['Fortinet FG-60F (2 left)', 'Kingston ECC DDR5 (0 left)']
-          }
-        })
+        body: JSON.stringify({ query: text })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Business command unavailable');
 
       const botMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
@@ -201,88 +194,26 @@ export default function App() {
       const fallbackMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
         sender: 'bot',
-        text: `🤖 Autonomous Command Result: Executed "${text}". System metrics are within normal parameters.`,
+        text: err instanceof Error ? err.message : 'Business command unavailable. No action executed.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setTelegramMessages(prev => [...prev, fallbackMsg]);
     }
   };
 
-  // Telegram / System Approval Action
-  const handleApproveCard = (cardId: string) => {
-    // 1. Update message approval card
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'APPROVED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    // 2. Find reference quote & mark as APPROVED
-    const targetCard = pendingApprovals.find(c => c.id === cardId);
-    if (targetCard) {
-      setQuotations(prev =>
-        prev.map(q => {
-          if (q.quoteNumber === targetCard.referenceId || q.id === targetCard.referenceId) {
-            return { ...q, status: 'APPROVED' };
-          }
-          return q;
-        })
-      );
-
-      // 3. Log into Immutable Audit Trail
-      const newAudit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'Business Owner (Telegram Command)',
-        action: 'EXCEPTION_AUTHORIZED',
-        entityType: targetCard.type,
-        entityId: targetCard.referenceId,
-        details: `Authorized by Business Owner via Telegram. Deal released for Sales Order generation and inventory lock in Bhiwandi Hub.`,
-        rulesChecked: 'Rule #25: Telegram Human Authorization Granted',
-        approvalRequired: true,
-        status: 'TELEGRAM_APPROVED'
-      };
-      setAuditLogs(prev => [newAudit, ...prev]);
-
-      // 4. Send Bot Confirmation in Telegram
-      const confirmBotMsg: TelegramMessage = {
-        id: `bot-conf-${Date.now()}`,
-        sender: 'bot',
-        text: `✅ **AUTHORIZATION RECORDED**\n\nQuotation **${targetCard.referenceId}** for **${targetCard.customerName}** is now **APPROVED**.\n• Sales Order **#SO-4409** automatically raised.\n• Reserved 15x ThinkPad T14 + 2x Cisco Switches in Bhiwandi Hub.\n• Pick list dispatched to warehouse floor.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setTelegramMessages(prev => [...prev, confirmBotMsg]);
-    }
+  // This browser-local preview has NO authority to approve quotes, dispatch
+  // orders, emit immutable audit, notify Telegram, or reserve warehouse stock.
+  // Use server-backed review endpoints and MFA/step-up workflow instead.
+  const noticeApprovalUnavailable=(action:'approve'|'reject')=>{
+    setTelegramMessages(prev=>[...prev,{
+      id:`bot-approval-blocked-${Date.now()}`,
+      sender:'bot',
+      text:`\u26a0\ufe0f ${action==='approve'?'Approval':'Rejection'} NOT recorded. This is an unverified browser-local preview. Use the server-backed quotation review workspace. No message, order or stock movement occurred.`,
+      timestamp:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+    }]);
   };
-
-  // Telegram Reject Action
-  const handleRejectCard = (cardId: string) => {
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'REJECTED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    const rejectBotMsg: TelegramMessage = {
-      id: `bot-rej-${Date.now()}`,
-      sender: 'bot',
-      text: `❌ **DISCOUNT EXCEPTION REJECTED**\n\nAI Sales Agent informed: Sub-15% margin rejected. Agent instructed to counter-offer with 3-year AMC bundle at standard price.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setTelegramMessages(prev => [...prev, rejectBotMsg]);
-  };
+  const handleApproveCard=(_cardId:string)=>noticeApprovalUnavailable('approve');
+  const handleRejectCard=(_cardId:string)=>noticeApprovalUnavailable('reject');
 
   // CRM to BOM transition
   const handleSelectLeadForBOM = (lead: Lead) => {
