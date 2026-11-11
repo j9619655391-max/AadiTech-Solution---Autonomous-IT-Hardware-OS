@@ -126,6 +126,11 @@ test('reviewer independently attests destination; review is immutable and not ex
  assert.equal(created.status,201);
  assert.equal(created.data.status,'REVIEWED_INTERNAL');
  assert.equal(created.data.externallyVerified,false);
+ const [stored]=await db.query<any[]>(
+  'SELECT review_reason AS reason,review_evidence_ref AS evidence FROM proc_delivery_destinations WHERE id=?',
+  [destinationId]);
+ assert.equal(stored[0].reason,body.reason);
+ assert.equal(stored[0].evidence,body.evidenceRef);
  assert.equal((await call('/api/po-dispatch/review/destinations/'+destinationId+'/decide','POST',
   body,'reviewer')).status,409);
 });

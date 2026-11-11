@@ -28,7 +28,7 @@ router.get('/destinations',async(req,res)=>{
  try{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT d.id,d.supplier_id AS supplierId,
    s.code AS supplierCode,d.email,d.status,d.evidence_ref AS evidenceRef,
-   d.created_at AS createdAt
+   d.review_reason AS reviewReason,d.created_at AS createdAt
    FROM proc_delivery_destinations d JOIN proc_suppliers s ON s.id=d.supplier_id
    WHERE d.created_by=? ORDER BY d.created_at DESC,d.id DESC LIMIT 200`,
    [res.locals.auth.userId]);

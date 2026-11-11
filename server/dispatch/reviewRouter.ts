@@ -29,7 +29,7 @@ router.get('/destinations',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT d.id,d.supplier_id AS supplierId,
-   s.code AS supplierCode,d.email,d.status,d.evidence_ref AS evidenceRef,d.created_by AS createdBy
+   s.code AS supplierCode,d.email,d.status,d.evidence_ref AS evidenceRef,d.review_reason AS reviewReason,d.created_by AS createdBy
    FROM proc_delivery_destinations d JOIN proc_suppliers s ON s.id=d.supplier_id
    WHERE d.created_by<>? ORDER BY d.created_at DESC,d.id DESC LIMIT 100`,
    [res.locals.auth.userId]);
@@ -57,9 +57,9 @@ router.post('/destinations/:id/decide',requirePrivilegedMfa,requireStepUp,async(
   if(input.decision==='REVIEWED_INTERNAL'&&rows[0].supplierStatus!=='REVIEWED_INTERNAL')
    throw new DispatchConflictError('Supplier internal identity review required');
   await conn.execute(`UPDATE proc_delivery_destinations SET
-   status=?,reviewed_by=?,review_evidence_ref=?,reviewed_at=UTC_TIMESTAMP(3)
+   status=?,reviewed_by=?,review_evidence_ref=?,review_reason=?,reviewed_at=UTC_TIMESTAMP(3)
    WHERE id=? AND status='PENDING_INTERNAL'`,
-   [input.decision,actor,input.evidenceRef,req.params.id]);
+   [input.decision,actor,input.evidenceRef,input.reason,req.params.id]);
   await audit(conn,actor,req.params.id,
    input.decision==='REVIEWED_INTERNAL'?'DESTINATION_ATTESTED':'DESTINATION_REJECTED',
    {reviewEvidenceRef:input.evidenceRef,reason:input.reason,identityAttested:input.identityAttested});

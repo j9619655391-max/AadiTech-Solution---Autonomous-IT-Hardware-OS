@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS proc_delivery_destinations (
  created_by CHAR(36) NOT NULL,
  reviewed_by CHAR(36) NULL,
  review_evidence_ref VARCHAR(160) NULL,
+ review_reason VARCHAR(1000) NULL,
  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
  reviewed_at DATETIME(3) NULL,
  UNIQUE KEY uq_proc_destination_supplier(supplier_id),
