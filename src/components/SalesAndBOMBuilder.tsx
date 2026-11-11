@@ -414,7 +414,7 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
               title="Add verified prices, GST and HSN before generating a quotation"
               className="w-full mt-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
             >
-              <span>Generate Official GST Quotation</span>
+              <span>Create Browser-Only Quote Preview</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

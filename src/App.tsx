@@ -920,6 +920,12 @@ export default function App() {
         environmentMode={environmentMode}
       />
 
+      <div role="alert" className="mx-auto max-w-screen-2xl px-4 py-3 text-sm rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-100">
+        RELEASE HOLD — MIXED MODE: only explicitly server-backed CRM and quotation review endpoints can persist approved changes.
+        Other legacy dashboards, catalogs, workflows and previews are browser-local or simulated; figures and actions are NOT verified business records.
+        No customer messaging, purchasing, inventory movement or production release is authorized by this UI.
+      </div>
+
       {/* AadiTech Solution Master Settings & Real Data Backup/Import Modal */}
       <CompanySettingsModal
         isOpen={isSettingsModalOpen}
@@ -1171,7 +1177,7 @@ export default function App() {
             campaigns={campaigns}
             agents={agents}
             onTriggerCampaign={(camp) => {
-              alert(`Campaign "${camp.name}" launched across ${camp.channel}. AI Lead Agent listening for replies.`);
+              alert(`Campaign "${camp.name}" is a browser-only preview. No messages were sent and no AI agent was started. Use an authorized connector with verified consent for real campaigns.`);
             }}
           />
         )}

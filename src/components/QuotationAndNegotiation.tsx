@@ -106,12 +106,8 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
     window.print();
   };
 
-  const handleShareWhatsApp = () => {
-    const text = encodeURIComponent(
-      `Dear ${currentQuote.customerName},\n\nPlease find Commercial Quotation ${currentQuote.quoteNumber} from ${companyProfile.name} (https://aaditechs.in) for ₹${currentQuote.totalAmount.toLocaleString('en-IN')} (incl. GST).\n\nValidity: ${currentQuote.validityDays} Days.\nFor questions or acceptance, contact: ${companyProfile.phone} / ${companyProfile.email}`
-    );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
-  };
+  // Sending a browser-local quotation would bypass the real review and release
+  // snapshot gate. Use the server-backed draft review/export flow instead.
 
   if (!currentQuote) {
     return (
@@ -159,12 +155,12 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
           </select>
 
           <button
-            onClick={handleShareWhatsApp}
-            title="Share quotation summary on WhatsApp"
+            disabled
+            title="Browser-only quotation cannot be sent; use reviewed server-backed quotation"
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs border border-emerald-500/30 font-medium transition-colors"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">WhatsApp</span>
+            <span className="hidden sm:inline">Share disabled</span>
           </button>
 
           <button

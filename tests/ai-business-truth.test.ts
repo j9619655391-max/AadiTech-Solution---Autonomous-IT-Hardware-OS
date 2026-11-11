@@ -30,3 +30,14 @@ test('AI BOM and campaign screens never backfill unverified prices or forecasts'
  assert.equal(market.includes("projectedConversion: '18.4%'"),false);
  assert.match(market,/Dispatch disabled — approval and consent required/);
 });
+
+test('legacy browser-only quote and campaign cannot pretend external dispatch',()=>{
+ const quote=readFileSync('src/components/QuotationAndNegotiation.tsx','utf8');
+ assert.equal(quote.includes("window.open(`https://api.whatsapp.com"),false);
+ assert.match(quote,/Browser-only quotation cannot be sent/);
+ const app=readFileSync('src/App.tsx','utf8');
+ assert.match(app,/RELEASE HOLD — MIXED MODE/);
+ assert.match(app,/No messages were sent and no AI agent was started/);
+ const bom=readFileSync('src/components/SalesAndBOMBuilder.tsx','utf8');
+ assert.equal(bom.includes('Generate Official GST Quotation'),false);
+});
