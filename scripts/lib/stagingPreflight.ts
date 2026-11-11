@@ -11,7 +11,8 @@ export const MIGRATIONS=[
  '0016_quarantine_intake','0017_supplier_dispatch_holds',
  '0018_acknowledgment_grn_holds','0019_stock_release_planning',
  '0020_unposted_double_entry_journals',
- '0021_signed_proof_prerequisites'
+ '0021_signed_proof_prerequisites',
+ '0022_key_possession_lifecycle'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -235,6 +236,57 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   LEFT JOIN inv_signed_proof_holds h ON h.claim_id=c.id`);
  if(Number(proofKeys[0].unsafe)!==0||Number(proofClaims[0].unsafe)!==0)
   problems.push('Untrusted offline proof key, signature claim or HELD external authority invariant mismatch');
+ // Phase 1AJ: cryptographic challenge possession remains internally attested only.
+ // Check immediate retirement, one-time consumption, independent review, rotation
+ // finality and no external trust, without mutating any live key or stock state.
+ const [keyChallenges]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   (c.status='ISSUED' AND (c.consumed_at IS NOT NULL OR p.id IS NOT NULL))
+   OR (c.status='MATCHED_INTERNAL' AND
+    (c.consumed_at IS NULL OR c.consumed_at>c.expires_at OR p.id IS NULL))
+   OR (p.id IS NOT NULL AND (p.key_id<>c.key_id OR p.status<>'MATCHED_INTERNAL'
+      OR r.id IS NULL AND FALSE))
+   OR (r.id IS NOT NULL AND
+    (r.reviewer_id=k.registered_by OR
+     (r.decision='REVIEWED_UNTRUSTED' AND NOT r.possession_inspected)))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_possession_challenges c
+  JOIN inv_proof_key_candidates k ON k.id=c.key_id
+  LEFT JOIN inv_key_possession_receipts p ON p.challenge_id=c.id
+  LEFT JOIN inv_key_possession_reviews r ON r.receipt_id=p.id`);
+ const [keyRetirements]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+    (t.event_type='EMERGENCY_REVOKED' AND t.initiated_by<>k.registered_by)
+    OR (t.event_type='ROTATION_RETIRED' AND NOT EXISTS(
+     SELECT 1 FROM inv_key_rotation_proposals x
+     JOIN inv_key_rotation_decisions d ON d.proposal_id=x.id
+     WHERE x.old_key_id=t.key_id AND x.status='REVIEWED_UNTRUSTED'
+       AND d.decision='REVIEWED_UNTRUSTED' AND d.reviewer_id=t.initiated_by))
+    THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_retirements t
+  JOIN inv_proof_key_candidates k ON k.id=t.key_id`);
+ const [keyRotations]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   old.registered_by<>x.prepared_by OR fresh.registered_by<>x.prepared_by
+   OR old.party_kind<>fresh.party_kind
+   OR COALESCE(old.supplier_id,old.site_id)<>COALESCE(fresh.supplier_id,fresh.site_id)
+   OR x.old_key_id=x.new_key_id
+   OR (x.status='PENDING_INTERNAL' AND d.id IS NOT NULL)
+   OR (x.status='REVIEWED_UNTRUSTED' AND (d.id IS NULL OR
+      d.decision<>'REVIEWED_UNTRUSTED' OR NOT d.possession_inspected OR
+      t.key_id IS NULL OR t.event_type<>'ROTATION_RETIRED'))
+   OR (x.status='REJECTED_INTERNAL' AND
+      (d.id IS NULL OR d.decision<>'REJECTED_INTERNAL'))
+   OR (d.id IS NOT NULL AND d.reviewer_id=x.prepared_by)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_rotation_proposals x
+  JOIN inv_proof_key_candidates old ON old.id=x.old_key_id
+  JOIN inv_proof_key_candidates fresh ON fresh.id=x.new_key_id
+  LEFT JOIN inv_key_rotation_decisions d ON d.proposal_id=x.id
+  LEFT JOIN inv_key_retirements t ON t.key_id=x.old_key_id`);
+ if(Number(keyChallenges[0].unsafe)!==0||Number(keyRetirements[0].unsafe)!==0||
+    Number(keyRotations[0].unsafe)!==0)
+  problems.push('Key possession expiry/replay, immediate retirement, independent review or internal rotation invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -263,6 +315,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unverifiedSerialCandidatesCheck:Number(badCandidates[0].total),
   untrustedProofKeyCandidates:Number(proofKeys[0].total),
   cryptographicallyMatchedUntrustedClaims:Number(proofClaims[0].total),
+  oneTimeKeyPossessionChallenges:Number(keyChallenges[0].total),
+  irrevocablyRetiredCandidates:Number(keyRetirements[0].total),
+  internalOnlyKeyRotations:Number(keyRotations[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',

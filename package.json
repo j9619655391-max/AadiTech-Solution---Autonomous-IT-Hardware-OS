@@ -41,6 +41,8 @@
     "test:journal-foundation-mysql": "tsx --test tests/journal-foundation-mysql.integration.ts",
     "db:migrate:signed-proof": "tsx scripts/migrate-signed-proof.ts",
     "test:signed-proof-mysql": "tsx --test tests/signed-proof-mysql.integration.ts",
+    "db:migrate:key-lifecycle": "tsx scripts/migrate-key-lifecycle.ts",
+    "test:key-lifecycle-mysql": "tsx --test tests/key-lifecycle-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

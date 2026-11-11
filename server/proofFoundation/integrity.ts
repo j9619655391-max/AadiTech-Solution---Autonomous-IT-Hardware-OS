@@ -6,7 +6,7 @@ import {ChainConflictError,candidatePublicKey,validateClaim,signedMessage,
  verifyDetachedSignature,messageDigest,verifyDeepFrozenSnapshot,
  type ProofKind} from './validation';
 function deny():never{throw new ChainConflictError('Offline key, source, digest or signature integrity conflict');}
-export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:boolean){
+export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:boolean,allowPendingRotation=false){
  const [rows]=await conn.query<RowDataPacket[]>(`SELECT id,party_kind AS partyKind,
    supplier_id AS supplierId,site_id AS siteId,registered_by AS registeredBy,
    public_key_spki_b64 AS spkiB64,fingerprint_sha256 AS fingerprint,
@@ -26,6 +26,15 @@ export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:bo
   if(reviews.length!==1||reviews[0].decision!=='REVIEWED_UNTRUSTED'||
    reviews[0].reviewerId===r.registeredBy||
    Number(reviews[0].inspected)!==1)deny();
+ }
+ const [revoked]=await conn.query<RowDataPacket[]>(`SELECT key_id FROM inv_key_retirements
+  WHERE key_id=?`,[keyId]);
+ if(revoked.length)deny();
+ if(!allowPendingRotation){
+  const [pending]=await conn.query<RowDataPacket[]>(`SELECT id FROM inv_key_rotation_proposals
+   WHERE status='PENDING_INTERNAL' AND (old_key_id=? OR new_key_id=?)`,
+   [keyId,keyId]);
+  if(pending.length)deny();
  }
  return {id:String(r.id),partyKind:r.partyKind as 'SUPPLIER'|'WAREHOUSE',
   partyId:String(r.partyKind==='SUPPLIER'?r.supplierId:r.siteId),
