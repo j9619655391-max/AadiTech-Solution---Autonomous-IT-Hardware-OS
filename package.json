@@ -25,6 +25,8 @@
     "db:migrate:mfa": "tsx scripts/migrate-mfa.ts",
     "db:migrate:mfa-audit": "tsx scripts/migrate-mfa-audit.ts",
     "db:migrate:mfa-recovery": "tsx scripts/migrate-mfa-recovery.ts",
+    "db:migrate:inventory": "tsx scripts/migrate-inventory.ts",
+    "test:inventory-mysql": "tsx --test tests/inventory-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

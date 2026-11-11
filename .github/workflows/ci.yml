@@ -164,8 +164,14 @@ jobs:
         run: bun run db:migrate:mfa-recovery
       - name: Verify MFA recovery migration rerun
         run: bun run db:migrate:mfa-recovery
+      - name: Apply inventory opening-count migration (CI-only guard)
+        run: bun run db:migrate:inventory
+      - name: Verify inventory migration checksum and idempotent rerun
+        run: bun run db:migrate:inventory
       - name: Run real MySQL integration tests
         run: bun run test:mysql
+      - name: Verify owner-only inventory opening counts on disposable MySQL
+        run: bun run test:inventory-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run

@@ -5,6 +5,7 @@ import { TelegramCommandHub } from './components/TelegramCommandHub';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { CRMAndLeadsView } from './components/CRMAndLeadsView';
 import { LiveCRMWorkspace } from './components/LiveCRMWorkspace';
+import { LiveInventoryWorkspace } from './components/LiveInventoryWorkspace';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
 import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
@@ -1089,6 +1090,16 @@ export default function App() {
         )}
 
         {activeTab === 'procurement' && (
+          <div className="space-y-5">
+            <LiveInventoryWorkspace />
+            <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
+              <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
+                Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)
+              </summary>
+              <p className="text-amber-200 text-xs my-3">
+                Do not use this simulator to receive goods, reserve inventory, authorize supplier POs
+                or report audited balances. No real procurement or stock movements occur here.
+              </p>
           <ProcurementAndInventory
             products={products}
             suppliers={suppliers}
@@ -1100,6 +1111,8 @@ export default function App() {
             onAddInventoryItem={handleAddInventoryItem}
             onAddRFQ={handleAddRFQ}
           />
+            </details>
+          </div>
         )}
 
         {activeTab === 'analytics' && (
