@@ -97,3 +97,6 @@ export function heldGrnSnapshot(packId:string,packSha256:string,decisionId:strin
  return {format:'aaditech-GRN-reconciliation-outbox-HELD-v1',packId,packSha256,
   decisionId,stockPostingState:'DISABLED',officialGrnCreated:false,availableToSell:null};
 }
+
+// Export the canonical SHA-256 utility to both evidence-chain routers.
+export {sha};
