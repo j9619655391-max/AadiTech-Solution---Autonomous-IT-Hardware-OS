@@ -428,7 +428,8 @@ test('revocation feed requires contiguous sequence, valid issuer signature, cumu
  assert.equal((await call('/api/external-trust/readiness/'+authorityId)).status,409);
  await db.execute(`UPDATE inv_external_revocation_bundles SET manifest_sha256=?
   WHERE id=?`,[prev[0].digest,created.data.id]);
- const expiredAt=utc(-60_000);
+ // Still AFTER issuedAt, but already expired relative to current UTC time.
+ const expiredAt=utc(-30_000);
  await db.execute(`UPDATE inv_external_revocation_bundles SET expires_at=?
   WHERE id=?`,[expiredAt.replace('T',' ').replace('.000Z',''),created.data.id]);
  assert.equal((await call('/api/external-trust/readiness/'+authorityId)).status,409);
