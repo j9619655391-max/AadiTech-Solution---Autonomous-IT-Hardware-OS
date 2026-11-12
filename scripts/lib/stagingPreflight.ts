@@ -15,7 +15,8 @@ export const MIGRATIONS=[
  '0022_key_possession_lifecycle',
  '0023_external_trust_prerequisites',
  '0024_provider_identity_bridge',
- '0025_provider_sandbox_evidence'
+ '0025_provider_sandbox_evidence',
+ '0026_named_provider_policy_gates'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -446,6 +447,63 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
     Number(sandboxCertificates[0].unsafe)!==0||
     Number(sandboxChecks[0].unsafe)!==0)
   problems.push('Sandbox company/signatory/CERT/CRL readiness is not internally HELD/unverified');
+ // Phase 1AN: do not promote a publicly listed CA, synthetic policy
+ // OID, self-reported corporate records, or access ticket into trust.
+ const [namedProviders]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   n.provider_code<>'EMUDHRA_INDIA_CCA' OR n.legal_name<>'eMudhra Limited'
+   OR n.regulatory_source_url<>'https://cca.gov.in/CAServicesPublic.html'
+   OR n.provider_contract<>'NOT_APPROVED'
+   OR n.sandbox_credentials<>'NOT_PROVIDED'
+   OR n.external_root_authenticated<>'NO' OR n.production_release<>'HOLD'
+   OR (r.id IS NOT NULL AND (r.reviewer_id=n.opened_by
+    OR (r.decision='REVIEWED_CANDIDATE_HELD' AND
+      (NOT r.official_listing_inspected OR NOT r.contract_missing_acknowledged))))
+   OR (n.status='REJECTED_INTERNAL' AND
+     (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_named_nominations n
+  LEFT JOIN inv_provider_named_reviews r ON r.nomination_id=n.id`);
+ const [namedPolicies]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.status<>'PROFILE_HELD' OR p.full_certification_path<>'NOT_VALIDATED'
+   OR p.trusted_crl_ocsp<>'NOT_VALIDATED' OR p.provider_policy_approved<>'NO'
+   OR p.prepared_by<>n.opened_by
+   OR p.cps_source_url<>'https://cca.gov.in/sites/files/pdf/Licensed-CA/eMudhra_4.1.0.pdf'
+   OR (r.id IS NOT NULL AND (r.reviewer_id=p.prepared_by OR
+    (r.decision='REVIEWED_POLICY_HELD' AND
+     (NOT r.policy_oid_inspected OR NOT r.missing_crl_ocsp_acknowledged))))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_policy_proposals p
+  JOIN inv_provider_named_nominations n ON n.id=p.nomination_id
+  LEFT JOIN inv_provider_policy_reviews r ON r.policy_id=p.id`);
+ const [registryDossiers]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   d.registry_authentication<>'UNVERIFIED'
+   OR d.legal_signatory_authentication<>'UNVERIFIED'
+   OR d.registry_source_url<>'https://www.mca.gov.in/'
+   OR d.prepared_by<>n.opened_by
+   OR (d.status='INTERNALLY_INSPECTED_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_CLAIM_HELD'
+      OR r.reviewer_id=d.prepared_by
+      OR NOT r.registry_source_inspected OR NOT r.delegation_source_inspected))
+   OR (r.id IS NOT NULL AND r.reviewer_id=d.prepared_by)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_registry_dossiers d
+  JOIN inv_provider_named_nominations n ON n.id=d.nomination_id
+  LEFT JOIN inv_provider_registry_reviews r ON r.dossier_id=d.id`);
+ const [accessGates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.secret_reference_status<>'NOT_CONFIGURED' OR
+   a.provider_authorization<>'NOT_VERIFIED' OR
+   a.live_test_access<>'DISABLED' OR a.production_release<>'HOLD'
+   OR a.requested_by<>n.opened_by
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_sandbox_access_gates a
+  JOIN inv_provider_named_nominations n ON n.id=a.nomination_id`);
+ if(Number(namedProviders[0].unsafe)!==0||Number(namedPolicies[0].unsafe)!==0||
+  Number(registryDossiers[0].unsafe)!==0||Number(accessGates[0].unsafe)!==0)
+  problems.push('Named CCA CA, certificate policy, MCA/signatory and credential HOLD prerequisites altered');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -488,6 +546,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unverifiedSandboxCorporateCases:Number(sandboxCases[0].total),
   pinnedOneHopCertificatesHeld:Number(sandboxCertificates[0].total),
   internalOnlySandboxRevocationChecks:Number(sandboxChecks[0].total),
+  namedProviderCandidatesWithoutAuthorization:Number(namedProviders[0].total),
+  unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
+  unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
+  sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
@@ -505,7 +567,11 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    pinnedTlsPublisherProductionAcceptance:'NOT_VERIFIED',
    genuineCorporateKyc:'NOT_VERIFIED',
    authorizedLegalSignatory:'NOT_VERIFIED',
-   fullPkixPathAndOcspCrl:'NOT_VERIFIED'
+   fullPkixPathAndOcspCrl:'NOT_VERIFIED',
+   namedProviderContract:'NOT_APPROVED',
+   sandboxCredentials:'NOT_PROVIDED',
+   mcaSignatoryLegalAuthentication:'NOT_VERIFIED',
+   cspPolicyAndTrustedRevocation:'NOT_VERIFIED'
   }
  };
 }

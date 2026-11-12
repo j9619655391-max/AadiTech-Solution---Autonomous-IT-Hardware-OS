@@ -212,6 +212,10 @@ jobs:
         run: bun run db:migrate:provider-sandbox
       - name: Verify Phase 1AM migration checksum and idempotent rerun
         run: bun run db:migrate:provider-sandbox
+      - name: Apply named provider nomination/policy HOLD migration on disposable CI
+        run: bun run db:migrate:provider-selection
+      - name: Verify named provider schema checksum and idempotent rerun
+        run: bun run db:migrate:provider-selection
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -238,6 +242,8 @@ jobs:
         run: bun run test:provider-bridge-mysql
       - name: Verify corporate/signer evidence holds, one-hop X509 CA, independent review, revocation and no real KYC
         run: bun run test:provider-sandbox-mysql
+      - name: Verify named CCA candidate, no credentials, OpenSSL policy trial, MCA dossier and revocation HOLD
+        run: bun run test:provider-selection-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run
