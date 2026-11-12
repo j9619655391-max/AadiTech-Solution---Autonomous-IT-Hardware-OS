@@ -515,7 +515,7 @@ const bridgeCredReview={decision:'REVIEWED_CRYPTO_HELD',
 test('pin registration from SERVER ENV ONLY and independent reviewer cannot elevate root trust',async()=>{
  const publicDer=bridgeRoot.publicKey.export({format:'der',type:'spki'});
  const rootHash=(await import('node:crypto')).createHash('sha256').update(publicDer).digest('hex');
- process.env.PROVIDER_CODE='CI_PROVIDER_2026';
+ process.env.PROVIDER_CODE='CI_SANDBOX_PROVIDER_2026';
  process.env.PROVIDER_HTTPS_ORIGIN='https://provider.example.invalid';
  process.env.PROVIDER_ROOT_SPKI_B64=publicDer.toString('base64');
  process.env.PROVIDER_ROOT_SHA256=rootHash;
@@ -663,7 +663,7 @@ function ephemeralOneHopCerts(){
   run(['req','-new','-key','leaf.key','-out','leaf.csr',
    '-subj','/CN=CI Signatory/O=Testing Only']);
   writeFileSync(join(dir,'leaf.ext'),
-   'basicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature\\nextendedKeyUsage=clientAuth\\n');
+   'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=clientAuth\n');
   run(['x509','-req','-in','leaf.csr','-CA','root.crt','-CAkey','root.key',
    '-CAcreateserial','-out','leaf.crt','-days','2','-extfile','leaf.ext']);
   return {rootCertificatePem:readFileSync(join(dir,'root.crt'),'utf8'),
