@@ -3,7 +3,7 @@ import {candidatePublicKey,strictBase64} from '../proofFoundation/validation';
 import {iso,fingerprint,exact,validateReview} from '../externalTrust/validation';
 import {inventoryId} from '../inventory/validation';
 import {chainEvidence,ChainInputError,ChainConflictError} from '../evidenceChain/validation';
-export {ChainInputError,ChainConflictError};
+export {ChainInputError,ChainConflictError,exact};
 export type Purpose='SUPPLIER_ACK'|'WAREHOUSE_GRN';
 export function ensureId(v:unknown){
  if(!inventoryId(v))throw new ChainInputError('Valid UUID required');
