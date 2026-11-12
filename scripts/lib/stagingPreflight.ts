@@ -14,7 +14,8 @@ export const MIGRATIONS=[
  '0021_signed_proof_prerequisites',
  '0022_key_possession_lifecycle',
  '0023_external_trust_prerequisites',
- '0024_provider_identity_bridge'
+ '0024_provider_identity_bridge',
+ '0025_provider_sandbox_evidence'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -398,6 +399,53 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(providerPins[0].unsafe)!==0||Number(providerCredentials[0].unsafe)!==0||
   Number(providerFeeds[0].unsafe)!==0||Number(providerSeq[0].invalid)!==0)
   problems.push('Pinned provider/organization credential/revocation chain internal invariant mismatch');
+ // Phase 1AM: no self-reported identity, one-hop cert or candidate revocation
+ // proof may be promoted into genuine external corporate/KYC authority.
+ const [sandboxCases]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   c.corporate_identity_state<>'UNVERIFIED'
+   OR c.signatory_authority_state<>'UNVERIFIED'
+   OR c.production_release<>'HOLD'
+   OR c.opened_by<>p.provisioned_by OR c.opened_by<>i.registered_by
+   OR c.registry_reference<>i.organization_registration
+   OR (c.status='REVIEWED_EVIDENCE_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_EVIDENCE_HELD'
+     OR r.reviewer_id=c.opened_by
+     OR NOT r.registry_document_inspected OR NOT r.signatory_document_inspected))
+   OR (c.status='REJECTED_INTERNAL' AND (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (c.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_onboarding_cases c
+  JOIN inv_provider_pin_candidates p ON p.id=c.pin_id
+  JOIN inv_external_issuer_candidates i ON i.id=c.issuer_id
+  LEFT JOIN inv_sandbox_case_reviews r ON r.case_id=c.id`);
+ const [sandboxCertificates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.provider_issued_authenticated<>'NO' OR p.rfc5280_path_validated<>'NO'
+   OR p.status<>'CERT_SIGNATURE_MATCHED_HELD'
+   OR p.imported_by<>c.opened_by
+   OR p.leaf_not_after<=p.leaf_not_before
+   OR (r.id IS NOT NULL AND
+    (r.reviewer_id=p.imported_by OR
+     (r.decision='REVIEWED_CRYPTO_HELD' AND
+      (NOT r.certificate_inspected OR NOT r.policy_gaps_acknowledged))))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_cert_packages p
+  JOIN inv_sandbox_onboarding_cases c ON c.id=p.case_id
+  LEFT JOIN inv_sandbox_cert_reviews r ON r.cert_id=p.id`);
+ const [sandboxChecks]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   x.status<>'CHECKED_HELD' OR x.external_publisher_authenticated<>'NO'
+   OR x.official_grn_state<>'DISABLED' OR x.stock_posting_state<>'DISABLED'
+   OR x.checked_by<>p.imported_by
+   OR LENGTH(x.checked_digest_sha256)<>64
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_revocation_checks x
+  JOIN inv_sandbox_cert_packages p ON p.id=x.cert_id`);
+ if(Number(sandboxCases[0].unsafe)!==0||
+    Number(sandboxCertificates[0].unsafe)!==0||
+    Number(sandboxChecks[0].unsafe)!==0)
+  problems.push('Sandbox company/signatory/CERT/CRL readiness is not internally HELD/unverified');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -437,6 +485,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   permanentlyFrozenProviderPins:Number(providerPins[0].frozen),
   rootSignedHeldOrganizationalCredentials:Number(providerCredentials[0].total),
   pinnedRootSignedRevocationFeeds:Number(providerFeeds[0].total),
+  unverifiedSandboxCorporateCases:Number(sandboxCases[0].total),
+  pinnedOneHopCertificatesHeld:Number(sandboxCertificates[0].total),
+  internalOnlySandboxRevocationChecks:Number(sandboxChecks[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
@@ -451,7 +502,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    externallyPublishedRevocationTrust:'NOT_VERIFIED',
    preprovisionedProviderRootOwnership:'NOT_VERIFIED',
    corporateRegistryAndSignatory:'NOT_VERIFIED',
-   pinnedTlsPublisherProductionAcceptance:'NOT_VERIFIED'
+   pinnedTlsPublisherProductionAcceptance:'NOT_VERIFIED',
+   genuineCorporateKyc:'NOT_VERIFIED',
+   authorizedLegalSignatory:'NOT_VERIFIED',
+   fullPkixPathAndOcspCrl:'NOT_VERIFIED'
   }
  };
 }
