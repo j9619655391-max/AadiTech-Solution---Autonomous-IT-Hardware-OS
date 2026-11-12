@@ -13,7 +13,8 @@ export const MIGRATIONS=[
  '0020_unposted_double_entry_journals',
  '0021_signed_proof_prerequisites',
  '0022_key_possession_lifecycle',
- '0023_external_trust_prerequisites'
+ '0023_external_trust_prerequisites',
+ '0024_provider_identity_bridge'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -342,6 +343,61 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(extIssuers[0].unsafe)!==0||Number(extAuthorities[0].unsafe)!==0||
   Number(extFeeds[0].unsafe)!==0||Number(extSequence[0].invalid)!==0)
   problems.push('Issuer/organizational authority/revocation internal integrity mismatch');
+ // Phase 1AL: preprovisioned root candidates and offline issuer credentials
+ // never establish corporate authority or authenticated external provider.
+ const [providerPins]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.external_root_state<>'UNVERIFIED'
+   OR p.root_fingerprint_sha256<>SHA2(FROM_BASE64(p.root_spki_b64),256)
+   OR (p.status='REVIEWED_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_HELD'
+     OR r.reviewer_id=p.provisioned_by OR NOT r.pin_inspected))
+   OR (p.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (p.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   OR (f.pin_id IS NOT NULL AND f.initiated_by<>p.provisioned_by)
+   THEN 1 ELSE 0 END),0) AS unsafe,
+   COALESCE(SUM(CASE WHEN f.pin_id IS NOT NULL THEN 1 ELSE 0 END),0) AS frozen
+  FROM inv_provider_pin_candidates p
+  LEFT JOIN inv_provider_pin_reviews r ON r.pin_id=p.id
+  LEFT JOIN inv_provider_pin_freezes f ON f.pin_id=p.id`);
+ const [providerCredentials]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   c.corporate_identity_state<>'UNVERIFIED'
+   OR c.external_issuer_state<>'UNVERIFIED' OR c.stock_posting<>'DISABLED'
+   OR c.submitted_by<>p.provisioned_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.externallyAuthenticatedRoot'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.independentCorporateVerification'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.stockPosting'))<>'DISABLED'
+   OR (c.status='REVIEWED_CRYPTO_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_HELD'
+     OR r.reviewer_id=c.submitted_by OR NOT r.source_inspected))
+   OR (c.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (c.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_org_credentials c
+  JOIN inv_provider_pin_candidates p ON p.id=c.pin_id
+  LEFT JOIN inv_provider_org_reviews r ON r.credential_id=c.id`);
+ const [providerFeeds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   f.status<>'SIGNED_CANDIDATE' OR f.external_publisher_state<>'UNVERIFIED'
+   OR f.imported_by<>p.provisioned_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(f.message_json,'$.externalPublisherVerified'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(f.message_json,'$.stockPosting'))<>'DISABLED'
+   OR JSON_LENGTH(JSON_EXTRACT(f.message_json,'$.revokedFingerprints'))<>
+    (SELECT COUNT(*) FROM inv_provider_revocation_entries e WHERE e.feed_id=f.id)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_revocation_feeds f
+  JOIN inv_provider_pin_candidates p ON p.id=f.pin_id`);
+ const [providerSeq]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid FROM(
+  SELECT pin_id,MIN(sequence_number) AS firstSeq,MAX(sequence_number) AS lastSeq,
+   COUNT(*) AS n FROM inv_provider_revocation_feeds
+  GROUP BY pin_id HAVING firstSeq<>1 OR lastSeq<>n
+ ) gaps`);
+ if(Number(providerPins[0].unsafe)!==0||Number(providerCredentials[0].unsafe)!==0||
+  Number(providerFeeds[0].unsafe)!==0||Number(providerSeq[0].invalid)!==0)
+  problems.push('Pinned provider/organization credential/revocation chain internal invariant mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -377,6 +433,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   frozenExternalIssuerCandidates:Number(extIssuers[0].frozen),
   internalHeldOrganizationalClaims:Number(extAuthorities[0].total),
   selfSignedRevocationBundles:Number(extFeeds[0].total),
+  unverifiedProviderRootCandidates:Number(providerPins[0].total),
+  permanentlyFrozenProviderPins:Number(providerPins[0].frozen),
+  rootSignedHeldOrganizationalCredentials:Number(providerCredentials[0].total),
+  pinnedRootSignedRevocationFeeds:Number(providerFeeds[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
@@ -388,7 +448,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    externalNotificationAndDispatch:'DISABLED',
    externalTrustRootAuthentication:'NOT_VERIFIED',
    officialSupplierAndWarehouseAuthority:'NOT_VERIFIED',
-   externallyPublishedRevocationTrust:'NOT_VERIFIED'
+   externallyPublishedRevocationTrust:'NOT_VERIFIED',
+   preprovisionedProviderRootOwnership:'NOT_VERIFIED',
+   corporateRegistryAndSignatory:'NOT_VERIFIED',
+   pinnedTlsPublisherProductionAcceptance:'NOT_VERIFIED'
   }
  };
 }

@@ -48,6 +48,13 @@ export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:bo
    AND i.party_id=? LIMIT 1 FOR UPDATE`,
   [parsed.fingerprint,r.partyKind,r.partyKind==='SUPPLIER'?r.supplierId:r.siteId]);
  if(extRevoked.length)deny();
+ // Phase 1AL: deny-only distribution by the pinned-provider candidate root,
+ // regardless of whether an older feed has since expired. No feed authorizes trust.
+ const [providerDenied]=await conn.query<RowDataPacket[]>(`SELECT e.revoked_fingerprint_sha256 AS fp
+  FROM inv_provider_revocation_entries e
+  JOIN inv_provider_revocation_feeds f ON f.id=e.feed_id
+  WHERE e.revoked_fingerprint_sha256=? LIMIT 1 FOR UPDATE`,[parsed.fingerprint]);
+ if(providerDenied.length)deny();
  return {id:String(r.id),partyKind:r.partyKind as 'SUPPLIER'|'WAREHOUSE',
   partyId:String(r.partyKind==='SUPPLIER'?r.supplierId:r.siteId),
   registeredBy:String(r.registeredBy),status:String(r.status),

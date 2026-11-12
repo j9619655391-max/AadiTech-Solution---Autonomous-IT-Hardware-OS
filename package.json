@@ -45,6 +45,8 @@
     "test:key-lifecycle-mysql": "tsx --test tests/key-lifecycle-mysql.integration.ts",
     "db:migrate:external-trust": "tsx scripts/migrate-external-trust.ts",
     "test:external-trust-mysql": "tsx --test tests/external-trust-mysql.integration.ts",
+    "db:migrate:provider-bridge": "tsx scripts/migrate-provider-bridge.ts",
+    "test:provider-bridge-mysql": "tsx --test tests/provider-bridge-mysql.integration.ts",
     "staging:preflight": "tsx scripts/staging-preflight.ts",
     "test:auth-smoke": "tsx --test tests/auth-http-smoke.integration.ts",
     "auth:retention": "tsx scripts/auth-retention.ts",

@@ -204,6 +204,10 @@ jobs:
         run: bun run db:migrate:external-trust
       - name: Verify external trust prerequisite migration checksum and idempotent rerun
         run: bun run db:migrate:external-trust
+      - name: Apply preprovisioned pinned provider bridge migration on disposable CI
+        run: bun run db:migrate:provider-bridge
+      - name: Verify provider bridge migration checksum/idempotent rerun
+        run: bun run db:migrate:provider-bridge
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -226,6 +230,8 @@ jobs:
         run: bun run test:key-lifecycle-mysql
       - name: Verify signed issuer/organization claims, monotonic revocations, freeze and no stock authority
         run: bun run test:external-trust-mysql
+      - name: Verify configured root pins, signed organization credentials, feed rollback, freeze and no production trust
+        run: bun run test:provider-bridge-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run
