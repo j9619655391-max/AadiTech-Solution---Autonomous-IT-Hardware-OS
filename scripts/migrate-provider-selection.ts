@@ -13,7 +13,7 @@ export function providerSelectionMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'st
 }
 async function main(){
  providerSelectionMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0026_named_provider_policy_gates')
+ if(MIGRATIONS[25]!=='0026_named_provider_policy_gates')
   throw Error('Provider selection schema must be final registered migration');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -26,7 +26,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,25)){
    const hash=createHash('sha256').update(readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==hash)throw Error('Missing/mismatched prerequisite migration: '+id);
   }

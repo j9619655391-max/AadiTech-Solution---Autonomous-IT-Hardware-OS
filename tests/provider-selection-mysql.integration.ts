@@ -1,6 +1,6 @@
 import test,{after} from 'node:test';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,rmSync,mkdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
@@ -16,6 +16,8 @@ import sandboxOwnerRouter from '../server/providerSandbox/ownerRouter';
 import sandboxReviewRouter from '../server/providerSandbox/reviewRouter';
 import selectionOwnerRouter from '../server/providerSelection/ownerRouter';
 import selectionReviewRouter from '../server/providerSelection/reviewRouter';
+import aoOwnerRouter from '../server/providerOnboarding/ownerRouter';
+import aoReviewRouter from '../server/providerOnboarding/reviewRouter';
 import reviewRouter from '../server/externalTrust/reviewRouter';
 import lifecycleOwnerRouter from '../server/keyLifecycle/ownerRouter';
 import lifecycleReviewRouter from '../server/keyLifecycle/reviewRouter';
@@ -31,23 +33,24 @@ import {validateInbound,canonicalIntakeHash} from '../server/intake/validation';
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
  throw Error('Provider sandbox integration allowed only on disposable CI MySQL');
 const db=getPool();if(!db)throw Error('Disposable CI database required');
-const owner=randomUUID(),reviewer=randomUUID(),ownerToken=newSecret(),
+const owner=randomUUID(),reviewer=randomUUID(),securityReviewer=randomUUID(),
+ securityToken=newSecret(),securityPass='CI-security-reviewer-2026-pass',ownerToken=newSecret(),
  reviewerToken=newSecret(),csrf=newSecret(),ownerPass='CI-evidence-owner-2026-pass',
  reviewerPass='CI-evidence-reviewer-2026-pass';
-let ownerStep='',reviewerStep='',base='';
+let ownerStep='',reviewerStep='',securityStep='',base='';
 let close:(()=>Promise<void>)|undefined;
 after(async()=>{if(close)await close();await db.end();});
 type Fixture={preparationId:string;outboxId:string;holdId:string;observationId:string;
  supplierId:string;productId:string;lotProductId:string;claimId?:string};
 let a:Fixture,b:Fixture,c:Fixture;
-async function call(path:string,method='GET',body?:unknown,as:'owner'|'reviewer'|'anon'='owner',
+async function call(path:string,method='GET',body?:unknown,as:'owner'|'reviewer'|'security'|'anon'='owner',
  opts:{csrf?:boolean;stepUp?:boolean}={}){
  const headers:Record<string,string>={};
- if(as!=='anon')headers.cookie='aaditech_session='+(as==='owner'?ownerToken:reviewerToken);
+ if(as!=='anon')headers.cookie='aaditech_session='+(as==='owner'?ownerToken:as==='security'?securityToken:reviewerToken);
  if(body!==undefined)headers['content-type']='application/json';
  if(method!=='GET'&&opts.csrf!==false)headers['x-csrf-token']=csrf;
  if(opts.stepUp!==false){
-  const token=as==='owner'?ownerStep:reviewerStep;
+  const token=as==='owner'?ownerStep:as==='security'?securityStep:reviewerStep;
   if(token)headers['x-step-up-token']=token;
  }
  const response=await fetch(base+path,{method,headers,
@@ -291,7 +294,8 @@ async function signTemplate(path:string,payload:object){
 }
 test('isolated synthetic source, authenticated role separation and API mount',async()=>{
  for(const [id,token,role,password] of [[owner,ownerToken,'OWNER',ownerPass],
-  [reviewer,reviewerToken,'REVIEWER',reviewerPass]]){
+  [reviewer,reviewerToken,'REVIEWER',reviewerPass],
+  [securityReviewer,securityToken,'REVIEWER',securityPass]]){
   await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
    [id,'external-'+id+'@example.invalid','External Candidate CI',
     await hashPassword(password),role]);
@@ -314,6 +318,8 @@ test('isolated synthetic source, authenticated role separation and API mount',as
  app.use('/api/provider-sandbox',sandboxOwnerRouter);
  app.use('/api/provider-selection/review',selectionReviewRouter);
  app.use('/api/provider-selection',selectionOwnerRouter);
+ app.use('/api/provider-onboarding/review',aoReviewRouter);
+ app.use('/api/provider-onboarding',aoOwnerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API route'}));
  const listener=app.listen(0,'127.0.0.1');
  await new Promise<void>(resolve=>listener.once('listening',resolve));
@@ -335,6 +341,9 @@ test('registration requires OWNER, CSRF, step-up and registry review remains HEL
   call('/api/auth/step-up','POST',{currentPassword:reviewerPass},'reviewer')]);
  assert.equal(a.status,200);assert.equal(b.status,200);
  ownerStep=String(a.data.stepUpToken);reviewerStep=String(b.data.stepUpToken);
+ const securityAuth=await call('/api/auth/step-up','POST',{currentPassword:securityPass},'security');
+ assert.equal(securityAuth.status,200,JSON.stringify(securityAuth));
+ securityStep=String(securityAuth.data.stepUpToken);
  assert.equal((await call('/api/external-trust/issuers','POST',payload,'owner',{csrf:false})).status,403);
  assert.equal((await call('/api/external-trust/issuers','POST',{...payload,issuerIsTrusted:true})).status,400);
  const r=await call('/api/external-trust/issuers','POST',payload);
@@ -654,6 +663,7 @@ test('root-signed revocation snapshots are contiguous, cumulative, fresh and alw
 
 const sandboxLeafKey=generateKeyPairSync('ed25519');
 let sandboxCaseId='',sandboxCertId='',sandboxIssuerFingerprint='';
+let aoCrl='',aoOcsp='';
 function ephemeralOneHopCerts(){
  const dir=mkdtempSync(join(tmpdir(),'aaditech-sandbox-chain-'));
  try{
@@ -671,6 +681,30 @@ function ephemeralOneHopCerts(){
    'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\ncertificatePolicies=1.2.3.4.5\nextendedKeyUsage=clientAuth\n');
   run(['x509','-req','-in','leaf.csr','-CA','root.crt','-CAkey','root.key',
    '-CAcreateserial','-out','leaf.crt','-days','2','-extfile','leaf.ext']);
+  mkdirSync(join(dir,'newcerts'));
+  writeFileSync(join(dir,'serial'),'1000\n');
+  writeFileSync(join(dir,'crlnumber'),'1000\n');
+  const serial=run(['x509','-in','leaf.crt','-noout','-serial']).toString().trim().split('=')[1];
+  const endDate=run(['x509','-in','leaf.crt','-noout','-enddate']).toString().trim().split('=')[1];
+  const date=new Date(endDate);
+  const expiry=date.toISOString().slice(2,4)+date.toISOString().slice(5,7)+
+   date.toISOString().slice(8,10)+date.toISOString().slice(11,13)+
+   date.toISOString().slice(14,16)+date.toISOString().slice(17,19)+'Z';
+  writeFileSync(join(dir,'index.txt'),
+   'V\\t'+expiry+'\\t\\t'+serial+'\\tunknown\\t/CN=CI Signatory/O=Testing Only\\n');
+  writeFileSync(join(dir,'ca.cnf'),
+   '[ca]\\ndefault_ca=CA_default\\n[CA_default]\\n'+
+   'database=./index.txt\\nnew_certs_dir=./newcerts\\n'+
+   'certificate=./root.crt\\nprivate_key=./root.key\\nserial=./serial\\n'+
+   'crlnumber=./crlnumber\\ndefault_md=default\\ndefault_crl_days=2\\n'+
+   'policy=policy_any\\n[policy_any]\\ncommonName=supplied\\n');
+  run(['ca','-gencrl','-config','ca.cnf','-out','revocation.crl','-batch']);
+  run(['crl','-in','revocation.crl','-outform','DER','-out','crl.der']);
+  run(['ocsp','-index','index.txt','-rsigner','root.crt','-rkey','root.key',
+   '-CA','root.crt','-issuer','root.crt','-cert','leaf.crt',
+   '-respout','ocsp.der','-ndays','2']);
+  aoCrl=readFileSync(join(dir,'crl.der')).toString('base64');
+  aoOcsp=readFileSync(join(dir,'ocsp.der')).toString('base64');
   return {rootCertificatePem:readFileSync(join(dir,'root.crt'),'utf8'),
    leafCertificatePem:readFileSync(join(dir,'leaf.crt'),'utf8')};
  }finally{rmSync(dir,{recursive:true,force:true});}
@@ -862,6 +896,107 @@ test('1AN openssl policy OID trial, immutable MCA/signatory dossier and independ
  await assert.rejects(db.execute(
   `UPDATE inv_provider_registry_dossiers SET registry_authentication='VERIFIED' WHERE id=?`,[namedDossier]));
 });
+
+let aoPacket='',aoTrial='',aoMca='';
+const aoReview=(reviewRole:'LEGAL'|'SECURITY')=>({
+ reviewRole,decision:'INSPECTED_HELD',
+ reason:'Internal evidence only; no signed eMudhra contract, actual API credential or verified KYC',
+ evidenceRef:'CI-PROVIDER-AO-'+reviewRole+'-2026',
+ noExternalContractAcknowledged:true,noLiveCredentialsAcknowledged:true
+});
+test('1AO two different legal/security reviewers, no contract or configured credential',async()=>{
+ const candidate=await call('/api/provider-onboarding/requirements');
+ assert.equal(candidate.status,200);
+ assert.equal(candidate.data.approvedSandboxCredentialsPresent,false);
+ const body={nominationId:namedNom,contractDocumentSha256:'a'.repeat(64),
+  providerOnboardingRef:'CI-UNVERIFIED-AGREEMENT-2026',
+  sandboxScopeRef:'CI-SANDBOX-NO-ACTIVATION-2026'};
+ assert.equal((await call('/api/provider-onboarding/packets','POST',
+  {...body,approvedApiKey:'INVALID_SECRET'})).status,400);
+ assert.equal((await call('/api/provider-onboarding/packets','POST',body,'reviewer')).status,403);
+ assert.equal((await call('/api/provider-onboarding/packets','POST',
+  body,'owner',{csrf:false})).status,403);
+ const created=await call('/api/provider-onboarding/packets','POST',body);
+ assert.equal(created.status,201,JSON.stringify(created));
+ aoPacket=created.data.id;
+ assert.equal(created.data.agreementAuthenticated,false);
+ assert.equal((await call('/api/provider-onboarding/trials','POST',
+  {packetId:aoPacket,policyId:namedPolicy})).status,409);
+ const legal=await call('/api/provider-onboarding/review/packets/'+aoPacket+'/decide',
+  'POST',aoReview('LEGAL'),'reviewer');
+ assert.equal(legal.status,201,JSON.stringify(legal));
+ assert.equal((await call('/api/provider-onboarding/review/packets/'+aoPacket+'/decide',
+  'POST',aoReview('SECURITY'),'reviewer')).status,409);
+ const security=await call('/api/provider-onboarding/review/packets/'+aoPacket+'/decide',
+  'POST',aoReview('SECURITY'),'security');
+ assert.equal(security.status,201,JSON.stringify(security));
+ assert.equal(security.data.productionReady,false);
+ assert.equal((await call('/api/provider-onboarding/review/packets/'+aoPacket+'/decide',
+  'POST',aoReview('LEGAL'),'security')).status,409);
+ await assert.rejects(db.execute(
+  `UPDATE inv_provider_ao_packets SET sandbox_secret_state='CONFIGURED' WHERE id=?`,
+  [aoPacket]));
+ await assert.rejects(db.execute(
+  `UPDATE inv_provider_ao_packets SET contract_authentication='VERIFIED' WHERE id=?`,
+  [aoPacket]));
+});
+test('1AO PKIX policy, offline signed CRL/OCSP and MCA claims remain nonauthorizing',async()=>{
+ const trial=await call('/api/provider-onboarding/trials','POST',
+  {packetId:aoPacket,policyId:namedPolicy});
+ assert.equal(trial.status,201,JSON.stringify(trial));
+ aoTrial=trial.data.id;assert.equal(trial.data.actualTrustedIssuerAuthenticated,false);
+ const replay=await call('/api/provider-onboarding/trials','POST',
+  {packetId:aoPacket,policyId:namedPolicy});
+ assert.equal(replay.status,200);assert.equal(replay.data.id,aoTrial);
+ async function importOne(kind:'CRL'|'OCSP',der:string){
+  assert.equal((await call('/api/provider-onboarding/revocations','POST',
+   {trialId:aoTrial,artifactType:kind,artifactDerB64:der,issuerAuthenticated:true})).status,400);
+  const v=await call('/api/provider-onboarding/revocations','POST',
+   {trialId:aoTrial,artifactType:kind,artifactDerB64:der});
+  assert.equal(v.status,201,JSON.stringify(v));
+  assert.equal(v.data.externalPublisherAuthenticated,false);
+  const review=await call('/api/provider-onboarding/review/revocations/'+v.data.id+'/decide',
+   'POST',{decision:'CRYPTO_REVIEWED_HELD',
+    reason:'Offline signature inspected; actual eMudhra publisher and live identity are unverified',
+    evidenceRef:'CI-AO-'+kind+'-REVIEW-2026',
+    issuerProvenanceMissingAcknowledged:true},'reviewer');
+  assert.equal(review.status,201,JSON.stringify(review));
+  return v.data.id as string;
+ }
+ const crl=await importOne('CRL',aoCrl),ocsp=await importOne('OCSP',aoOcsp);
+ assert.notEqual(crl,ocsp);
+ const claim={packetId:aoPacket,dossierId:namedDossier,
+  mcaMasterDataSha256:'b'.repeat(64),signatoryMandateSha256:'c'.repeat(64),
+  verificationTicket:'CI-AO-MCA-SIGNER-UNVERIFIED-2026'};
+ assert.equal((await call('/api/provider-onboarding/mca-evidence','POST',
+  {...claim,legalSignatoryVerified:true})).status,400);
+ const m=await call('/api/provider-onboarding/mca-evidence','POST',claim);
+ assert.equal(m.status,201,JSON.stringify(m));aoMca=m.data.id;
+ const mr=await call('/api/provider-onboarding/review/mca-evidence/'+aoMca+'/decide',
+  'POST',{decision:'INSPECTED_HELD',
+   reason:'Compared internal document hashes only, genuine MCA/company signatory proof absent',
+   evidenceRef:'CI-AO-MCA-REVIEW-2026',
+   externalMcaAuthenticationMissingAcknowledged:true,
+   signatoryAuthorityMissingAcknowledged:true},'reviewer');
+ assert.equal(mr.status,201,JSON.stringify(mr));
+ const ready=await call('/api/provider-onboarding/readiness?'+new URLSearchParams({
+  trialId:aoTrial,mcaId:aoMca}).toString());
+ assert.equal(ready.status,200,JSON.stringify(ready));
+ assert.equal(ready.data.offlineCrlSignatureMatched,true);
+ assert.equal(ready.data.offlineOcspSignatureMatched,true);
+ assert.equal(ready.data.productionReady,false);
+ assert.equal(ready.data.actualProviderContractVerified,false);
+ assert.equal(ready.data.authenticatedExternalCrlOcspPublisher,false);
+ assert.equal(ready.data.availableToSell,null);
+ await assert.rejects(db.execute(
+  `UPDATE inv_provider_ao_revocation_trials SET external_publisher_authenticated='YES'
+    WHERE id=?`,[crl]));
+ await assert.rejects(db.execute(
+  `UPDATE inv_provider_ao_mca_evidence SET signatory_authorized='YES' WHERE id=?`,
+  [aoMca]));
+ assert.equal((await call('/api/provider-onboarding/official-grn','POST',{})).status,404);
+ assert.equal((await call('/api/provider-onboarding/post-stock','POST',{})).status,404);
+});
 test('Phase 1AM new provider-signed revocation of sandbox leaf fails closed, cannot un-revoke',async()=>{
  const signed=await bridgeTemplate('feed-template',{pinId,sequenceNumber:3,
   publishedAt:utcBridge(-60_000),validUntil:utcBridge(3_600_000),
@@ -871,6 +1006,8 @@ test('Phase 1AM new provider-signed revocation of sandbox leaf fails closed, can
  assert.equal((await call('/api/provider-sandbox/readiness/'+sandboxCertId)).status,409);
  assert.equal((await call('/api/provider-selection/readiness?'+new URLSearchParams({
   policyId:namedPolicy,dossierId:namedDossier}).toString())).status,409);
+ assert.equal((await call('/api/provider-onboarding/readiness?'+new URLSearchParams({
+  trialId:aoTrial,mcaId:aoMca}).toString())).status,409);
  assert.equal((await call('/api/provider-sandbox/revocation-checks','POST',
   {certId:sandboxCertId})).status,409);
  const antiRollback=await bridgeTemplate('feed-template',{pinId,sequenceNumber:4,

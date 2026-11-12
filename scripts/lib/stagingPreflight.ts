@@ -16,7 +16,8 @@ export const MIGRATIONS=[
  '0023_external_trust_prerequisites',
  '0024_provider_identity_bridge',
  '0025_provider_sandbox_evidence',
- '0026_named_provider_policy_gates'
+ '0026_named_provider_policy_gates',
+ '0027_provider_approved_sandbox_prerequisites'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -504,6 +505,65 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(namedProviders[0].unsafe)!==0||Number(namedPolicies[0].unsafe)!==0||
   Number(registryDossiers[0].unsafe)!==0||Number(accessGates[0].unsafe)!==0)
   problems.push('Named CCA CA, certificate policy, MCA/signatory and credential HOLD prerequisites altered');
+ // Phase 1AO: absolute SQL HOLD; signed offline CRL/OCSP math cannot
+ // become actual eMudhra, legal MCA signatory or real stock authority.
+ const [aoPackets]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.contract_authentication<>'UNVERIFIED'
+   OR p.sandbox_secret_state<>'NOT_CONFIGURED'
+   OR p.provider_credential_authentication<>'NO'
+   OR p.production_release<>'HOLD'
+   OR p.prepared_by<>n.opened_by
+   OR (p.status='DUAL_REVIEWED_HELD' AND
+    (SELECT COUNT(*) FROM inv_provider_ao_packet_reviews x
+     WHERE x.packet_id=p.id AND x.decision='INSPECTED_HELD'
+     AND x.no_external_contract_ack=1 AND x.no_live_credentials_ack=1)<>2)
+   OR (p.status='REJECTED_INTERNAL' AND NOT EXISTS(
+    SELECT 1 FROM inv_provider_ao_packet_reviews r
+     WHERE r.packet_id=p.id AND r.decision='REJECTED_INTERNAL'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_packets p
+  JOIN inv_provider_named_nominations n ON n.id=p.nomination_id`);
+ const [aoTrials]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   t.status<>'OFFLINE_CRYPTO_HELD'
+   OR t.provider_chain_authenticated<>'NO'
+   OR t.real_issuer_status<>'UNVERIFIED'
+   OR t.trusted_crl_ocsp<>'NO' OR t.prepared_by<>p.prepared_by
+   OR t.policy_id<>pol.id OR t.requested_policy_oid<>pol.policy_oid
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_pkix_trials t
+  JOIN inv_provider_ao_packets p ON p.id=t.packet_id
+  JOIN inv_provider_policy_proposals pol ON pol.id=t.policy_id`);
+ const [aoArtifacts]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.status<>'SIGNED_OFFLINE_HELD' OR a.issuer_authority_verified<>'NO'
+   OR a.external_publisher_authenticated<>'NO'
+   OR a.serial_status<>'CRYPTO_GOOD_ONLY'
+   OR a.imported_by<>t.prepared_by
+   OR a.artifact_sha256<>SHA2(FROM_BASE64(a.artifact_der_b64),256)
+   OR (r.id IS NOT NULL AND (r.reviewer_id=a.imported_by OR
+    (r.decision='CRYPTO_REVIEWED_HELD' AND NOT r.issuer_provenance_missing_ack)))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_revocation_trials a
+  JOIN inv_provider_ao_pkix_trials t ON t.id=a.trial_id
+  LEFT JOIN inv_provider_ao_revocation_reviews r ON r.artifact_id=a.id`);
+ const [aoMca]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   m.registry_authenticated<>'NO' OR m.signatory_authorized<>'NO'
+   OR m.prepared_by<>p.prepared_by
+   OR (m.status='INTERNALLY_INSPECTED_HELD' AND
+    (r.id IS NULL OR r.decision<>'INSPECTED_HELD'
+     OR r.reviewer_id=m.prepared_by
+     OR NOT r.external_mca_auth_missing_ack
+     OR NOT r.signatory_auth_missing_ack))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_mca_evidence m
+  JOIN inv_provider_ao_packets p ON p.id=m.packet_id
+  LEFT JOIN inv_provider_ao_mca_reviews r ON r.mca_id=m.id`);
+ if(Number(aoPackets[0].unsafe)!==0||Number(aoTrials[0].unsafe)!==0||
+   Number(aoArtifacts[0].unsafe)!==0||Number(aoMca[0].unsafe)!==0)
+  problems.push('Phase1AO offline CA/CRL/OCSP/MCA contract and dual-review HOLD constraints altered');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -550,6 +610,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  unverifiedProviderAgreementPackets:Number(aoPackets[0].total),
+  offlineProviderPolicyChainTrials:Number(aoTrials[0].total),
+  offlineSignedCrlOcspArtifacts:Number(aoArtifacts[0].total),
+  unauthenticatedMcaAndSignerEvidence:Number(aoMca[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
@@ -571,7 +635,11 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    namedProviderContract:'NOT_APPROVED',
    sandboxCredentials:'NOT_PROVIDED',
    mcaSignatoryLegalAuthentication:'NOT_VERIFIED',
-   cspPolicyAndTrustedRevocation:'NOT_VERIFIED'
+   cspPolicyAndTrustedRevocation:'NOT_VERIFIED',
+   signedProviderContract:'NOT_AUTHENTICATED',
+   approvedLiveSandboxCredentials:'NOT_CONFIGURED',
+   authenticatedCaCrlOcspPublisher:'NOT_VERIFIED',
+   verifiedMcaLegalRepresentative:'NOT_VERIFIED'
   }
  };
 }

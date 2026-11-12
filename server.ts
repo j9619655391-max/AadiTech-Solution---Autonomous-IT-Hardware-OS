@@ -32,6 +32,8 @@ import providerSandboxOwnerRouter from "./server/providerSandbox/ownerRouter";
 import providerSandboxReviewerRouter from "./server/providerSandbox/reviewRouter";
 import providerSelectionOwnerRouter from "./server/providerSelection/ownerRouter";
 import providerSelectionReviewerRouter from "./server/providerSelection/reviewRouter";
+import providerOnboardingOwnerRouter from "./server/providerOnboarding/ownerRouter";
+import providerOnboardingReviewerRouter from "./server/providerOnboarding/reviewRouter";
 import quoteDraftRouter from "./server/quotes/router";
 import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
@@ -83,6 +85,8 @@ app.use("/api/provider-sandbox/review", providerSandboxReviewerRouter);
 app.use("/api/provider-sandbox", providerSandboxOwnerRouter);
 app.use("/api/provider-selection/review", providerSelectionReviewerRouter);
 app.use("/api/provider-selection", providerSelectionOwnerRouter);
+app.use("/api/provider-onboarding/review", providerOnboardingReviewerRouter);
+app.use("/api/provider-onboarding", providerOnboardingOwnerRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
 app.use("/api/quotes/reviews", quoteReviewRouter);
 app.use("/api/quotes/release-preparations", quoteReleaseHoldRouter);
@@ -138,7 +142,7 @@ app.get("/api/db/schema-sql", (_req,res) => {
   res.setHeader("Cache-Control","no-store");
   res.status(410).json({
     error:"Legacy schema download disabled to prevent destructive import",
-    safePath:"Use staging backup/restore rehearsal and checksum-tracked migrations 0001-0026"
+    safePath:"Use staging backup/restore rehearsal and checksum-tracked migrations 0001-0027"
   });
 });
 
