@@ -200,6 +200,10 @@ jobs:
         run: bun run db:migrate:key-lifecycle
       - name: Verify key lifecycle migration idempotent checksum rerun
         run: bun run db:migrate:key-lifecycle
+      - name: Apply external issuer/authority/revocation HELD prerequisites on disposable CI
+        run: bun run db:migrate:external-trust
+      - name: Verify external trust prerequisite migration checksum and idempotent rerun
+        run: bun run db:migrate:external-trust
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -220,6 +224,8 @@ jobs:
         run: bun run test:signed-proof-mysql
       - name: Verify one-time Ed25519 possession, expiry, rotation, emergency revocation, no external trust
         run: bun run test:key-lifecycle-mysql
+      - name: Verify signed issuer/organization claims, monotonic revocations, freeze and no stock authority
+        run: bun run test:external-trust-mysql
       - name: Verify bounded authentication retention on disposable MySQL
         run: bun run test:retention-mysql
       - name: Retention report defaults to read-only dry run

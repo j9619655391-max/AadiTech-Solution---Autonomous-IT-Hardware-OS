@@ -37,6 +37,17 @@ export async function readCandidate(conn:PoolConnection,keyId:string,reviewed:bo
    [keyId,keyId]);
   if(pending.length)deny();
  }
+ // Phase 1AK: conservatively deny any candidate fingerprint present in a
+ // locally recorded issuer-signed revocation feed (including expired feeds).
+ // Source keys are never externally authenticated; this is deny-only protection.
+ const [extRevoked]=await conn.query<RowDataPacket[]>(`SELECT e.key_fingerprint_sha256 AS fp
+  FROM inv_external_revocation_entries e
+  JOIN inv_external_revocation_bundles b ON b.id=e.bundle_id
+  JOIN inv_external_issuer_candidates i ON i.id=b.issuer_id
+  WHERE e.key_fingerprint_sha256=? AND i.party_kind=?
+   AND i.party_id=? LIMIT 1 FOR UPDATE`,
+  [parsed.fingerprint,r.partyKind,r.partyKind==='SUPPLIER'?r.supplierId:r.siteId]);
+ if(extRevoked.length)deny();
  return {id:String(r.id),partyKind:r.partyKind as 'SUPPLIER'|'WAREHOUSE',
   partyId:String(r.partyKind==='SUPPLIER'?r.supplierId:r.siteId),
   registeredBy:String(r.registeredBy),status:String(r.status),

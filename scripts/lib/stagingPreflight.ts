@@ -12,7 +12,8 @@ export const MIGRATIONS=[
  '0018_acknowledgment_grn_holds','0019_stock_release_planning',
  '0020_unposted_double_entry_journals',
  '0021_signed_proof_prerequisites',
- '0022_key_possession_lifecycle'
+ '0022_key_possession_lifecycle',
+ '0023_external_trust_prerequisites'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
@@ -286,6 +287,61 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(keyChallenges[0].unsafe)!==0||Number(keyRetirements[0].unsafe)!==0||
     Number(keyRotations[0].unsafe)!==0)
   problems.push('Key possession expiry/replay, immediate retirement, independent review or internal rotation invariant mismatch');
+ // Phase 1AK: only self-entered organizational issuer candidates exist.
+ // These SQL integrity checks do not and cannot authenticate external roots.
+ const [extIssuers]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   i.external_root_state<>'UNVERIFIED' OR
+   i.fingerprint_sha256<>SHA2(FROM_BASE64(i.issuer_spki_b64),256)
+   OR (i.status='REVIEWED_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_HELD'
+     OR r.reviewer_id=i.registered_by OR NOT r.registry_inspected))
+   OR (i.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (i.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   OR (f.issuer_id IS NOT NULL AND f.initiated_by<>i.registered_by)
+   THEN 1 ELSE 0 END),0) AS unsafe,
+   COALESCE(SUM(CASE WHEN f.issuer_id IS NOT NULL THEN 1 ELSE 0 END),0) AS frozen
+  FROM inv_external_issuer_candidates i
+  LEFT JOIN inv_external_issuer_reviews r ON r.issuer_id=i.id
+  LEFT JOIN inv_external_issuer_freezes f ON f.issuer_id=i.id`);
+ const [extAuthorities]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.external_authority_state<>'UNVERIFIED' OR a.stock_posting<>'DISABLED'
+   OR a.prepared_by<>i.registered_by OR
+   JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.issuerExternallyAuthenticated'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.organizationAuthorityVerified'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.stockPostingState'))<>'DISABLED'
+   OR (a.status='REVIEWED_CRYPTO_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_HELD'
+      OR r.reviewer_id=a.prepared_by OR NOT r.signature_inspected))
+   OR (a.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (a.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_external_authority_attestations a
+  JOIN inv_external_issuer_candidates i ON i.id=a.issuer_id
+  LEFT JOIN inv_external_authority_reviews r ON r.attestation_id=a.id`);
+ const [extFeeds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   b.status<>'SIGNED_UNTRUSTED' OR b.external_publisher_authenticated<>'NO'
+   OR b.submitted_by<>i.registered_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(b.manifest_json,'$.publisherExternallyAuthenticated'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(b.manifest_json,'$.stockPostingState'))<>'DISABLED'
+   OR JSON_LENGTH(JSON_EXTRACT(b.manifest_json,'$.revokedFingerprints'))<>
+    (SELECT COUNT(*) FROM inv_external_revocation_entries e WHERE e.bundle_id=b.id)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_external_revocation_bundles b
+  JOIN inv_external_issuer_candidates i ON i.id=b.issuer_id`);
+ const [extSequence]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid FROM(
+  SELECT issuer_id,MIN(sequence_number) AS firstSeq,
+   MAX(sequence_number) AS lastSeq,COUNT(*) AS n
+  FROM inv_external_revocation_bundles
+  GROUP BY issuer_id HAVING firstSeq<>1 OR lastSeq<>n
+ ) gaps`);
+ if(Number(extIssuers[0].unsafe)!==0||Number(extAuthorities[0].unsafe)!==0||
+  Number(extFeeds[0].unsafe)!==0||Number(extSequence[0].invalid)!==0)
+  problems.push('Issuer/organizational authority/revocation internal integrity mismatch');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -317,6 +373,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   oneTimeKeyPossessionChallenges:Number(keyChallenges[0].total),
   irrevocablyRetiredCandidates:Number(keyRetirements[0].total),
   internalOnlyKeyRotations:Number(keyRotations[0].total),
+  unverifiedExternalIssuerCandidates:Number(extIssuers[0].total),
+  frozenExternalIssuerCandidates:Number(extIssuers[0].frozen),
+  internalHeldOrganizationalClaims:Number(extAuthorities[0].total),
+  selfSignedRevocationBundles:Number(extFeeds[0].total),
   activeOwnerCount:activeOwners,
   activeReviewerCount:activeReviewers,
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
@@ -325,7 +385,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
    encryptedBackupAndRestoreRehearsal:'NOT_VERIFIED',
    browserHttpsMfaEndToEnd:'NOT_VERIFIED',
    secretKeyRecoveryAndRotation:'NOT_VERIFIED',
-   externalNotificationAndDispatch:'DISABLED'
+   externalNotificationAndDispatch:'DISABLED',
+   externalTrustRootAuthentication:'NOT_VERIFIED',
+   officialSupplierAndWarehouseAuthority:'NOT_VERIFIED',
+   externallyPublishedRevocationTrust:'NOT_VERIFIED'
   }
  };
 }
