@@ -691,13 +691,13 @@ function ephemeralOneHopCerts(){
    date.toISOString().slice(8,10)+date.toISOString().slice(11,13)+
    date.toISOString().slice(14,16)+date.toISOString().slice(17,19)+'Z';
   writeFileSync(join(dir,'index.txt'),
-   'V\\t'+expiry+'\\t\\t'+serial+'\\tunknown\\t/CN=CI Signatory/O=Testing Only\\n');
+   'V\t'+expiry+'\t\t'+serial+'\tunknown\t/CN=CI Signatory/O=Testing Only\n');
   writeFileSync(join(dir,'ca.cnf'),
-   '[ca]\\ndefault_ca=CA_default\\n[CA_default]\\n'+
-   'database=./index.txt\\nnew_certs_dir=./newcerts\\n'+
-   'certificate=./root.crt\\nprivate_key=./root.key\\nserial=./serial\\n'+
-   'crlnumber=./crlnumber\\ndefault_md=default\\ndefault_crl_days=2\\n'+
-   'policy=policy_any\\n[policy_any]\\ncommonName=supplied\\n');
+   '[ca]\ndefault_ca=CA_default\n[CA_default]\n'+
+   'database=./index.txt\nnew_certs_dir=./newcerts\n'+
+   'certificate=./root.crt\nprivate_key=./root.key\nserial=./serial\n'+
+   'crlnumber=./crlnumber\ndefault_md=default\ndefault_crl_days=2\n'+
+   'policy=policy_any\n[policy_any]\ncommonName=supplied\n');
   run(['ca','-gencrl','-config','ca.cnf','-out','revocation.crl','-batch']);
   run(['crl','-in','revocation.crl','-outform','DER','-out','crl.der']);
   run(['ocsp','-index','index.txt','-rsigner','root.crt','-rkey','root.key',

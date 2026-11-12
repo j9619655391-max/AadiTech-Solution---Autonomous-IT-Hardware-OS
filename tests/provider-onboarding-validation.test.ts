@@ -103,7 +103,8 @@ test('Offline X509 CRL and OCSP signed by synthetic CA verify mathematically; ta
    assert.throws(()=>offlineSignedRevocationCheck(kind,data,root,leaf,
     {...env,DB_NAME:'aaditech_production'}),ChainConflictError);
    const corrupted=Buffer.from(data,'base64');
-   corrupted[Math.floor(corrupted.length/2)]^=0x80;
+   // Corrupt the ASN.1 DER tag (always invalid); signed and unsigned fields differ.
+   corrupted[0]^=0x80;
    assert.throws(()=>offlineSignedRevocationCheck(kind,
     corrupted.toString('base64'),root,leaf,env),ChainConflictError);
   }
