@@ -22,7 +22,25 @@ export function getDatabaseConfig() {
   const password = process.env.DB_PASSWORD || '';
   const database = process.env.DB_NAME || '';
   const port = parseInt(process.env.DB_PORT || '3306', 10);
-  const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
+  if (process.env.DB_SSL && !['true','false'].includes(process.env.DB_SSL)) {
+    throw new Error('DB_SSL must be explicitly true or false');
+  }
+  const caBase64=process.env.DB_SSL_CA_BASE64;
+  if(caBase64 && process.env.DB_SSL!=='true') {
+    throw new Error('DB_SSL_CA_BASE64 requires DB_SSL=true');
+  }
+  let ssl:{rejectUnauthorized:true;ca?:string}|undefined;
+  if(process.env.DB_SSL==='true') {
+    ssl={rejectUnauthorized:true};
+    if(caBase64) {
+      const decoded=Buffer.from(caBase64,'base64').toString('utf8');
+      if(!decoded.includes('-----BEGIN CERTIFICATE-----') ||
+         !decoded.includes('-----END CERTIFICATE-----')) {
+        throw new Error('DB_SSL_CA_BASE64 must contain a PEM certificate');
+      }
+      ssl.ca=decoded;
+    }
+  }
 
   return { host, user, password, database, port, ssl };
 }
@@ -108,7 +126,7 @@ export async function checkDatabaseConnection(): Promise<DatabaseStatus> {
       database: config.database,
       user: config.user,
       port: config.port,
-      message: `MySQL Connection Failed: ${err.message || String(err)}`,
+      message: 'MySQL connection failed; inspect protected server logs for diagnostics.',
       tableCount: 0,
       tables: []
     };

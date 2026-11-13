@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "known-unresolved-development-only",
+  "source": "Phase 1T CI dependency advisory artifact",
+  "reviewedAt": "2026-11-10",
+  "advisories": [
+    {
+      "id": "GHSA-jqcg-44mw-7w3h",
+      "packageName": "proxy-addr",
+      "severity": "critical"
+    },
+    {
+      "id": "GHSA-27r3-jxmh-p828",
+      "packageName": "body-parser",
+      "severity": "high"
+    },
+    {
+      "id": "GHSA-68fv-2mgg-jv7q",
+      "packageName": "source-map-js",
+      "severity": "high"
+    },
+    {
+      "id": "GHSA-587h-7wmj-h5pm",
+      "packageName": "vite",
+      "severity": "high"
+    },
+    {
+      "id": "GHSA-rq7h-c2jc-7f22",
+      "packageName": "vite",
+      "severity": "moderate"
+    },
+    {
+      "id": "GHSA-698v-4r3x-3vcv",
+      "packageName": "vite",
+      "severity": "moderate"
+    },
+    {
+      "id": "GHSA-r825-w8mm-5pxw",
+      "packageName": "vite",
+      "severity": "moderate"
+    },
+    {
+      "id": "GHSA-9jrq-w75r-8gcw",
+      "packageName": "vite",
+      "severity": "low"
+    },
+    {
+      "id": "GHSA-x5fp-wj9c-mxmx",
+      "packageName": "qs",
+      "severity": "moderate"
+    },
+    {
+      "id": "GHSA-4mjr-xmp4-gh2g",
+      "packageName": "qs",
+      "severity": "moderate"
+    },
+    {
+      "id": "GHSA-6pq8-jhm2-2vcw",
+      "packageName": "qs",
+      "severity": "moderate"
+    }
+  ]
+}

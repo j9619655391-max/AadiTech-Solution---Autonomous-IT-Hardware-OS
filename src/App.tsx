@@ -1,9 +1,26 @@
+import { authenticatedFetch } from './services/authClient';
 import React, { useState } from 'react';
 import { Header } from './components/Header';
 import { TelegramCommandHub } from './components/TelegramCommandHub';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { CRMAndLeadsView } from './components/CRMAndLeadsView';
+import { LiveCRMWorkspace } from './components/LiveCRMWorkspace';
+import { LiveInventoryWorkspace } from './components/LiveInventoryWorkspace';
+import { LiveProcurementWorkspace } from './components/LiveProcurementWorkspace';
+import { InboundObservationWorkspace } from './components/InboundObservationWorkspace';
+import { SupplierDispatchOwnerPanel } from './components/SupplierDispatchOwnerPanel';
+import { SupplierEvidenceOwnerPanel } from './components/SupplierEvidenceOwnerPanel';
+import { StockFoundationOwnerPanel } from './components/StockFoundationOwnerPanel';
+import { JournalFoundationOwnerPanel } from './components/JournalFoundationOwnerPanel';
+import { SignedProofOwnerPanel } from './components/SignedProofOwnerPanel';
+import { KeyLifecycleOwnerPanel } from './components/KeyLifecycleOwnerPanel';
+import { ExternalTrustOwnerPanel } from './components/ExternalTrustOwnerPanel';
+import { ProviderBridgeOwnerPanel } from './components/ProviderBridgeOwnerPanel';
+import { ProviderSandboxOwnerPanel } from './components/ProviderSandboxOwnerPanel';
+import { ProviderSelectionOwnerPanel } from './components/ProviderSelectionOwnerPanel';
+import { ProviderOnboardingOwnerPanel } from './components/ProviderOnboardingOwnerPanel';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
+import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
 import { ApprovalEngineView } from './components/ApprovalEngineView';
 import { ProcurementAndInventory } from './components/ProcurementAndInventory';
@@ -70,6 +87,8 @@ import {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [crmViewMode, setCrmViewMode] = useState<'live' | 'legacy'>('live');
+  const [bomViewMode, setBomViewMode] = useState<'live' | 'legacy'>('live');
   const [isTelegramDrawerOpen, setIsTelegramDrawerOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
@@ -90,7 +109,7 @@ export default function App() {
   const [amcs, setAmcs] = useState<AMCContract[]>(() => storageService.loadAMCs());
   const [tickets, setTickets] = useState<ServiceTicket[]>(() => storageService.loadTickets());
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>(() => storageService.loadCampaigns());
-  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS);
+  const [agents, setAgents] = useState<AIAgent[]>([]); // No live agent health is verified
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => storageService.loadAuditLogs());
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => storageService.loadSalesOrders());
   const [workOrders, setWorkOrders] = useState<InstallationWorkOrder[]>(() => storageService.loadWorkOrders());
@@ -168,20 +187,13 @@ export default function App() {
     setTelegramMessages(prev => [...prev, userMsg]);
 
     try {
-      const res = await fetch('/api/ai/command', {
+      const res = await authenticatedFetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: text,
-          context: {
-            revenueToday: '₹8.42 Lakh',
-            margin: '17.2%',
-            pendingApprovalsCount: pendingApprovals.length,
-            lowStockItems: ['Fortinet FG-60F (2 left)', 'Kingston ECC DDR5 (0 left)']
-          }
-        })
+        body: JSON.stringify({ query: text })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Business command unavailable');
 
       const botMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
@@ -196,88 +208,26 @@ export default function App() {
       const fallbackMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
         sender: 'bot',
-        text: `🤖 Autonomous Command Result: Executed "${text}". System metrics are within normal parameters.`,
+        text: err instanceof Error ? err.message : 'Business command unavailable. No action executed.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setTelegramMessages(prev => [...prev, fallbackMsg]);
     }
   };
 
-  // Telegram / System Approval Action
-  const handleApproveCard = (cardId: string) => {
-    // 1. Update message approval card
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'APPROVED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    // 2. Find reference quote & mark as APPROVED
-    const targetCard = pendingApprovals.find(c => c.id === cardId);
-    if (targetCard) {
-      setQuotations(prev =>
-        prev.map(q => {
-          if (q.quoteNumber === targetCard.referenceId || q.id === targetCard.referenceId) {
-            return { ...q, status: 'APPROVED' };
-          }
-          return q;
-        })
-      );
-
-      // 3. Log into Immutable Audit Trail
-      const newAudit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'Business Owner (Telegram Command)',
-        action: 'EXCEPTION_AUTHORIZED',
-        entityType: targetCard.type,
-        entityId: targetCard.referenceId,
-        details: `Authorized by Business Owner via Telegram. Deal released for Sales Order generation and inventory lock in Bhiwandi Hub.`,
-        rulesChecked: 'Rule #25: Telegram Human Authorization Granted',
-        approvalRequired: true,
-        status: 'TELEGRAM_APPROVED'
-      };
-      setAuditLogs(prev => [newAudit, ...prev]);
-
-      // 4. Send Bot Confirmation in Telegram
-      const confirmBotMsg: TelegramMessage = {
-        id: `bot-conf-${Date.now()}`,
-        sender: 'bot',
-        text: `✅ **AUTHORIZATION RECORDED**\n\nQuotation **${targetCard.referenceId}** for **${targetCard.customerName}** is now **APPROVED**.\n• Sales Order **#SO-4409** automatically raised.\n• Reserved 15x ThinkPad T14 + 2x Cisco Switches in Bhiwandi Hub.\n• Pick list dispatched to warehouse floor.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setTelegramMessages(prev => [...prev, confirmBotMsg]);
-    }
+  // This browser-local preview has NO authority to approve quotes, dispatch
+  // orders, emit immutable audit, notify Telegram, or reserve warehouse stock.
+  // Use server-backed review endpoints and MFA/step-up workflow instead.
+  const noticeApprovalUnavailable=(action:'approve'|'reject')=>{
+    setTelegramMessages(prev=>[...prev,{
+      id:`bot-approval-blocked-${Date.now()}`,
+      sender:'bot',
+      text:`\u26a0\ufe0f ${action==='approve'?'Approval':'Rejection'} NOT recorded. This is an unverified browser-local preview. Use the server-backed quotation review workspace. No message, order or stock movement occurred.`,
+      timestamp:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+    }]);
   };
-
-  // Telegram Reject Action
-  const handleRejectCard = (cardId: string) => {
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'REJECTED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    const rejectBotMsg: TelegramMessage = {
-      id: `bot-rej-${Date.now()}`,
-      sender: 'bot',
-      text: `❌ **DISCOUNT EXCEPTION REJECTED**\n\nAI Sales Agent informed: Sub-15% margin rejected. Agent instructed to counter-offer with 3-year AMC bundle at standard price.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setTelegramMessages(prev => [...prev, rejectBotMsg]);
-  };
+  const handleApproveCard=(_cardId:string)=>noticeApprovalUnavailable('approve');
+  const handleRejectCard=(_cardId:string)=>noticeApprovalUnavailable('reject');
 
   // CRM to BOM transition
   const handleSelectLeadForBOM = (lead: Lead) => {
@@ -984,6 +934,12 @@ export default function App() {
         environmentMode={environmentMode}
       />
 
+      <div role="alert" className="mx-auto max-w-screen-2xl px-4 py-3 text-sm rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-100">
+        RELEASE HOLD — MIXED MODE: only explicitly server-backed CRM and quotation review endpoints can persist approved changes.
+        Other legacy dashboards, catalogs, workflows and previews are browser-local or simulated; figures and actions are NOT verified business records.
+        No customer messaging, purchasing, inventory movement or production release is authorized by this UI.
+      </div>
+
       {/* AadiTech Solution Master Settings & Real Data Backup/Import Modal */}
       <CompanySettingsModal
         isOpen={isSettingsModalOpen}
@@ -1005,6 +961,10 @@ export default function App() {
 
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        {activeTab !== 'crm' && <div role="note" className="mb-5 rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm text-amber-200">
+          Preview modules: most reports, orders and inventory still use browser or demo data. Only Live MySQL CRM has server-backed master records.
+          Do not treat other dashboard figures or claimed automation as verified live business operations.
+        </div>}
         {activeTab === 'dashboard' && (
           <ExecutiveDashboard
             leads={leads}
@@ -1035,35 +995,66 @@ export default function App() {
         )}
 
         {activeTab === 'crm' && (
-          <CRMAndLeadsView
-            leads={leads}
-            customers={customers}
-            gemTenders={gemTenders}
-            outboundTargets={outboundTargets}
-            hardwareRefreshAssets={hardwareRefreshAssets}
-            dealRegistrations={dealRegistrations}
-            onSelectLeadForBOM={handleSelectLeadForBOM}
-            onAddLead={handleAddLead}
-            onAddCustomer={handleAddCustomer}
-            onConvertTenderToLead={(tender) => {
-              setGemTenders(storageService.loadGeMTenders());
-            }}
-            onLaunchOutboundSequence={(target) => {
-              setOutboundTargets(storageService.loadOutboundTargets());
-            }}
-            onTriggerRefreshProposal={(asset) => {
-              setHardwareRefreshAssets(storageService.loadHardwareRefreshAssets());
-            }}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setCrmViewMode('live')}
+                aria-pressed={crmViewMode === 'live'}
+                className={'rounded-lg px-4 py-2 text-sm border ' + (crmViewMode === 'live' ? 'bg-cyan-700 border-cyan-500 text-white' : 'border-slate-700 text-slate-300')}>
+                Live MySQL CRM
+              </button>
+              <button type="button" onClick={() => setCrmViewMode('legacy')}
+                aria-pressed={crmViewMode === 'legacy'}
+                className={'rounded-lg px-4 py-2 text-sm border ' + (crmViewMode === 'legacy' ? 'bg-amber-900 border-amber-600 text-amber-100' : 'border-slate-700 text-slate-300')}>
+                Legacy Demo Workspace
+              </button>
+            </div>
+            {crmViewMode === 'live' ? <LiveCRMWorkspace /> : (
+              <div className="space-y-3">
+                <div role="alert" className="rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm text-amber-200">
+                  DEMO / BROWSER-ONLY: All records and actions below use localStorage or simulated workflows.
+                  They do not create MySQL customers or verified external leads.
+                </div>
+              <CRMAndLeadsView
+                leads={leads}
+                customers={customers}
+                gemTenders={gemTenders}
+                outboundTargets={outboundTargets}
+                hardwareRefreshAssets={hardwareRefreshAssets}
+                dealRegistrations={dealRegistrations}
+                onSelectLeadForBOM={handleSelectLeadForBOM}
+                onAddLead={handleAddLead}
+                onAddCustomer={handleAddCustomer}
+                onConvertTenderToLead={(tender) => {
+                  setGemTenders(storageService.loadGeMTenders());
+                }}
+                onLaunchOutboundSequence={(target) => {
+                  setOutboundTargets(storageService.loadOutboundTargets());
+                }}
+                onTriggerRefreshProposal={(asset) => {
+                  setHardwareRefreshAssets(storageService.loadHardwareRefreshAssets());
+                }}
+              />
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'bom' && (
-          <SalesAndBOMBuilder
-            products={products}
-            currentBOM={currentBOM}
-            setCurrentBOM={setCurrentBOM}
-            onGenerateQuote={handleGenerateQuote}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" aria-pressed={bomViewMode === 'live'} onClick={() => setBomViewMode('live')}
+                className={bomViewMode === 'live' ? 'bg-cyan-700 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Live MySQL BOM</button>
+              <button type="button" aria-pressed={bomViewMode === 'legacy'} onClick={() => setBomViewMode('legacy')}
+                className={bomViewMode === 'legacy' ? 'bg-amber-900 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Legacy AI Demo BOM</button>
+            </div>
+            {bomViewMode === 'live' ? <LiveBOMWorkspace /> :
+              <div className="space-y-3">
+                <div role="alert" className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-amber-200 text-sm">
+                  DEMO ONLY: AI generated BOM costs, compatibility claims and quotation transitions are not verified commercial commitments.
+                </div>
+                <SalesAndBOMBuilder products={products} currentBOM={currentBOM} setCurrentBOM={setCurrentBOM} onGenerateQuote={handleGenerateQuote} />
+              </div>}
+          </div>
         )}
 
         {activeTab === 'quotes' && (
@@ -1112,6 +1103,29 @@ export default function App() {
         )}
 
         {activeTab === 'procurement' && (
+          <div className="space-y-5">
+            <LiveInventoryWorkspace />
+            <LiveProcurementWorkspace />
+            <InboundObservationWorkspace />
+            <SupplierDispatchOwnerPanel />
+            <SupplierEvidenceOwnerPanel />
+            <StockFoundationOwnerPanel />
+            <JournalFoundationOwnerPanel />
+            <SignedProofOwnerPanel />
+            <KeyLifecycleOwnerPanel />
+            <ExternalTrustOwnerPanel />
+            <ProviderBridgeOwnerPanel />
+            <ProviderSandboxOwnerPanel />
+            <ProviderSelectionOwnerPanel />
+            <ProviderOnboardingOwnerPanel />
+            <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
+              <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
+                Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)
+              </summary>
+              <p className="text-amber-200 text-xs my-3">
+                Do not use this simulator to receive goods, reserve inventory, authorize supplier POs
+                or report audited balances. No real procurement or stock movements occur here.
+              </p>
           <ProcurementAndInventory
             products={products}
             suppliers={suppliers}
@@ -1123,6 +1137,8 @@ export default function App() {
             onAddInventoryItem={handleAddInventoryItem}
             onAddRFQ={handleAddRFQ}
           />
+            </details>
+          </div>
         )}
 
         {activeTab === 'analytics' && (
@@ -1200,7 +1216,7 @@ export default function App() {
             campaigns={campaigns}
             agents={agents}
             onTriggerCampaign={(camp) => {
-              alert(`Campaign "${camp.name}" launched across ${camp.channel}. AI Lead Agent listening for replies.`);
+              alert(`Campaign "${camp.name}" is a browser-only preview. No messages were sent and no AI agent was started. Use an authorized connector with verified consent for real campaigns.`);
             }}
           />
         )}
