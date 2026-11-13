@@ -111,6 +111,9 @@ export async function readiness(c:PoolConnection,trialId:string,mcaId:string){
   actualProviderContractVerified:false,approvedEderivedSandboxCredentialsPresent:false,
   independentMcaCorporateIdentityVerified:false,authorizedLegalSignatoryVerified:false,
   trustedCAIdentityVerified:false,authenticatedExternalCrlOcspPublisher:false,
-  fullRfc5280ProductionPath:false,productionReady:false,stockPostingEnabled:false,
+  fullRfc5280ProductionPath:false,authorizedProviderSandboxAccess:false,verifiedExternalLegalAgreement:false,
+  verifiedRCAIEmudhraFullChain:false,verifiedLiveCrlOcspIssuer:false,
+  validatedMcaCorporateAndSignatoryAuthority:false,
+  productionReady:false,stockPostingEnabled:false,
   officialGrnVerified:false,availableToSell:null,blockers:[...AO_BLOCKERS]};
 }

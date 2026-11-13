@@ -63,6 +63,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 | Phase 1AM `/api/provider-sandbox` | Claimed corporate registry/delegation document hashes, independent HELD reviews, pinned one-hop X509 CA signature and leaf key check, signed latest revocation evidence; no full PKIX chain, KYC or operational authorization |
 | Phase 1AN `/api/provider-selection` | Public CCA-listed eMudhra candidate nomination and independent internal HOLD review, no approved credentials, synthetic OpenSSL explicit-policy trial and MCA/signatory SHA dossier, immutable unmet-prerequisite gates; production identity and trusted revocation remain blocked |
 | Phase 1AO `/api/provider-onboarding` | Internal provider contract/sandbox-scope SHA-only packet, two independent LEGAL/SECURITY HELD reviews, offline signed CRL + OCSP mathematical checks, separate MCA/signatory hash reviews; no external CA/identity authentication, real credentials, official GRN or stock posting |
+| Phase 1AP offline authority digest-inventory preflight | Private SHA-only claims inventory; actual provider service grant, credential, RCAI hierarchy, CRL/OCSP and MCA legal verification remain PENDING; no authority or stock activated |
 | Legacy `src/data/mockData.ts`, browser storage and old dashboards | DEMO / BROWSER ONLY; no verified stock, finance, telemetry or approval authority |
 | `/api/ai/command` and `/api/ai/negotiate` | Explicitly unavailable until verified backend facts and approval workflow |
 | `/api/ai/bom` and `/api/ai/campaign` | Unverified AI drafts; no verified prices, HSN/GST, performance, compatibility or dispatch |
@@ -85,6 +86,7 @@ Disposable MySQL/Chromium integration tests run in GitHub CI; passing local unit
 - [Phase 1AM corporate identity/signatory and provider X509 certificate sandbox verification](docs/phase-1/PHASE_1AM_CORPORATE_SANDBOX_VERIFICATION.md)
 - [Phase 1AN named eMudhra CA nomination, sandbox credential hold and certificate-policy/MCA preflight](docs/phase-1/PHASE_1AN_NAMED_PROVIDER_POLICY_PREREQUISITES.md)
 - [Phase 1AO dual-reviewed provider onboarding, signed offline CRL/OCSP and MCA evidence hard gates](docs/phase-1/PHASE_1AO_PROVIDER_ONBOARDING_CRL_OCSP_HELD.md)
+- [Phase 1AP provider-authorized sandbox and external evidence hard HOLD](docs/phase-1/PHASE_1AP_EXTERNAL_AUTHORITY_GATE.md)
 - [Phase 1Z held release candidate and real staging checklist](docs/phase-1/PHASE_1Z_HELD_RELEASE_CANDIDATE.md)
 - [Production deployment guide (hold-gated)](HOSTINGER_DEPLOYMENT_GUIDE.md)
 - [Threat model](docs/security/THREAT_MODEL.md)

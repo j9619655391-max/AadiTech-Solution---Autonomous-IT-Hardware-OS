@@ -15,6 +15,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run lint
+      - name: Phase 1AP provider authority HARD HOLD (no secrets or network)
+        run: node scripts/provider-authority-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
