@@ -17,6 +17,8 @@ jobs:
         run: bun run lint
       - name: Phase 1AP provider authority HARD HOLD (no secrets or network)
         run: node scripts/provider-authority-preflight.mjs --ci-hold
+      - name: Phase 1AQ updated eMudhra WebPKI incident HARD HOLD (no network)
+        run: node scripts/phase1aq-trust-incident-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
