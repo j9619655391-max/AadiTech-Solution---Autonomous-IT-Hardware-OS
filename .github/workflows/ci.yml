@@ -23,6 +23,8 @@ jobs:
         run: bun run test
       - name: Build
         run: bun run build
+      - name: Phase 1AT staging acceptance zero-input HARD HOLD (no private evidence)
+        run: bun run staging:acceptance-review --ci-hold
       - name: Test private staging evidence integrity manifest (synthetic files only)
         run: bun run test:staging-security
       - name: Validate fail-closed production configuration with synthetic values
