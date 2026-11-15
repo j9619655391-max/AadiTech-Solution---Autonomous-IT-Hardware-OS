@@ -23,11 +23,15 @@ The spoofed-header observation alone **does not independently verify** client-IP
 
 An approved operator may submit a **private** local JSON evidence package (never add it to GitHub or CI):
 
-    STAGING_ACCEPTANCE_REVIEW=YES bun run staging:acceptance-review /private/path/staging-evidence.json /private/path/evidence-manifest.json /private/evidence-root
+    STAGING_ACCEPTANCE_REVIEW=YES STAGING_PRIVATE_JSON_REVIEW_APPROVED=YES \\
+      bun run staging:acceptance-review \\
+      /absolute/owner-private/staging-evidence.json \\
+      /absolute/owner-private/evidence-manifest.json \\
+      /absolute/approved-private-evidence-root
 
 The package must contain an authorized change ticket, exact HTTPS staging origin, probe report (observed within 24 hours), distinct operator/security/infrastructure reviewers and separate restore witness, private approval references, reverse-proxy header overwrite and network isolation evidence, verified MySQL CA, real HTTPS device MFA/browser evidence, outbound dispatch blocked proof, and actual encrypted backup/restore results measured against the approved RTO/RPO objectives.
 
-Field/chronology consistency failures, mixed change tickets, stale observations, absent external infrastructure attestations or signer role conflicts reject the submission. Phase 1Y also requires matching SHA-256 digests for 12 private evidence files, stored outside the source checkout. These checks do **not** prove the truth of reported observations or the identity of a signer.
+Phase 1AT additionally requires the two JSON packets to be distinct owner-only 0600-like files in one owner-private 0700-like directory outside source checkout; strict bounded reads, no symlinks/hardlinks, explicit nonproduction operator permission and no CI/production reads. **Every private-mode invocation exits status 2 / HOLD even for a complete synthetic packet; it is never a release gate success.** CI runs `bun run staging:acceptance-review --ci-hold` with zero private input. See [Phase 1AT](PHASE_1AT_PRIVATE_STAGING_ACCEPTANCE_HOLD.md).\n\nField/chronology consistency failures, mixed change tickets, stale observations, absent external infrastructure attestations or signer role conflicts reject the submission. Phase 1Y also requires matching SHA-256 digests for 12 private evidence files, stored outside the source checkout. These checks do **not** prove the truth of reported observations or the identity of a signer.
 
 **A JSON document can be falsified.** Even apparently complete evidence always returns independentIdentityAndSignaturesVerified:false, providerInfrastructureVerified:false, actualRestoreIndependentlyVerified:false and productionReleaseAuthorized:false. The evaluator does not verify actual signatures, restore bytes, certificate chain on any live host or firewall settings. Independent humans must validate underlying evidence outside this repository.
 
