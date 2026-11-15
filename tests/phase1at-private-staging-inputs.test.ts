@@ -13,6 +13,7 @@ import {REQUIRED_EVIDENCE_KINDS} from '../scripts/lib/stagingEvidenceIntegrity';
 
 const repoRoot=fileURLToPath(new URL('../',import.meta.url));
 const cli=fileURLToPath(new URL('../scripts/review-staging-acceptance.ts',import.meta.url));
+const tsxLoader=import.meta.resolve('tsx');
 const env={
  ...process.env,CI:'false',GITHUB_ACTIONS:'false',NODE_ENV:'test',
  STAGING_ACCEPTANCE_REVIEW:'YES',STAGING_PRIVATE_JSON_REVIEW_APPROVED:'YES'
@@ -87,7 +88,7 @@ function fixture(){
 }
 
 function runCli(args:string[],overrides:Record<string,string>={},cwd=repoRoot){
- return spawnSync(process.execPath,['--import','tsx',cli,...args],{
+ return spawnSync(process.execPath,['--import',tsxLoader,cli,...args],{
   cwd,env:{...env,...overrides},encoding:'utf8',timeout:12_000,maxBuffer:48_000
  });
 }
