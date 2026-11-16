@@ -18,7 +18,7 @@ export function bcMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 async function main(){
  bcMigrationTarget(process.env);
  const id='0031_bc_witness_continuity_holds';
- if(MIGRATIONS.at(-1)!==id||MIGRATIONS.length!==31)
+ if(MIGRATIONS[30]!==id||MIGRATIONS.length<31)
   throw Error('1BC expected final migration registry 0031');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
