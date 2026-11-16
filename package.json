@@ -65,7 +65,9 @@
     "release:candidate": "tsx scripts/record-release-candidate.ts",
     "provider:policy-drift-preflight": "node scripts/phase1au-policy-drift-preflight.mjs",
     "provider:incident-preflight": "node scripts/phase1av-incident-preflight.mjs",
-    "provider:signed-checkpoint-preflight": "node scripts/phase1aw-checkpoint-preflight.mjs"
+    "provider:signed-checkpoint-preflight": "node scripts/phase1aw-checkpoint-preflight.mjs",
+    "db:migrate:ax-checkpoints": "tsx scripts/migrate-ax-checkpoints.ts",
+    "test:ax-checkpoint-mysql": "tsx --test tests/ax-checkpoint-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
