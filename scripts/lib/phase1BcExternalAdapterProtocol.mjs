@@ -142,6 +142,9 @@ export function assessPhase1BcOfflineAdapter({
  if(!az.internalEvidenceConsistent||!bb.internalEvidenceConsistent)
   blockers.add('PREDECESSOR_CLAIMS_INVALID');
  const nowMs=now.getTime(),issuerAuthorities=new Set(),issuerKeys=new Set();
+ const issuerKeyContinuity=new Map(),issuerPinCommitments=new Map();
+ const sourceRefs=new Set(bbRecords.map(r=>r.body.sourceRef));
+ const sourceKeyIds=new Set(bbRecords.map(r=>r.pin.keyId));
  const issuerRefs=new Set(),issuerCount=new Map(),witnessAuthorities=
   new Set(bbRecords.map(r=>r.body.authorityRef));
  const nonReviewerAuthorities=new Set(bbRecords
@@ -166,6 +169,16 @@ export function assessPhase1BcOfflineAdapter({
    blockers.add('STALE_OR_FUTURE_ISSUER_RECEIPT');
   if(b.issuerRef!==pin.sourceRef||witnessAuthorities.has(pin.authorityRef))
    blockers.add('ISSUER_WITNESS_COMMON_CONTROL');
+  if(sourceRefs.has(pin.sourceRef)||sourceKeyIds.has(pin.keyId))
+   blockers.add('ISSUER_SIGNER_SOURCE_COLLISION');
+  const pinned=issuerPinCommitments.get(b.issuerRef);
+  if(pinned&&pinned!==pin.publicKeySha256)
+   blockers.add('ISSUER_KEY_EQUIVOCATION');
+  const priorIssuer=issuerKeyContinuity.get(pin.keyId);
+  if(priorIssuer&&priorIssuer!==b.issuerRef)
+   blockers.add('ISSUER_KEY_REUSED_ACROSS_IDENTITIES');
+  issuerPinCommitments.set(b.issuerRef,pin.publicKeySha256);
+  issuerKeyContinuity.set(pin.keyId,b.issuerRef);
   issuerRefs.add(b.issuerRef);
   issuerAuthorities.add(pin.authorityRef);issuerKeys.add(pin.keyId);
   issuerCount.set(pin.authorityRef,(issuerCount.get(pin.authorityRef)??0)+1);
@@ -190,11 +203,17 @@ export function assessPhase1BcOfflineAdapter({
     witnessAuthorities.has(storageReceipt.pin.authorityRef))
   blockers.add('OBJECT_LOCK_PROVIDER_SIGNER_UNTRUSTED');
  const reviewers=new Set(),reviewAuthorities=new Set();
+ const recoveryClaims=new Set();
  let validRecoveries=0;
  for(const role of ['SECURITY','OPERATIONS','OWNER']){
   const entry=recoveryReceipts.find(x=>x?.pin?.role===role);
   if(!entry){blockers.add('RECOVERY_ROLE_QUORUM_MISSING');continue;}
   const b=entry.body,bytes=phase1BcRecoveryBytes(b),pin=entry.pin;
+  recoveryClaims.add(createHash('sha256').update(bytes).digest('hex'));
+  const signedReview=bbRecords.find(x=>x.body.sourceRole===role);
+  if(!signedReview||pin.publicKeySha256!==signedReview.pin.publicKeySha256||
+     pin.keyId!==signedReview.pin.keyId||pin.sourceRef!==signedReview.pin.sourceRef)
+   blockers.add('UNAUTHORIZED_RECOVERY_KEY_SUBSTITUTION');
   if(!signed(entry,bytes,role))blockers.add('RECOVERY_APPROVER_SIGNATURE_INVALID');
   else validRecoveries++;
   const registered=azPacket.approvers.find(x=>x.role===role);
@@ -225,6 +244,8 @@ export function assessPhase1BcOfflineAdapter({
  }
  if(validRecoveries!==3||recoveryReceipts.length!==3)
   blockers.add('RECOVERY_ROLE_QUORUM_MISSING');
+ if(recoveryClaims.size!==1)
+  blockers.add('RECOVERY_SIGNERS_DISAGREE_ON_BACKUP_OR_TIMELINE');
  const issues=[...blockers].filter(x=>!BASE.includes(x));
  return deny({offlineEvidenceConsistent:issues.length===0,
   issuerSignatureCount:validIssuers,recoverySignatureCount:validRecoveries,
