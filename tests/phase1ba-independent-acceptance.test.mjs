@@ -53,9 +53,12 @@ function dossier(){
 }
 function fixture(){
  const azPacket=dossier(),a=azPacket.archive,r=azPacket.recovery;
- const azExpectedDigest=phase1AzAssessReadiness(azPacket,{now}).packetSha256;
  const witnessActors=[actor(1,'WITNESS','witness-org-101'),
   actor(2,'WITNESS','witness-org-102')];
+ azPacket.witnesses.forEach((w,i)=>{
+  w.publicKeySpkiSha256=witnessActors[i].pin.publicKeySha256;
+  w.administrativeAuthorityRef=witnessActors[i].pin.authorityRef;
+ });
  const body={schemaVersion:1,purpose:ANCHOR_PURPOSE,logRef:a.logRef,
   checkpointReceiptSha256:a.checkpointReceiptSha256,
   archiveObjectSha256:a.archiveObjectSha256,
@@ -86,6 +89,11 @@ function fixture(){
   actor(6,'OPERATIONS','recovery-admin-106'),
   actor(7,'OWNER','recovery-admin-107')];
  const drSignatures=recoveryActors.map(x=>signature(phase1AyRecoverySigningBytes(drRehearsal),x));
+ azPacket.approvers.forEach((w,i)=>{
+  w.reviewerRef=recoveryActors[i].pin.reviewerRef;
+  w.authorityRef=recoveryActors[i].pin.authorityRef;
+ });
+ const azExpectedDigest=phase1AzAssessReadiness(azPacket,{now}).packetSha256;
  return {azPacket,azExpectedDigest,anchors,witnessPins:witnessActors.map(x=>x.pin),
   wormProbe,wormPins:auditorActors.map(x=>x.pin),wormSignatures,
   drRehearsal,drPins:recoveryActors.map(x=>x.pin),drSignatures,now};
@@ -203,4 +211,19 @@ test('zero-input CLI rejects evidence paths and deploy switches without echoing 
   assert.equal(result.stderr.includes('HIGHLY_SENSITIVE'),false);
   assert.equal(result.stderr.includes('/tmp/private-info'),false);
  }
+});
+
+test('signed witness key and recovery reviewer must match AZ digest-bound dossier identities',()=>{
+ const x=fixture(),wrongWitness=structuredClone(x.azPacket);
+ wrongWitness.witnesses[0].publicKeySpkiSha256=h(999);
+ let result=assess({...x,azPacket:wrongWitness,
+  azExpectedDigest:phase1AzAssessReadiness(wrongWitness,{now}).packetSha256});
+ assert.ok(result.blockerCodes.includes('WITNESS_KEY_NOT_BOUND_TO_AZ_ENROLLMENT'));
+ assert.equal(result.internalClaimsConsistent,false);
+ const wrongRecovery=structuredClone(x.azPacket);
+ wrongRecovery.approvers[0].authorityRef='unapproved-operator-001';
+ result=assess({...x,azPacket:wrongRecovery,
+  azExpectedDigest:phase1AzAssessReadiness(wrongRecovery,{now}).packetSha256});
+ assert.ok(result.blockerCodes.includes('RECOVERY_SIGNER_NOT_BOUND_TO_AZ_REVIEW'));
+ assert.equal(result.productionReleaseAuthorized,false);
 });
