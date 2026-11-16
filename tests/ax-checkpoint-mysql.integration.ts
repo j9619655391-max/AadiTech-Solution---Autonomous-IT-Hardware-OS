@@ -20,7 +20,7 @@ function signers(){
   const {privateKey,publicKey}=generateKeyPairSync('ed25519');
   return {role,reviewerRef:role.toLowerCase()+'-reviewer-00'+i,
    keyId:role.toLowerCase()+'-key-0000'+i,privateKey,
-   publicKeyPem:publicKey.export({format:'pem',type:'spki'}),
+   publicKeyPem:publicKey.export({format:'pem',type:'spki'}).toString(),
    publicKeySha256:createHash('sha256').update(publicKey.export({format:'der',type:'spki'})).digest('hex')};
  });
 }
