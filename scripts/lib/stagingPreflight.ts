@@ -21,7 +21,8 @@ export const MIGRATIONS=[
  '0028_ax_checkpoint_governance',
  '0029_az_external_readiness_holds',
  '0030_bb_evidence_intake_holds',
- '0031_bc_witness_continuity_holds'
+ '0031_bc_witness_continuity_holds',
+ '0032_bd_external_evidence_reviews'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
