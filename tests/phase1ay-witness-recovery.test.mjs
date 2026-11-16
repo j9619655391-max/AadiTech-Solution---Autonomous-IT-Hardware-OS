@@ -92,6 +92,8 @@ test('duplicate administrative witness and missing quorum remain blocked',()=>{
  assert.equal(r.incidentQuarantineRequired,true);
  const missing=assessPhase1AyArchiveWitnesses();
  assert.ok(missing.blockerCodes.includes('MISSING_ANCHOR_EVIDENCE'));
+ assert.equal(missing.productionReleaseBlocked,true);
+ assert.equal(assessPhase1AyRecovery().productionReleaseBlocked,true);
 });
 test('expiry, future signatures, unknown pins and equivocation never authorize',()=>{
  const f=fixture();
