@@ -123,3 +123,31 @@ test('reject GO, injected secrets, invalid SPKI hashes, expired or future rotati
  assert.ok(r.blockerCodes.includes('STALE_OR_FUTURE_ROTATION_CLAIM'));
  assert.equal(r.productionReleaseAuthorized,false);
 });
+
+test('Phase 1BD CLI rejects activation, credentials and private evidence without echoing them',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const file=fileURLToPath(new URL('../scripts/phase1bd-authority-rotation-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[file,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const valid=run(['--ci-hold']);
+ assert.equal(valid.status,0,valid.stderr);
+ const result=JSON.parse(valid.stdout);
+ assert.equal(result.productionReleaseAuthorized,false);
+ assert.equal(result.productionReleaseBlocked,true);
+ assert.equal(result.releaseDecision,'HOLD');
+ assert.equal(result.externalWitnessAuthorityAuthenticated,false);
+ for(const args of [[],['--approve'],['--publish'],
+  ['--ci-hold','--private-key','NEVER_LOG_THIS_SECRET'],
+  ['--external-chain','/tmp/secret-pki']]){
+  const rejected=run(args);
+  assert.equal(rejected.status,2);
+  assert.equal(rejected.stdout,'');
+  assert.match(rejected.stderr,/HOLD/);
+  assert.ok(!rejected.stderr.includes('NEVER_LOG_THIS_SECRET'));
+  assert.ok(!rejected.stderr.includes('/tmp/secret-pki'));
+ }
+});
