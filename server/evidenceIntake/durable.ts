@@ -34,7 +34,18 @@ export async function recordPhase1BbEvidence(pool:Pool,{
   throw Error('Phase 1BB unauthenticated, malformed or conflicting digest claims refused');
  const hash=a.batchSha256,claims=a.challengeDigests;
  const conn=await pool.getConnection();
+ let globalNonceMutex=false;
  try{
+  // Each batch touches six globally unique nonce keys. Two unrelated logs
+  // must serialize nonce reservation BEFORE acquiring their stream locks,
+  // otherwise InnoDB inserts can form cross-log deadlock cycles.
+  // This local MySQL advisory mutex is for isolated CI/staging only;
+  // it is not a multi-primary distributed lock or external trust evidence.
+  const [lease]=await conn.query<RowDataPacket[]>(
+   "SELECT GET_LOCK('aaditech-bb-global-nonces',15) AS acquired");
+  if(Number(lease[0]?.acquired)!==1)
+   throw Error('Phase 1BB global nonce custody mutex unavailable');
+  globalNonceMutex=true;
   await conn.beginTransaction();
   await conn.execute(
    'INSERT INTO inv_bb_evidence_streams (log_ref) VALUES (?) ON DUPLICATE KEY UPDATE log_ref=log_ref',
@@ -103,7 +114,13 @@ export async function recordPhase1BbEvidence(pool:Pool,{
    governanceState:outcome==='ACCEPTED_UNVERIFIED'?head.governance_state:'QUARANTINED',
    externalEvidenceAuthenticated:false,productionReleaseAuthorized:false,
    productionReleaseBlocked:true,releaseDecision:'HOLD'});
- }catch(e){await conn.rollback();throw e;}finally{conn.release();}
+ }catch(e){await conn.rollback();throw e;}
+ finally{
+  try{
+   if(globalNonceMutex)
+    await conn.query("SELECT RELEASE_LOCK('aaditech-bb-global-nonces')");
+  }finally{conn.release();}
+ }
 }
 export async function inspectPhase1BbEvidence(pool:Pool,logRef:string,
  env:NodeJS.ProcessEnv=process.env){
