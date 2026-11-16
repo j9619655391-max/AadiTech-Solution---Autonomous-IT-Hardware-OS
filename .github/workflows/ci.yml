@@ -41,6 +41,8 @@ jobs:
         run: node scripts/phase1bc-external-adapter-preflight.mjs --ci-hold
       - name: Phase 1BD independent evidence review, key custody and DR telemetry HARD HOLD
         run: node scripts/phase1bd-evidence-review-preflight.mjs --ci-hold
+      - name: Phase 1BD old/new witness dual-signed key rotation HARD HOLD
+        run: node scripts/phase1bd-authority-rotation-preflight.mjs --ci-hold
       - name: Phase 1BC Merkle witness key-custody and append-only HEAD HARD HOLD
         run: node scripts/phase1bc-witness-custody-preflight.mjs --ci-hold
       - name: Baseline tests
