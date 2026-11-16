@@ -14,7 +14,7 @@ export const CHECKPOINT_PURPOSE='AADITECH_EXTERNAL_AUTHORITY_AUDIT_HOLD_V1';
 const BODY_KEYS=Object.freeze([
  'schemaVersion','purpose','providerCode','requestedScope','sequence',
  'issuedAt','expiresAt','priorCheckpointSha256','journalEventCount',
- 'journalTailSha256','policySnapshotSha256','releaseDecision'
+ 'journalTailSha256','policySnapshotSha256','recoveryClaimSha256','releaseDecision'
 ]);
 const CHECKPOINT_KEYS=Object.freeze([...BODY_KEYS,'signatures']);
 const SIG_KEYS=['role','reviewerRef','keyId','signatureBase64'];
@@ -84,6 +84,7 @@ function body(checkpoint){
   if(b.journalTailSha256!==null)throw Error('Empty journal must have null tail');
  }else sha(b.journalTailSha256);
  sha(b.policySnapshotSha256);
+ if(b.recoveryClaimSha256!==null)sha(b.recoveryClaimSha256);
  return b;
 }
 // Message deliberately uses fixed field order and context prefix to prevent
@@ -175,12 +176,23 @@ function checkOne(checkpoint,pins,journal,policy,now){
  const journalBound=b.journalEventCount===j.eventCount&&
    b.journalTailSha256===j.tailSha256;
  const policyBound=b.policySnapshotSha256===phase1AwPolicyClaimsSha256(policy,now);
+ if(utc(b.issuedAt)<Date.parse(policy.recordedAt)||
+    (journal.events.length>0&&utc(b.issuedAt)<utc(journal.events.at(-1).at)))
+  throw Error('Signed checkpoint cannot predate its journal or policy evidence');
  return {
   issuedAt:utc(b.issuedAt),expired:utc(b.expiresAt)<=now.getTime(),
   signaturesValid,journalBound,policyBound,
   cryptographicallyConsistent:signaturesValid&&journalBound&&policyBound,
   receiptSha256:phase1AwCheckpointReceiptSha256(checkpoint)
  };
+}
+export function phase1AwRecoveryClaimSha256(claim){
+ exact(claim,RECOVERY_KEYS);
+ if(!Array.isArray(claim.reviewers))throw Error('Invalid recovery reviewer inventory');
+ const canonical=RECOVERY_KEYS.map(k=>k==='reviewers'?
+  claim.reviewers.map(r=>[r.role,r.reviewerRef]):claim[k]);
+ return createHash('sha256').update('AADITECH-PHASE-1AW-RECOVERY-CLAIM-V1\\0')
+  .update(JSON.stringify(canonical)).digest('hex');
 }
 function recoveryClaim(claim,journal,now){
  exact(claim,RECOVERY_KEYS);
@@ -278,11 +290,20 @@ export function assessPhase1AwCheckpointRecovery({
    historyProblem=true;
   }
  }
- let recoveryChecked=false;
+ let recoveryChecked=false,recoveryMismatch=false;
  if(recovery!==null){
   recoveryClaim(recovery,currentJournal,now);
+  if(utc(recovery.recordedAt)>utc(currentCheckpoint.issuedAt))
+   throw Error('Recovery claim must precede the signed checkpoint');
   recoveryChecked=true;
+  if(phase1AwRecoveryClaimSha256(recovery)!==currentCheckpoint.recoveryClaimSha256){
+   recoveryMismatch=true;
+   blockers.add('RECOVERY_CLAIM_NOT_SIGNED_IN_CHECKPOINT');
+  }
   blockers.add('RECOVERY_CLAIMS_NOT_EXTERNALLY_WITNESSED');
+ }else if(currentCheckpoint.recoveryClaimSha256!==null){
+  recoveryMismatch=true;
+  blockers.add('SIGNED_RECOVERY_CLAIM_MISSING');
  }
  if(governance.incidentQuarantineActive)blockers.add('EXTERNAL_INCIDENT_QUARANTINE');
  if(governance.policyReviewInspected&&!governance.currentJournalInspected)
@@ -298,9 +319,9 @@ export function assessPhase1AwCheckpointRecovery({
   recoveryClaimInspected:recoveryChecked,
   recoveryClaimSchemaComplete:recoveryChecked,
   incidentQuarantineActive:governance.incidentQuarantineActive||
-   historyProblem||current.expired||!current.cryptographicallyConsistent,
+   historyProblem||current.expired||recoveryMismatch||!current.cryptographicallyConsistent,
   incidentResponseRequired:governance.incidentResponseRequired||
-   historyProblem||current.expired||!current.cryptographicallyConsistent,
+   historyProblem||current.expired||recoveryMismatch||!current.cryptographicallyConsistent,
   blockerCodes:Object.freeze([...blockers].sort())
  });
 }
