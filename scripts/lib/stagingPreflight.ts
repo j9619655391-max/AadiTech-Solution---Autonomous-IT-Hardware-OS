@@ -565,6 +565,32 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(Number(aoPackets[0].unsafe)!==0||Number(aoTrials[0].unsafe)!==0||
    Number(aoArtifacts[0].unsafe)!==0||Number(aoMca[0].unsafe)!==0)
   problems.push('Phase1AO offline CA/CRL/OCSP/MCA contract and dual-review HOLD constraints altered');
+ // Phase 1AX: read-only guard against a silently promoted/partially damaged
+ // offline ledger. Synthetic quarantined CI fixtures are expected; actual
+ // isolated staging with an unresolved fork is NOT ready for acceptance.
+ const [axStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   release_decision<>'HOLD'
+   OR (last_sequence=0 AND (last_receipt_sha256 IS NOT NULL OR
+       last_claim_sha256 IS NOT NULL OR last_signer_pin_sha256 IS NOT NULL))
+   OR (last_sequence>0 AND (last_receipt_sha256 IS NULL OR
+       last_claim_sha256 IS NULL OR last_signer_pin_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_ax_checkpoint_observations x WHERE x.log_ref=inv_ax_checkpoint_streams.log_ref
+      AND x.outcome IN ('FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE')))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_ax_checkpoint_observations x WHERE x.log_ref=inv_ax_checkpoint_streams.log_ref
+      AND x.outcome IN ('FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE')))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_ax_checkpoint_streams`);
+ const [axOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe FROM
+  inv_ax_checkpoint_observations o LEFT JOIN inv_ax_checkpoint_streams s
+   ON s.log_ref=o.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(axStreams[0].unsafe)!==0||Number(axOrphans[0].unsafe)!==0)
+  problems.push('Phase 1AX offline checkpoint head/quarantine integrity mismatch');
+ if(target==='staging'&&Number(axStreams[0].quarantined)!==0)
+  problems.push('Phase 1AX signed checkpoint incident quarantine is unresolved');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -611,6 +637,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1AxOfflineCheckpointStreams:Number(axStreams[0].total),
+  phase1AxQuarantinedCheckpointStreams:Number(axStreams[0].quarantined),
   unverifiedProviderAgreementPackets:Number(aoPackets[0].total),
   offlineProviderPolicyChainTrials:Number(aoTrials[0].total),
   offlineSignedCrlOcspArtifacts:Number(aoArtifacts[0].total),
@@ -620,6 +648,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1AxIndependentWitnessSignatures:'NOT_VERIFIED',
+   phase1AxImmutableExternalCheckpointStorage:'NOT_VERIFIED',
    encryptedBackupAndRestoreRehearsal:'NOT_VERIFIED',
    browserHttpsMfaEndToEnd:'NOT_VERIFIED',
    secretKeyRecoveryAndRotation:'NOT_VERIFIED',
