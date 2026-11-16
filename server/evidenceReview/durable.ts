@@ -77,6 +77,13 @@ export async function recordPhase1BdEvidenceReview(pool:Pool,{
    'SELECT * FROM inv_bd_review_streams WHERE log_ref=? FOR UPDATE',[logRef]);
   const h=heads[0],last=Number(h?.last_revision);
   if(!h||!Number.isSafeInteger(last)||last<0)throw Error('Phase 1BD invalid head');
+  // Phase 1BE freeze is global for this log. A signed local review or an
+  // exact replay MUST NOT bypass an emergency suspect-key quarantine.
+  // Lock order AZ -> BB -> BC -> BD -> BE is shared with freeze writes.
+  const [beFreezes]=await conn.execute<RowDataPacket[]>(
+   'SELECT state,last_incident_sha256 FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
+  if(beFreezes.some(r=>r.state!=='HELD_UNVERIFIED'||r.last_incident_sha256!==null))
+   throw Error('Phase 1BE emergency witness revocation freeze blocks BD reviews');
   if(last===revision&&h.last_review_sha256===digest){
    await conn.commit();
    return Object.freeze({phase:'1BD',outcome:'REPLAY',governanceState:h.governance_state,
