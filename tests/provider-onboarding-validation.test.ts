@@ -31,7 +31,7 @@ test('Phase1AO inputs reject private contract, API credentials, real KYC or prod
  assert.throws(()=>packetReviewBody({reviewRole:'PROVIDER',decision:'INSPECTED_HELD',
   reason:'Wrong reviewer role',evidenceRef:'TICKET',
   noExternalContractAcknowledged:true,noLiveCredentialsAcknowledged:true}),ChainInputError);
- assert.ok(CCA_CURRENT_CPS_REFERENCE.startsWith('https://cca.gov.in/'));
+ assert.equal(CCA_CURRENT_CPS_REFERENCE,'https://cca.gov.in/e_mudhra.html');
  assert.ok(AO_BLOCKERS.length>6);
  const mca={packetId:randomUUID(),dossierId:randomUUID(),
   mcaMasterDataSha256:'c'.repeat(64),signatoryMandateSha256:'d'.repeat(64),
