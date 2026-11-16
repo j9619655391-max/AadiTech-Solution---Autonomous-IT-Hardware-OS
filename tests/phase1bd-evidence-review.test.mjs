@@ -155,3 +155,32 @@ test('raw credentials, unknown authority promotion, and oversized evidence are n
   productionReleaseAuthorized:true}));
  assert.throws(()=>check({...f,secret:'x'.repeat(52000)}));
 });
+
+test('1BD zero-input CI hard HOLD refuses credentials, network URIs and activation',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const script=fileURLToPath(new URL('../scripts/phase1bd-evidence-review-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[script,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const ok=run(['--ci-hold']);
+ assert.equal(ok.status,0,ok.stderr);
+ const payload=JSON.parse(ok.stdout);
+ assert.equal(payload.productionReleaseAuthorized,false);
+ assert.equal(payload.productionReleaseBlocked,true);
+ assert.equal(payload.releaseDecision,'HOLD');
+ assert.equal(payload.liveObjectLockDeleteDeniedVerified,false);
+ assert.equal(payload.outOfBandKeyCustodyVerified,false);
+ for(const args of [[],['--approve'],['--ci-hold','--secret','TOKEN_SECRET'],
+  ['--provider-url','https://example.invalid'],['--kms','/tmp/credentials'],
+  ['--go-live']]){
+  const bad=run(args);
+  assert.equal(bad.status,2);
+  assert.equal(bad.stdout,'');
+  assert.match(bad.stderr,/HARD HOLD/);
+  for(const secret of ['TOKEN_SECRET','https://example.invalid','/tmp/credentials'])
+   assert.ok(!bad.stderr.includes(secret));
+ }
+});
