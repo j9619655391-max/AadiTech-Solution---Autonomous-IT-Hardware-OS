@@ -108,7 +108,7 @@ export function assessPhase1AyArchiveWitnesses({
  if(logRef===null||checkpointReceiptSha256===null||archiveObjectSha256===null||
    anchors.length===0) return Object.freeze({phase:'1AY',validProofs:0,
     independentlyAuthenticatedWitnesses:false,immutableExternalArchiveVerified:false,
-    incidentQuarantineRequired:true,productionReleaseAuthorized:false,releaseDecision:'HOLD',
+    incidentQuarantineRequired:true,productionReleaseAuthorized:false,productionReleaseBlocked:true,releaseDecision:'HOLD',
     blockerCodes:Object.freeze([...blockers,'MISSING_ANCHOR_EVIDENCE'].sort())});
  ref(logRef);sha(checkpointReceiptSha256);sha(archiveObjectSha256);
  const keys=new Map(),authorities=new Set();
@@ -176,7 +176,7 @@ export function assessPhase1AyRecovery({
  if(rehearsal===null) return Object.freeze({phase:'1AY',
   internalRehearsalCryptographicallyConsistent:false,realEncryptedRestoreVerified:false,
   independentRecoverySignoffVerified:false,productionReleaseAuthorized:false,
-  releaseDecision:'HOLD',blockerCodes:Object.freeze([...blockers,'NO_REHEARSAL_EVIDENCE'].sort())});
+  productionReleaseBlocked:true,releaseDecision:'HOLD',blockerCodes:Object.freeze([...blockers,'NO_REHEARSAL_EVIDENCE'].sort())});
  const msg=phase1AyRecoverySigningBytes(rehearsal);
  if(utc(rehearsal.completedAt)>nowMs+300000)blockers.add('FUTURE_RESTORE');
  if(rehearsal.checkpointReceiptSha256!==rehearsal.restoredCheckpointReceiptSha256||
