@@ -99,3 +99,30 @@ test('expired, future, and duplicate reviewer identities quarantine internal bat
   assert.equal(r.productionReleaseAuthorized,false);
  }
 });
+
+test('Phase 1BB CLI only allows zero-input HOLD and suppresses secret/path arguments',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const script=fileURLToPath(new URL('../scripts/phase1bb-evidence-intake-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[script,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',
+   DB_NAME:'aaditech_production'},encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const okay=run(['--ci-hold']);
+ assert.equal(okay.status,0,okay.stderr);
+ const parsed=JSON.parse(okay.stdout);
+ assert.equal(parsed.productionReleaseAuthorized,false);
+ assert.equal(parsed.productionReleaseBlocked,true);
+ assert.equal(parsed.releaseDecision,'HOLD');
+ assert.equal(parsed.externallyIssuedChallengesVerified,false);
+ for(const args of [[],['--approve'],['--ci-hold','--secret','SUPER_SECRET'],
+    ['--credentials','/tmp/private-pki'],['--publish']]){
+  const denied=run(args);
+  assert.equal(denied.status,2);
+  assert.equal(denied.stdout,'');
+  assert.match(denied.stderr,/HOLD/);
+  assert.ok(!denied.stderr.includes('SUPER_SECRET'));
+  assert.ok(!denied.stderr.includes('/tmp/private-pki'));
+ }
+});
