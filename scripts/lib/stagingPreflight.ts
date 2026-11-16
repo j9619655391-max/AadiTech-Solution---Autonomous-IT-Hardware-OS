@@ -674,6 +674,38 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1BC local witness custody HEAD/quarantine or release HOLD mismatch');
  if(target==='staging'&&Number(bcStreams[0].quarantined)!==0)
   problems.push('Phase 1BC witness split-view or key-change incident unresolved in staging');
+ // Phase 1BD review table is NOT externally trusted or immutable.
+ // Staging must reject local quarantine or impossible authority promotion.
+ const [bdStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_authority_verified<>'NO' OR object_lock_provider_verified<>'NO'
+   OR encrypted_dr_witnessed<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND (last_review_sha256 IS NOT NULL OR
+    last_az_packet_sha256 IS NOT NULL OR last_bb_batch_sha256 IS NOT NULL))
+   OR (last_revision>0 AND (last_review_sha256 IS NULL OR
+    last_az_packet_sha256 IS NULL OR last_bb_batch_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bd_review_attempts a WHERE a.log_ref=inv_bd_review_streams.log_ref
+    AND a.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bd_review_attempts a WHERE a.log_ref=inv_bd_review_streams.log_ref
+    AND a.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bd_review_streams`);
+ const [bdHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid
+   FROM inv_bd_review_attempts a WHERE a.outcome='RECORDED_UNVERIFIED' AND (
+    (a.revision_number=1 AND a.previous_review_sha256 IS NOT NULL)
+    OR (a.revision_number>1 AND NOT EXISTS (
+      SELECT 1 FROM inv_bd_review_attempts p WHERE p.log_ref=a.log_ref
+       AND p.revision_number=a.revision_number-1
+       AND p.review_sha256=a.previous_review_sha256
+       AND p.outcome='RECORDED_UNVERIFIED'))
+   )`);
+ if(Number(bdStreams[0].unsafe)!==0||Number(bdHistory[0].invalid)!==0)
+  problems.push('Phase 1BD local evidence review chain, incident HOLD or trust-promotion mismatch');
+ if(target==='staging'&&Number(bdStreams[0].quarantined)!==0)
+  problems.push('Phase 1BD unresolved independent evidence review quarantine in staging');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -720,6 +752,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BdHeldEvidenceReviewStreams:Number(bdStreams[0].total),
+  phase1BdQuarantinedEvidenceReviewStreams:Number(bdStreams[0].quarantined),
   phase1BcHeldWitnessCustodyStreams:Number(bcStreams[0].total),
   phase1BcQuarantinedWitnessCustodyStreams:Number(bcStreams[0].quarantined),
   phase1BbHeldEvidenceIntakeStreams:Number(bbStreams[0].total),
@@ -737,6 +771,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BdIndependentWitnessEnrollment:'NOT_VERIFIED',
+   phase1BdProviderObjectLockDeleteDenial:'NOT_VERIFIED',
+   phase1BdEncryptedDrIndependentTelemetry:'NOT_VERIFIED',
    phase1BcIndependentSourceOfTruth:'NOT_VERIFIED',
    phase1BcExternallyPinnedWitnessKeyCustody:'NOT_VERIFIED',
    phase1BcPublishedImmutableArchiveAndRealDr:'NOT_VERIFIED',
