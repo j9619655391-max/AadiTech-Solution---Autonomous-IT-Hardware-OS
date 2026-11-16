@@ -67,7 +67,9 @@
     "provider:incident-preflight": "node scripts/phase1av-incident-preflight.mjs",
     "provider:signed-checkpoint-preflight": "node scripts/phase1aw-checkpoint-preflight.mjs",
     "db:migrate:ax-checkpoints": "tsx scripts/migrate-ax-checkpoints.ts",
-    "test:ax-checkpoint-mysql": "tsx --test tests/ax-checkpoint-mysql.integration.ts"
+    "test:ax-checkpoint-mysql": "tsx --test tests/ax-checkpoint-mysql.integration.ts",
+    "db:migrate:az-readiness": "tsx scripts/migrate-az-readiness.ts",
+    "test:az-readiness-mysql": "tsx --test tests/az-readiness-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
