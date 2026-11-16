@@ -114,3 +114,22 @@ test('recovery rehearsal rejects corrupt restore, self review, missing revocatio
   assert.equal(result.productionReleaseAuthorized,false);
  }
 });
+
+test('different detached signatures for identical signed body are not equivocation',()=>{
+ const a=actor(7,'witness-org-007'),b=actor(8,'witness-org-008');
+ const cp=checkpoint(),resigned=structuredClone(cp);
+ resigned.signatures[0].signatureBase64=Buffer.alloc(64,9).toString('base64');
+ const r=assessPhase1AxCheckpointWitnesses({observations:[observation(cp,a),observation(resigned,b)],trustedPins:[a.pin,b.pin],now});
+ assert.equal(r.equivocationDetected,false);
+ assert.equal(r.quarantined,true);
+ assert.equal(r.checkpointSignaturesAuthenticated,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('witness observed before checkpoint issuance is not trusted',()=>{
+ const a=actor(9,'witness-org-009'),b=actor(10,'witness-org-010');
+ const cp=checkpoint();
+ const observations=[observation(cp,a),observation(cp,b)].map(x=>({...x,observedAt:'2026-11-16T12:00:00.000Z'}));
+ const r=assessPhase1AxCheckpointWitnesses({observations,trustedPins:[a.pin,b.pin],now});
+ assert.ok(r.blockerCodes.includes('WITNESS_OUTSIDE_CHECKPOINT_WINDOW'));
+ assert.equal(r.quarantined,true);
+});
