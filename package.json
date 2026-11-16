@@ -71,7 +71,9 @@
     "db:migrate:az-readiness": "tsx scripts/migrate-az-readiness.ts",
     "test:az-readiness-mysql": "tsx --test tests/az-readiness-mysql.integration.ts",
     "db:migrate:bb-evidence": "tsx scripts/migrate-bb-evidence.ts",
-    "test:bb-evidence-mysql": "tsx --test tests/bb-evidence-mysql.integration.ts"
+    "test:bb-evidence-mysql": "tsx --test tests/bb-evidence-mysql.integration.ts",
+    "db:migrate:bc-witness": "tsx scripts/migrate-bc-witness-continuity.ts",
+    "test:bc-witness-mysql": "tsx --test tests/bc-witness-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
