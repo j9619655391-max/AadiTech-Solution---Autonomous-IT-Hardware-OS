@@ -211,3 +211,34 @@ test('Phase 1BC preflight refuses credentials, file imports, network access and 
    assert.ok(!denied.stderr.includes(forbidden));
  }
 });
+
+test('issuer key rollover without separately authenticated authority causes pinned-key equivocation',()=>{
+ const f=fixture(),old=f.challengeIssuances[0];
+ const attacker=actor('ISSUER',old.pin.sourceRef,old.pin.authorityRef);
+ old.pin=attacker.pin;
+ old.signature.signatureBase64=sign(null,phase1BcIssuerBytes(old.body),
+  attacker.privateKey).toString('base64');
+ const r=check(f);
+ assert.ok(r.blockerCodes.includes('ISSUER_KEY_EQUIVOCATION'));
+ assert.equal(r.independentIssuerKeyCustodyVerified,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('DR identity-preserving public key substitution cannot inherit Phase 1BB signer authority',()=>{
+ const f=fixture(),receipt=f.recoveryReceipts[0];
+ const attacker=actor('SECURITY',receipt.pin.sourceRef,receipt.pin.authorityRef);
+ receipt.pin=attacker.pin;
+ receipt.signature.signatureBase64=sign(null,phase1BcRecoveryBytes(receipt.body),
+  attacker.privateKey).toString('base64');
+ const r=check(f);
+ assert.ok(r.blockerCodes.includes('UNAUTHORIZED_RECOVERY_KEY_SUBSTITUTION'));
+ assert.equal(r.offlineEvidenceConsistent,false);
+});
+test('all three DR signers must attest the same encrypted-backup identity and timeline',()=>{
+ const f=fixture(),receipt=f.recoveryReceipts[2];
+ receipt.body.encryptedBackupSha256=h(824);
+ receipt.signature.signatureBase64=sign(null,phase1BcRecoveryBytes(receipt.body),
+  f.reviewers[2].privateKey).toString('base64');
+ const r=check(f);
+ assert.ok(r.blockerCodes.includes('RECOVERY_SIGNERS_DISAGREE_ON_BACKUP_OR_TIMELINE'));
+ assert.equal(r.actualIndependentProviderConnection,false);
+});
