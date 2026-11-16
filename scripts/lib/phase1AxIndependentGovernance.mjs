@@ -98,7 +98,8 @@ export function assessPhase1AxCheckpointWitnesses({observations=[],trustedPins=[
   if(approved.has(pin.keyId))throw Error('1AX duplicate witness key');
   approved.set(pin.keyId,pin);
  }
- const seen=new Map(),authorities=new Set(),blockers=new Set(['EXTERNAL_WITNESSES_UNVERIFIED']);
+ const sameSequence=new Map(),bySequence=new Map(),groups=new Map();
+ const authorities=new Set(),blockers=new Set(['EXTERNAL_WITNESSES_UNVERIFIED']);
  let valid=0;
  for(const entry of observations){
   ensure(entry,['checkpoint','witnessPinId','witnessSignature','observedAt']);
@@ -109,23 +110,46 @@ export function assessPhase1AxCheckpointWitnesses({observations=[],trustedPins=[
   const receipt=phase1AwCheckpointReceiptSha256(entry.checkpoint);
   const msg=Buffer.from('AADITECH-PHASE-1AX-WITNESS-V1\0'+receipt);
   if(!signature(entry.witnessSignature,msg,p)){blockers.add('INVALID_WITNESS_SIGNATURE');continue;}
-  valid++;
   const cp=entry.checkpoint;
-  // Distinct detached signatures on identical checkpoint bodies do not
-  // constitute an equivocation. Compare canonical signed claims, not receipts.
+  if(when<instant(cp.issuedAt)||when>instant(cp.expiresAt)){
+   blockers.add('WITNESS_OUTSIDE_CHECKPOINT_WINDOW');continue;
+  }
+  valid++;authorities.add(p.authorityRef);
   const {signatures: ignoredSignatures,...checkpointBody}=cp;
   const claimDigest=createHash('sha256').update(phase1AwCheckpointSigningBytes(checkpointBody)).digest('hex');
-  if(when<instant(cp.issuedAt)||when>instant(cp.expiresAt))blockers.add('WITNESS_OUTSIDE_CHECKPOINT_WINDOW');
   const locus=cp.providerCode+'|'+cp.requestedScope+'|'+cp.sequence;
-  const previous=seen.get(locus);
+  const previous=sameSequence.get(locus);
   if(previous&&previous!==claimDigest)blockers.add('SIGNED_CHECKPOINT_EQUIVOCATION');
-  else seen.set(locus,claimDigest);
-  if(authorities.has(p.authorityRef))blockers.add('WITNESS_AUTHORITY_COLLISION');
-  authorities.add(p.authorityRef);
+  else sameSequence.set(locus,claimDigest);
+  const groupKey=locus+'|'+claimDigest;
+  let group=groups.get(groupKey);
+  if(!group){group={checkpoint:cp,authorities:new Set(),receipts:new Set()};
+    groups.set(groupKey,group);}
+  if(group.authorities.has(p.authorityRef))blockers.add('WITNESS_AUTHORITY_COLLISION');
+  group.authorities.add(p.authorityRef);group.receipts.add(receipt);
+  if(!bySequence.has(locus))bySequence.set(locus,[]);
+  bySequence.get(locus).push({receipt,checkpoint:cp});
  }
- if(authorities.size<minimumIndependentWitnesses)blockers.add('WITNESS_QUORUM_UNAVAILABLE');
+ if(!groups.size||[...groups.values()].some(x=>x.authorities.size<minimumIndependentWitnesses))
+  blockers.add('WITNESS_QUORUM_UNAVAILABLE');
+ for(const group of groups.values()){
+  const cp=group.checkpoint;
+  if(cp.sequence===1)continue;
+  const earlier=bySequence.get(cp.providerCode+'|'+cp.requestedScope+'|'+(cp.sequence-1));
+  if(!earlier?.length){blockers.add('MISSING_WITNESSED_PREDECESSOR');continue;}
+  const linked=earlier.filter(x=>x.receipt===cp.priorCheckpointSha256);
+  if(!linked.length){blockers.add('WITNESS_PREDECESSOR_MISMATCH');continue;}
+  if(linked.every(x=>instant(cp.issuedAt)<instant(x.checkpoint.issuedAt)||
+      instant(cp.issuedAt)>instant(x.checkpoint.expiresAt)))
+   blockers.add('SIGNED_CHECKPOINT_CONTINUITY_GAP');
+ }
  if(valid!==observations.length)blockers.add('UNVERIFIED_WITNESS_OBSERVATION');
  return Object.freeze({phase:'1AX',validWitnessObservations:valid,distinctWitnessAuthorities:authorities.size,
+  witnessedCheckpointClaims:groups.size,
+  claimedWitnessContinuityConsistent:![...blockers].some(c=>[
+   'MISSING_WITNESSED_PREDECESSOR','WITNESS_PREDECESSOR_MISMATCH',
+   'SIGNED_CHECKPOINT_CONTINUITY_GAP','SIGNED_CHECKPOINT_EQUIVOCATION'
+  ].includes(c)),
   equivocationDetected:blockers.has('SIGNED_CHECKPOINT_EQUIVOCATION'),
   quarantined:true,checkpointSignaturesAuthenticated:false,
   independentExternalWitnessesAuthenticated:false,
