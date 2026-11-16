@@ -752,6 +752,52 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
  if(target==='staging'&&
     (Number(beStreams[0].frozen)>0||Number(beStreams[0].quarantined)>0))
   problems.push('Phase 1BE unresolved witness key compromise freeze blocks staging acceptance');
+ // Phase 1BF public revocation publisher keys/CRL hashes are applicant-held
+ // candidate evidence, not independently authenticated source-of-truth.
+ const [bfStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_issuer_authenticated<>'NO'
+   OR active_crl_ocsp_independently_verified<>'NO'
+   OR revoked_key_externally_confirmed<>'NO'
+   OR object_lock_provider_verified<>'NO'
+   OR encrypted_dr_witnessed<>'NO'
+   OR production_release<>'HOLD'
+   OR (last_sequence=0 AND
+     (last_publication_sha256 IS NOT NULL OR last_freeze_incident_sha256 IS NOT NULL
+      OR last_publisher_spki_sha256 IS NOT NULL))
+   OR (last_sequence>0 AND
+     (last_publication_sha256 IS NULL OR last_freeze_incident_sha256 IS NULL
+      OR last_publisher_spki_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bf_publication_attempts a WHERE a.log_ref=inv_bf_publication_streams.log_ref
+      AND a.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bf_publication_attempts a WHERE a.log_ref=inv_bf_publication_streams.log_ref
+      AND a.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bf_publication_streams`);
+ const [bfHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bf_publication_attempts a WHERE a.outcome='RECORDED_UNVERIFIED'
+   AND ((a.publication_sequence=1 AND a.previous_publication_sha256 IS NOT NULL)
+    OR (a.publication_sequence>1 AND NOT EXISTS(
+     SELECT 1 FROM inv_bf_publication_attempts p
+     WHERE p.log_ref=a.log_ref AND p.publication_sequence=a.publication_sequence-1
+      AND p.publication_sha256=a.previous_publication_sha256
+      AND p.outcome='RECORDED_UNVERIFIED'
+      AND p.freeze_incident_sha256=a.freeze_incident_sha256
+      AND p.publisher_spki_sha256=a.publisher_spki_sha256)))`);
+ const [bfUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+   FROM inv_bf_publication_streams s LEFT JOIN inv_be_freeze_streams be
+    ON s.log_ref=be.log_ref
+   WHERE s.last_sequence>0 AND
+    (be.log_ref IS NULL OR be.state='HELD_UNVERIFIED'
+     OR be.last_incident_sha256<>s.last_freeze_incident_sha256)`);
+ if(Number(bfStreams[0].unsafe)!==0||Number(bfHistory[0].unsafe)!==0||
+    Number(bfUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BF candidate revocation issuer, predecessor or release HOLD tampering');
+ if(target==='staging'&&Number(bfStreams[0].quarantined)>0)
+  problems.push('Phase 1BF unresolved revocation publication fork or issuer change in staging');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -798,6 +844,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BfCandidatePublicationStreams:Number(bfStreams[0].total),
+  phase1BfQuarantinedPublicationStreams:Number(bfStreams[0].quarantined),
   phase1BeEmergencyFrozenWitnessStreams:Number(beStreams[0].frozen),
   phase1BeQuarantinedRevocationStreams:Number(beStreams[0].quarantined),
   phase1BdHeldEvidenceReviewStreams:Number(bdStreams[0].total),
@@ -819,6 +867,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BfAuthenticatedRevocationIssuerAndCrlOcsp:'NOT_VERIFIED',
+   phase1BfActualWitnessKeyRevocation:'NOT_VERIFIED',
+   phase1BfRealImmutableStorageAndDrAcceptance:'NOT_VERIFIED',
    phase1BeExternallyAuthenticatedRevocation:'NOT_VERIFIED',
    phase1BeRealWormObjectLockDenial:'NOT_VERIFIED',
    phase1BeIndependentlyObservedEncryptedDR:'NOT_VERIFIED',
