@@ -61,7 +61,7 @@ export function fixture(logRef='checkpoint-log-001'){
   const body={schemaVersion:1,purpose:BB_PURPOSE,packetSha256,logRef,
    sourceRole:role,sourceRef:actor.pin.sourceRef,authorityRef:actor.pin.authorityRef,
    keyId:actor.pin.keyId,publicKeySha256:actor.pin.publicKeySha256,
-   challengeSha256:h(100+i),subjectSha256,evidenceSha256,
+   challengeSha256:sha(Buffer.from('BB-challenge-'+logRef+'-'+i)),subjectSha256,evidenceSha256,
    issuedAt:'2026-11-16T17:30:00.000Z',expiresAt:'2026-11-16T18:30:00.000Z',
    authorityState:'CANDIDATE_UNVERIFIED',releaseDecision:'HOLD'};
   const signature={sourceRef:actor.pin.sourceRef,keyId:actor.pin.keyId,
