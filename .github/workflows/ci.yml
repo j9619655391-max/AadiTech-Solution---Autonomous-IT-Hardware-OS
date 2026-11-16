@@ -25,6 +25,8 @@ jobs:
         run: node scripts/phase1av-incident-preflight.mjs --ci-hold
       - name: Phase 1AW signed checkpoint and recovery governance HARD HOLD (no keys or network)
         run: node scripts/phase1aw-checkpoint-preflight.mjs --ci-hold
+      - name: Phase 1AY transparency witness and disaster recovery zero-input HARD HOLD
+        run: node scripts/phase1ay-witness-recovery-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
