@@ -1,5 +1,6 @@
 import {createHash,sign} from 'node:crypto';
 import {fixture as bbFixture,now} from './phase1bbFixture.mjs';
+import {phase1AzAssessReadiness} from '../../scripts/lib/phase1AzExternalReadiness.mjs';
 import {ANCHOR_PURPOSE,phase1AyInclusionLeafHash}
  from '../../scripts/lib/phase1AyWitnessArchiveRecovery.mjs';
 import {BA_WITNESS_PURPOSE,phase1BaWitnessBytes}
@@ -48,7 +49,7 @@ export function bcFixture(logRef='bc-log-checkpoint-001'){
     authorityRef:actor.pin.authorityRef,keyId:actor.pin.keyId,
     publicKeyPem:actor.pin.publicKeyPem,publicKeySha256:actor.pin.publicKeySha256};
    const common={schemaVersion:1,purpose:BA_WITNESS_PURPOSE,
-    packetSha256:f.records[0].body.packetSha256,
+    packetSha256:phase1AzAssessReadiness(f.azPacket,{now}).packetSha256,
     witnessRef:w.witnessRef,organizationRef:w.organizationRef,
     administrativeAuthorityRef:w.administrativeAuthorityRef,
     logRef:a.logRef,checkpointReceiptSha256:a.checkpointReceiptSha256,
