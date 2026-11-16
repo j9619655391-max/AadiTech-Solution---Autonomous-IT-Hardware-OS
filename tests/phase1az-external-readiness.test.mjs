@@ -139,3 +139,30 @@ test('recovery beyond current time and invalid measured values fail closed',()=>
  assert.throws(()=>evalPacket({...p,recovery:{...p.recovery,measuredRpoMs:-1}}));
  assert.throws(()=>phase1AzAssessReadiness(p,{now:new Date('invalid')}));
 });
+
+test('zero-input CLI never reads secrets and rejects arbitrary evidence and activation args',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const path=fileURLToPath(new URL('../scripts/phase1az-external-readiness-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[path,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const ok=run(['--ci-hold']);
+ assert.equal(ok.status,0,ok.stderr);
+ const parsed=JSON.parse(ok.stdout);
+ assert.equal(parsed.releaseDecision,'HOLD');
+ assert.equal(parsed.productionReleaseAuthorized,false);
+ assert.equal(parsed.productionReleaseBlocked,true);
+ assert.equal(parsed.immutableExternalRetentionVerified,false);
+ for(const args of [[],['--go'],['--ci-hold','--secret','TOKEN'],
+  ['--evidence','/tmp/credentials'],['--network']]){
+  const bad=run(args);
+  assert.equal(bad.status,2);
+  assert.equal(bad.stdout,'');
+  assert.match(bad.stderr,/HOLD/);
+  assert.ok(!bad.stderr.includes('TOKEN'));
+  assert.ok(!bad.stderr.includes('/tmp/credentials'));
+ }
+});
