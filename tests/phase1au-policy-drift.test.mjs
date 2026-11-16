@@ -85,7 +85,7 @@ test('claims of changed CPS, denylist inventory or certificate hash require inde
  current.artifactDigests.rcaiRootCertificateSha256='e'.repeat(64);
  const r=assessPhase1AuPolicyDrift(baseline,current,now);
  assert.equal(r.policyDriftDetected,true);
- assert.equal(r.incidenceInventoryChanged,true);
+ assert.equal(r.incidentInventoryChanged,true);
  assert.equal(r.currentCpsReferenceMismatch,true);
  assert.equal(r.changedClaimCount,1);
  for(const reason of ['POLICY_REFERENCE_DRIFT','PUBLIC_CPS_REFERENCE_MISMATCH',
