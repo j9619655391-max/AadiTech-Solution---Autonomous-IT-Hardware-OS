@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS inv_az_readiness_packets (
   'GAP_QUARANTINED','PREDECESSOR_MISMATCH_QUARANTINED',
   'INVALID_CLAIM_QUARANTINED','POST_INCIDENT_QUARANTINED') NOT NULL,
  recorded_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
- UNIQUE KEY uq_az_packet_digest(log_ref,packet_sha256),
+ UNIQUE KEY uq_az_packet_outcome(log_ref,packet_sha256,outcome),
  KEY ix_az_revision(log_ref,revision),
  CONSTRAINT fk_az_packet_stream FOREIGN KEY(log_ref)
   REFERENCES inv_az_readiness_streams(log_ref)
