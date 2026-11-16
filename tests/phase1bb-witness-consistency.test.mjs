@@ -182,3 +182,30 @@ test('zero input, extra fields and unbounded witness list refuse activation',()=
  const g=observations();g.observations=Array.from({length:9},()=>g.observations[0]);
  assert.throws(()=>assessPhase1BbWitnessConsistency(g));
 });
+
+test('CLI exposes only zero-input witness-consistency HOLD and never echoes secrets',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const path=fileURLToPath(new URL('../scripts/phase1bb-consistency-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[path,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32768
+ });
+ const ok=run(['--ci-hold']);
+ assert.equal(ok.status,0,ok.stderr);
+ const r=JSON.parse(ok.stdout);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.externalLogHeadSourceAuthenticated,false);
+ assert.equal(r.independentWitnessKeyCustodyVerified,false);
+ for(const args of [[],['--approve'],['--external-key','REDACTED_SECRET'],
+  ['--file','/tmp/private-witness-key'],['--ci-hold','--deploy']]){
+  const denied=run(args);
+  assert.equal(denied.status,2);
+  assert.equal(denied.stdout,'');
+  assert.match(denied.stderr,/HOLD/);
+  assert.ok(!denied.stderr.includes('REDACTED_SECRET'));
+  assert.ok(!denied.stderr.includes('/tmp/private-witness-key'));
+ }
+});
