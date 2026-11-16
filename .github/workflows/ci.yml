@@ -242,6 +242,12 @@ jobs:
         run: bun run db:migrate:ax-checkpoints
       - name: Phase 1AX real MySQL concurrency, forks, replay and restore-reconstruction drill
         run: bun run test:ax-checkpoint-mysql
+      - name: Apply Phase 1AZ digest-only external readiness HOLD migration in disposable CI
+        run: bun run db:migrate:az-readiness
+      - name: Verify Phase 1AZ migration checksum and idempotent rerun
+        run: bun run db:migrate:az-readiness
+      - name: Phase 1AZ real MySQL witness/archive/DR packet revision and anti-rollback tests
+        run: bun run test:az-readiness-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
