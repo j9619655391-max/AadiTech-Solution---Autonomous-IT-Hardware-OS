@@ -117,7 +117,7 @@ test('synthetic RTO/RPO values must match upstream timestamps, not assertions',(
  assert.ok(assess(g).blockerCodes.includes('CROSS_SOURCE_PUBLICATION_STORAGE_DR_SCOPE_MISMATCH'));
  const h2=bgFixture();
  h2.publication.freezeEvidence.bdEvidence.recoveryAttestations[0].body.isolatedStaging=false;
- assert.ok(assess(h2).blockerCodes.includes('INVALID_UPSTREAM_PUBLICATION_SIGNATURE_OR_FREEZE'));
+ assert.throws(()=>assess(h2),/restore isolation or outbound HOLD missing/);
 });
 test('revoked issuer, expired observations, extra key material and GO cannot pass',()=>{
  const f=bgFixture();
