@@ -23,6 +23,8 @@ jobs:
         run: node scripts/phase1au-policy-drift-preflight.mjs --ci-hold
       - name: Phase 1AV external authority incident and anchor governance HARD HOLD
         run: node scripts/phase1av-incident-preflight.mjs --ci-hold
+      - name: Phase 1AW signed checkpoint and recovery governance HARD HOLD (no keys or network)
+        run: node scripts/phase1aw-checkpoint-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
