@@ -117,6 +117,9 @@ export async function inspectPhase1BfPublication(pool:Pool,logRef:string,
  const conn=await pool.getConnection();
  try{
   await conn.beginTransaction();
+  // Preserve writer/readback lock order: BE upstream then BF stream.
+  const [upstream]=await conn.execute<RowDataPacket[]>(
+   'SELECT state,last_incident_sha256 FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
   const [heads]=await conn.execute<RowDataPacket[]>(
    'SELECT * FROM inv_bf_publication_streams WHERE log_ref=? FOR UPDATE',[logRef]);
   if(heads.length!==1)throw Error('Phase 1BF publication stream missing');
@@ -156,8 +159,6 @@ export async function inspectPhase1BfPublication(pool:Pool,logRef:string,
    if(head[name]!=='NO')problems.push('UNAUTHORIZED_EXTERNAL_TRUST_PROMOTION');
   if(head.production_release!=='HOLD')
    problems.push('UNAUTHORIZED_PUBLICATION_RELEASE');
-  const [upstream]=await conn.execute<RowDataPacket[]>(
-   'SELECT state,last_incident_sha256 FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
   if(upstream.length!==1||upstream[0].state==='HELD_UNVERIFIED'||
      upstream[0].last_incident_sha256!==incident)
    problems.push('BE_FREEZE_PREDECESSOR_DIVERGENCE');
