@@ -133,3 +133,35 @@ test('witness observed before checkpoint issuance is not trusted',()=>{
  assert.ok(r.blockerCodes.includes('WITNESS_OUTSIDE_CHECKPOINT_WINDOW'));
  assert.equal(r.quarantined,true);
 });
+
+test('per-checkpoint quorum is not satisfied by witnesses spread across separate checkpoints',()=>{
+ const a=actor(11,'witness-org-011'),b=actor(12,'witness-org-012');
+ const first=checkpoint(),second={...checkpoint(2),priorCheckpointSha256:phase1AwCheckpointReceiptSha256(first)};
+ const observations=[observation(first,a),observation(second,b)];
+ const r=assessPhase1AxCheckpointWitnesses({observations,trustedPins:[a.pin,b.pin],now});
+ assert.equal(r.distinctWitnessAuthorities,2);
+ assert.equal(r.witnessedCheckpointClaims,2);
+ assert.ok(r.blockerCodes.includes('WITNESS_QUORUM_UNAVAILABLE'));
+ assert.equal(r.independentExternalWitnessesAuthenticated,false);
+ assert.equal(r.quarantined,true);
+});
+test('witness continuity accepts claimed ordered predecessor only with per-claim quorum, never real authority',()=>{
+ const a=actor(13,'witness-org-013'),b=actor(14,'witness-org-014');
+ const first=checkpoint(),second={...checkpoint(2),priorCheckpointSha256:phase1AwCheckpointReceiptSha256(first)};
+ const observations=[observation(first,a),observation(first,b),observation(second,a),observation(second,b)];
+ const r=assessPhase1AxCheckpointWitnesses({observations,trustedPins:[a.pin,b.pin],now});
+ assert.equal(r.witnessedCheckpointClaims,2);
+ assert.equal(r.claimedWitnessContinuityConsistent,true);
+ assert.equal(r.blockerCodes.includes('WITNESS_QUORUM_UNAVAILABLE'),false);
+ assert.equal(r.blockerCodes.includes('WITNESS_AUTHORITY_COLLISION'),false);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.checkpointSignaturesAuthenticated,false);
+ const missing=assessPhase1AxCheckpointWitnesses({observations:observations.slice(2),trustedPins:[a.pin,b.pin],now});
+ assert.ok(missing.blockerCodes.includes('MISSING_WITNESSED_PREDECESSOR'));
+ const broken=checkpoint(2);
+ const mismatch=assessPhase1AxCheckpointWitnesses({
+  observations:[...observations.slice(0,2),observation(broken,a),observation(broken,b)],
+  trustedPins:[a.pin,b.pin],now});
+ assert.ok(mismatch.blockerCodes.includes('WITNESS_PREDECESSOR_MISMATCH'));
+ assert.equal(mismatch.claimedWitnessContinuityConsistent,false);
+});
