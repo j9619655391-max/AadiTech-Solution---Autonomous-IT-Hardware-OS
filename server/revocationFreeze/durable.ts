@@ -78,6 +78,12 @@ export async function recordPhase1BeRevocationFreeze(pool:Pool,{
     productionReleaseAuthorized:false,productionReleaseBlocked:true,
     releaseDecision:'HOLD',independentRevocationVerified:false});
   }
+  if(h.state==='QUARANTINED'&&h.last_incident_sha256===fingerprint&&accepted.length){
+   await conn.commit();
+   return Object.freeze({phase:'1BE',outcome:'DUPLICATE_REJECTED',state:'QUARANTINED',
+    productionReleaseAuthorized:false,productionReleaseBlocked:true,
+    releaseDecision:'HOLD',independentRevocationVerified:false});
+  }
   const [known]=await conn.execute<RowDataPacket[]>(
    "SELECT id FROM inv_be_freeze_attempts WHERE log_ref=? AND incident_sha256=? AND outcome<>'FROZEN_UNVERIFIED' LIMIT 1 FOR UPDATE",
    [logRef,fingerprint]);
