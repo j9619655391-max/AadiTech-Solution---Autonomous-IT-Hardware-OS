@@ -284,6 +284,8 @@ jobs:
         run: bun run db:migrate:bd-evidence-review
       - name: Verify Phase 1BD migration checksum and idempotent rerun
         run: bun run db:migrate:bd-evidence-review
+      - name: Phase 1BD real MySQL evidence quorum, replay, fork and predecessor-gate tests
+        run: bun run test:bd-review-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
