@@ -68,7 +68,13 @@ export function bdFixture(logRef='checkpoint-log-001'){
   outboundHeld:true,releaseDecision:'HOLD'};
  const recoveryAttestations=actors.slice(3).map(who=>
   attest({...drBody},who,phase1BdRecoveryBytes));
- return {azPacket,bbRecords:records,witnessEnrollments,
-  storageReceipt,recoveryAttestations,now,actors,provider,batch};
+ const dossier={azPacket,bbRecords:records,witnessEnrollments,
+  storageReceipt,recoveryAttestations,now};
+ // Fixture-only private signing helpers must never be enumerable evidence
+ // fields; the strict public input schema rejects anything else.
+ Object.defineProperties(dossier,{
+  actors:{value:actors},provider:{value:provider},batch:{value:batch}
+ });
+ return dossier;
 }
 export {h};
