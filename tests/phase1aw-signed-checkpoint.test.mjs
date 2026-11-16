@@ -212,6 +212,26 @@ test('re-signed forged predecessor hash, sequence rollback and chronology violat
  assert.equal(r.checkpointRollbackOrForkDetected,true);
  held(r);
 });
+test('missing predecessor and validly re-signed checkpoint freshness gaps always quarantine',()=>{
+ const f=fixture();
+ const missing=inspect(f,{priorCheckpoint:null});
+ held(missing);
+ assert.equal(missing.checkpointRollbackOrForkDetected,true);
+ assert.ok(missing.blockerCodes.includes('MISSING_EXPECTED_SIGNED_PREDECESSOR'));
+ const oldReceipt=resigned({...f.first,expiresAt:at(-15)},f.keys);
+ const resumed=resigned({
+  ...f.second,priorCheckpointSha256:phase1AwCheckpointReceiptSha256(oldReceipt)
+ },f.keys);
+ const broken=inspect(f,{
+  priorCheckpoint:oldReceipt,currentCheckpoint:resumed
+ });
+ held(broken);
+ assert.equal(broken.signatureChecksPassed,true);
+ assert.equal(broken.priorCheckpointValid,true);
+ assert.equal(broken.checkpointRollbackOrForkDetected,true);
+ assert.ok(broken.blockerCodes.includes('SIGNED_CHECKPOINT_CONTINUITY_GAP'));
+ assert.equal(broken.incidentResponseRequired,true);
+});
 test('expired mathematically valid checkpoint is quarantined and never a release',()=>{
  const f=fixture();
  const expired=resigned({...f.second,issuedAt:at(-10),expiresAt:at(0)},f.keys);
