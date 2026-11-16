@@ -138,3 +138,42 @@ test('tampered head is detected in disposable CI then locally repaired',async()=
  }
  assert.equal((await inspect(f.azPacket.archive.logRef)).localDigestHistoryConsistent,true);
 });
+
+test('racing across distinct logs on one signed nonce accepts exactly one global claimant',async()=>{
+ const a=fixture(newLog()),b=fixture(newLog());
+ b.records[2].body.challengeSha256=a.records[2].body.challengeSha256;
+ b.records[2].signature.signatureBase64=sign(null,
+  phase1BbSignedBytes(b.records[2].body),b.actors[2].privateKey).toString('base64');
+ const results=await Promise.all([
+  record(a,a.records,1,null),record(b,b.records,1,null)
+ ]);
+ assert.deepEqual(results.map(x=>x.outcome).sort(),
+  ['ACCEPTED_UNVERIFIED','NONCE_REPLAY_QUARANTINED']);
+ const audited=await Promise.all([
+  inspect(a.azPacket.archive.logRef),inspect(b.azPacket.archive.logRef)
+ ]);
+ assert.deepEqual(audited.map(x=>x.acceptedSequence).sort(),[0,1]);
+ assert.deepEqual(audited.map(x=>x.governanceState).sort(),
+  ['HELD_UNVERIFIED','QUARANTINED']);
+ assert.ok(audited.every(x=>x.localDigestHistoryConsistent));
+ assert.ok(audited.every(x=>x.productionReleaseAuthorized===false));
+});
+test('deleted accepted challenge custody is detected on disposable CI readback',async()=>{
+ const f=fixture(newLog());
+ await record(f,f.records,1,null);
+ const logRef=f.azPacket.archive.logRef;
+ const challenge=f.records[0].body.challengeSha256;
+ const batch=hashFor(f.records,f);
+ try{
+  await pool.execute('DELETE FROM inv_bb_evidence_nonce_claims WHERE challenge_sha256=?',
+   [challenge]);
+  const audit=await inspect(logRef);
+  assert.equal(audit.localDigestHistoryConsistent,false);
+  assert.ok(audit.anomalyCodes.includes('MISSING_OR_EXTRA_ACCEPTED_CHALLENGES'));
+ }finally{
+  await pool.execute(
+   'INSERT INTO inv_bb_evidence_nonce_claims(challenge_sha256,log_ref,batch_sha256) VALUES(?,?,?)',
+   [challenge,logRef,batch]);
+ }
+ assert.equal((await inspect(logRef)).localDigestHistoryConsistent,true);
+});
