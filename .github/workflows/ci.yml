@@ -19,6 +19,8 @@ jobs:
         run: node scripts/provider-authority-preflight.mjs --ci-hold
       - name: Phase 1AQ updated eMudhra WebPKI incident HARD HOLD (no network)
         run: node scripts/phase1aq-trust-incident-preflight.mjs --ci-hold
+      - name: Phase 1AU deny-only policy drift and revocation expiry HARD HOLD
+        run: node scripts/phase1au-policy-drift-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
