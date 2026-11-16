@@ -52,7 +52,7 @@ function validate(checkpoint:Checkpoint,pins:Pin[],now:Date){
    throw Error('Invalid detached checkpoint signature');
  }
  return {receipt,claim:createHash('sha256').update(PREFIX).update(message).digest('hex'),
-  signerPinHash:createHash('sha256').update('AADITECH-PHASE-1AX-PIN-COMMITMENT-V1\\0')
+  signerPinHash:createHash('sha256').update('AADITECH-PHASE-1AX-PIN-COMMITMENT-V1\0')
    .update(JSON.stringify(pins.map(p=>[p.role,p.reviewerRef,p.keyId,p.publicKeySha256]))).digest('hex')};
 }
 export interface AxWriteArgs{
