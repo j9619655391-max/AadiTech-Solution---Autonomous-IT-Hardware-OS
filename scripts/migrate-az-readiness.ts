@@ -16,7 +16,7 @@ export function azMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 async function main(){
  azMigrationTarget(process.env);
  const id='0029_az_external_readiness_holds';
- if(MIGRATIONS.at(-1)!==id||MIGRATIONS.length!==29)
+ if(MIGRATIONS[28]!==id||MIGRATIONS.length<29)
   throw Error('1AZ expected registered final migration 0029');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -29,7 +29,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const applied=new Map(rows.map(row=>[String(row.id),String(row.checksum)]));
-  for(const item of MIGRATIONS.slice(0,-1)){
+  for(const item of MIGRATIONS.slice(0,28)){
    const sum=createHash('sha256').update(readFileSync('database/migrations/'+item+'.sql')).digest('hex');
    if(applied.get(item)!==sum)throw Error('1AZ missing or changed prerequisite migration '+item);
   }
