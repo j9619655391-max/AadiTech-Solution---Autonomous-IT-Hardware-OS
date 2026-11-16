@@ -91,6 +91,11 @@ export function assessPhase1BaIndependentAcceptance({
   anchors,pins:witnessPins,minimumWitnesses:2,now});
  if(!witness.cryptographicallyConsistent||witness.validProofs<2)
   blockers.add('WITNESS_CRYPTO_OR_QUORUM_MISMATCH');
+ if(witnessPins.length!==azPacket.witnesses.length||
+   witnessPins.some(pin=>!azPacket.witnesses.some(w=>
+    w.publicKeySpkiSha256===pin.publicKeySha256&&
+    w.administrativeAuthorityRef===pin.authorityRef)))
+  blockers.add('WITNESS_KEY_NOT_BOUND_TO_AZ_ENROLLMENT');
  const signing=phase1BaProbeSigningBytes(wormProbe);
  if(wormProbe.logRef!==archived.logRef||
     wormProbe.checkpointReceiptSha256!==archived.checkpointReceiptSha256||
@@ -140,10 +145,15 @@ export function assessPhase1BaIndependentAcceptance({
   blockers.add('DR_REVIEWER_INDEPENDENCE_UNVERIFIED');
  else{
   const witnessOrg=new Set(witnessPins.map(w=>w.authorityRef));
-  for(const pin of drPins)
+  for(let i=0;i<drPins.length;i++){
+   const pin=drPins[i],review=azPacket.approvers[i];
+   if(!review||review.role!==pin.role||review.reviewerRef!==pin.reviewerRef||
+      review.authorityRef!==pin.authorityRef)
+    blockers.add('RECOVERY_SIGNER_NOT_BOUND_TO_AZ_REVIEW');
    if(witnessOrg.has(pin.authorityRef)||
-     wormPins.some(w=>w.authorityRef===pin.authorityRef))
+      wormPins.some(w=>w.authorityRef===pin.authorityRef))
     blockers.add('RECOVERY_AND_WITNESS_AUDITOR_COLLISION');
+  }
  }
  const internal=[...blockers].every(b=>FATAL.includes(b));
  return denial({internalClaimsConsistent:internal,azDigestMatch:az.packetSha256===azExpectedDigest,
