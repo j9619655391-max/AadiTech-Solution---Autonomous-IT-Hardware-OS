@@ -19,7 +19,8 @@ export const MIGRATIONS=[
  '0026_named_provider_policy_gates',
  '0027_provider_approved_sandbox_prerequisites',
  '0028_ax_checkpoint_governance',
- '0029_az_external_readiness_holds'
+ '0029_az_external_readiness_holds',
+ '0030_bb_evidence_intake_holds'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
