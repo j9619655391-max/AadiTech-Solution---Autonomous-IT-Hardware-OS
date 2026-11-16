@@ -58,3 +58,11 @@ ProductionReleaseAuthorized = false; ProductionReleaseBlocked = true until signe
 - Previous Phase 1AX CI run `43884032849`: GitHub reported **success** on `87b6ca48e6573bd1e026e28cf769bed1d312c9a2`.
 - Latest 0028 schema and MySQL integration changes: **CI confirmation pending** until a new push and PR run conclude.
 - ProductionReleaseAuthorized=false; ProductionReleaseBlocked=true; releaseDecision=HOLD; PR #1 Draft, Issue #2 open; `main` untouched.
+
+### Additional acceptance evidence (2026-11-16)
+- CI `43890261491`: baseline and disposable-MySQL integration jobs **success** after migration 0028, key-continuity quarantine, concurrency, retry and corruption tests were introduced.
+- CI `43890564972`: baseline and disposable-MySQL integration jobs **success** with read-only Phase 1AX staging preflight. In the staging target, any persisted quarantined checkpoint stream is a readiness blocker. In disposable CI, synthetic incident fixtures remain informational.
+- A subsequent unit hardening change requires witness-quorum satisfaction on **each canonical signed checkpoint claim** rather than incorrectly summing separate organizations across unrelated checkpoints. Repeated claimed witness authorities may legitimately sign successive checkpoints but may not count twice within one checkpoint quorum. An unverified/missing prior signed checkpoint or broken chronological linkage is explicitly blocked.
+- Independent, externally authenticated witness identity and issuer acceptance remain PENDING; even a locally consistent witness continuity test cannot promote trust, approve operations or unfreeze production.
+
+**Verification caveat:** the per-claim quorum patch and its newer regression cases require fresh completed CI before their status can be marked verified.
