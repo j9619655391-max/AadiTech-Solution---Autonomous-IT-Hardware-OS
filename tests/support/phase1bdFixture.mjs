@@ -6,7 +6,7 @@ import {phase1BdWitnessBytes,phase1BdStorageBytes,phase1BdRecoveryBytes,
  from '../../scripts/lib/phase1BdEvidenceReview.mjs';
 const digest=b=>createHash('sha256').update(b).digest('hex');
 const attest=(body,actor,bytes)=>({
- body,pin:actor.pin,
+ body,pin:{...actor.pin},
  signature:{sourceRef:actor.pin.sourceRef,keyId:actor.pin.keyId,
   signatureBase64:sign(null,bytes(body),actor.privateKey).toString('base64')}
 });
