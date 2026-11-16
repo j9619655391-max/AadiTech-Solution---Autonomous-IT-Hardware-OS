@@ -72,7 +72,7 @@ function observations(oldSize=2,newSize=5){
   return {pin,previous:snap(earlierBody,earlier),
    current:snap(laterBody,later),consistencyProofSha256:proof};
  });
- return {azPacket:f.azPacket,observations:entries,now,items,oldSize,newSize};
+ return {azPacket:f.azPacket,observations:entries,actors:f.actors,now,items,oldSize,newSize};
 }
 test('RFC6962 minimal consistency proofs independently validate for 1..16 leaves',()=>{
  const items=Array.from({length:16},(_,i)=>Buffer.from('independent-append-only-leaf-'+i));
@@ -208,4 +208,23 @@ test('CLI exposes only zero-input witness-consistency HOLD and never echoes secr
   assert.ok(!denied.stderr.includes('REDACTED_SECRET'));
   assert.ok(!denied.stderr.includes('/tmp/private-witness-key'));
  }
+});
+
+test('two valid independently signed append-only extensions with divergent roots still fork',()=>{
+ const f=observations(2,5),forkLeaves=[...f.items];
+ forkLeaves[3]=Buffer.from('alternate-branch-leaf-2026');
+ const witness=f.observations[1];
+ const signedHead={...witness.current.body,rootSha256:hex(root(forkLeaves))};
+ witness.current.body=signedHead;
+ witness.current.inclusionProofSha256=inclusion(0,forkLeaves).map(hex);
+ witness.current.signature.signatureBase64=sign(null,
+  phase1BaWitnessBytes(signedHead),f.actors[1].privateKey).toString('base64');
+ witness.consistencyProofSha256=consistency(2,5,forkLeaves);
+ const result=assessPhase1BbWitnessConsistency(f);
+ assert.equal(result.internalAppendOnlyConsistent,false);
+ assert.ok(result.blockerCodes.includes('NEW_HEAD_WITNESS_EQUIVOCATION'));
+ assert.equal(result.blockerCodes.includes('INVALID_SIGNED_WITNESS_HEAD'),false);
+ assert.equal(result.blockerCodes.includes('INVALID_ARCHIVE_INCLUSION_IN_HEAD'),false);
+ assert.equal(result.blockerCodes.includes('APPEND_ONLY_CONSISTENCY_PROOF_INVALID'),false);
+ assert.equal(result.productionReleaseAuthorized,false);
 });
