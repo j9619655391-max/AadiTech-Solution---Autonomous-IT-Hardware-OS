@@ -68,16 +68,16 @@ test('genesis, chained progression, exact retry and readback are durable and hel
  assert.equal(report.immutableExternalStorageVerified,false);
  assert.equal(report.productionReleaseAuthorized,false);
 });
-test('same signed claims with independently re-signed receipts are not falsely forked',async()=>{
+test('unapproved signer-pin substitution quarantines even an identical signed claim',async()=>{
  const keys=signers(),different=signers(),logRef=log();
  const body=checkpoint(keys),variant=checkpoint(different,1,null,body.policySnapshotSha256,
    {issuedAt:body.issuedAt,expiresAt:body.expiresAt});
  await record(logRef,body,keys);
  const r=await record(logRef,variant,different);
- assert.equal(r.outcome,'REPLAY_VARIANT');
+ assert.equal(r.outcome,'UNAUTHORIZED_KEY_CHANGE');
  const report=await inspectPhase1AxOfflineHistory(pool,logRef,env);
  assert.equal(report.localHistoryConsistent,true);
- assert.equal(report.governanceState,'HELD_UNVERIFIED');
+ assert.equal(report.governanceState,'QUARANTINED');
  assert.equal(report.observationCount,2);
 });
 test('concurrent signed contradictory next checkpoints serialize and quarantine',async()=>{
