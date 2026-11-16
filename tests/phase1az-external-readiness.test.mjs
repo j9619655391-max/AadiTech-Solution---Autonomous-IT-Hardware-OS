@@ -166,3 +166,14 @@ test('zero-input CLI never reads secrets and rejects arbitrary evidence and acti
   assert.ok(!bad.stderr.includes('/tmp/credentials'));
  }
 });
+
+test('recovery event predating archive provenance is internally inconsistent',()=>{
+ const p=packet();
+ const recovery={...p.recovery,startedAt:'2026-10-20T10:00:00.000Z',
+  completedAt:'2026-10-20T10:10:00.000Z'};
+ const r=evalPacket({...p,recovery});
+ assert.equal(r.internalEvidenceConsistent,false);
+ assert.ok(r.blockerCodes.includes('RESTORE_PRECEDES_ARCHIVE_CREATION'));
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+});
