@@ -619,6 +619,31 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1AZ external readiness packet integrity or HOLD gate mismatch');
  if(target==='staging'&&Number(azStreams[0].quarantined)!==0)
   problems.push('Phase 1AZ unresolved readiness evidence quarantine in staging');
+ // Phase 1BB: read-only intake digest guard; no external publisher or KMS
+ // provenance can be asserted by a local database counter.
+ const [bbStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_sources_authenticated<>'NO' OR independent_key_custody_verified<>'NO'
+   OR production_release<>'HOLD'
+   OR (last_sequence=0 AND last_batch_sha256 IS NOT NULL)
+   OR (last_sequence>0 AND last_batch_sha256 IS NULL)
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bb_evidence_attempts a WHERE a.log_ref=inv_bb_evidence_streams.log_ref
+      AND a.outcome<>'ACCEPTED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bb_evidence_attempts a WHERE a.log_ref=inv_bb_evidence_streams.log_ref
+      AND a.outcome<>'ACCEPTED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bb_evidence_streams`);
+ const [bbNonceCounts]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS missing FROM
+  inv_bb_evidence_attempts a WHERE a.outcome='ACCEPTED_UNVERIFIED'
+   AND (SELECT COUNT(*) FROM inv_bb_evidence_nonce_claims n
+     WHERE n.log_ref=a.log_ref AND n.batch_sha256=a.batch_sha256)<>6`);
+ if(Number(bbStreams[0].unsafe)!==0||Number(bbNonceCounts[0].missing)!==0)
+  problems.push('Phase 1BB offline nonce custody, persisted head or release-HOLD integrity mismatch');
+ if(target==='staging'&&Number(bbStreams[0].quarantined)!==0)
+  problems.push('Phase 1BB signed evidence intake quarantine unresolved in staging');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -665,6 +690,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BbHeldEvidenceIntakeStreams:Number(bbStreams[0].total),
+  phase1BbQuarantinedEvidenceIntakeStreams:Number(bbStreams[0].quarantined),
   phase1AzOfflineReadinessStreams:Number(azStreams[0].total),
   phase1AzQuarantinedReadinessStreams:Number(azStreams[0].quarantined),
   phase1AxOfflineCheckpointStreams:Number(axStreams[0].total),
@@ -678,6 +705,10 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BbIndependentPublisherEvidence:'NOT_VERIFIED',
+   phase1BbWitnessKeyCustody:'NOT_VERIFIED',
+   phase1BbCloudRetentionEnforcement:'NOT_VERIFIED',
+   phase1BbEncryptedDrAcceptance:'NOT_VERIFIED',
    phase1AzExternalWitnessAdministration:'NOT_VERIFIED',
    phase1AzImmutableWormObjectLock:'NOT_VERIFIED',
    phase1AzIndependentlyWitnessedEncryptedRestore:'NOT_VERIFIED',
