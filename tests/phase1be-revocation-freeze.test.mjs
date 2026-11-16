@@ -145,3 +145,27 @@ test('preflight CLI denies secrets, evidence files, external activation and unau
   assert.ok(!denied.stderr.includes('/tmp/private-cert-chain'));
  }
 });
+
+test('freeze dossier rejects added fields without persisting or echoing credential fields',()=>{
+ const f=beFixture();
+ assert.throws(()=>assess({...f,providerCredential:'DO_NOT_ACCEPT'}),/unrecognized freeze assessment/);
+ assert.equal(assess(f).locallyCoSignedFreezeConsistent,true);
+});
+test('recycled revocation digest cannot masquerade as a newly issued notice',()=>{
+ const f=beFixture();
+ f.body.revocationNoticeSha256=f.body.previousRevocationSnapshotSha256;
+ f.resign();
+ const r=assess(f);
+ assert.ok(r.blockerCodes.includes('STALE_REVOKED_KEY_NOTICE_REUSED'));
+ assert.equal(r.locallyCoSignedFreezeConsistent,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('reviewer SPKI reuse across independently named administrators fails quorum',()=>{
+ const f=beFixture();
+ f.governanceSignatures[1].pin.publicKeySha256=
+  f.governanceSignatures[0].pin.publicKeySha256;
+ const r=assess(f);
+ assert.ok(r.blockerCodes.includes('COMMON_SIGNING_KEY_ACROSS_WITNESSES_OR_REVIEWERS'));
+ assert.equal(r.locallyCoSignedFreezeConsistent,false);
+ assert.equal(r.independentlyAuthenticatedWitnessQuorum,false);
+});
