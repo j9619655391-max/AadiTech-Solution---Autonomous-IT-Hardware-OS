@@ -110,7 +110,7 @@ export function phase1AzAssessReadiness(packet=null,{now=new Date()}={}){
   'OBJECT_LOCK_IMMUTABILITY_NOT_EXTERNALLY_ATTESTED',
   'ENCRYPTED_RESTORE_AND_RTO_RPO_NOT_INDEPENDENTLY_WITNESSED',
   'PROVIDER_RCAI_CCA_MCA_REVOCATION_APPROVAL_PENDING'];
- if(packet===null) return Object.freeze({phase:'1AZ',packetInspected:false,
+ if(packet===null) return Object.freeze({phase:'1AZ',packetInspected:false,packetSha256:null,
   internalEvidenceConsistent:false,externallyAuthenticated:false,
   immutableStorageVerified:false,realDRRestoreVerified:false,
   productionReleaseAuthorized:false,productionReleaseBlocked:true,
