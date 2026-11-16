@@ -45,6 +45,8 @@ jobs:
         run: node scripts/phase1bd-authority-rotation-preflight.mjs --ci-hold
       - name: Phase 1BE emergency witness revocation and independent source-of-truth HARD HOLD
         run: node scripts/phase1be-revocation-freeze-preflight.mjs --ci-hold
+      - name: Phase 1BF cross-source revocation publication and WORM/DR acceptance HARD HOLD
+        run: node scripts/phase1bf-publication-preflight.mjs --ci-hold
       - name: Phase 1BC Merkle witness key-custody and append-only HEAD HARD HOLD
         run: node scripts/phase1bc-witness-custody-preflight.mjs --ci-hold
       - name: Baseline tests
@@ -294,6 +296,12 @@ jobs:
         run: bun run test:bd-review-mysql
       - name: Phase 1BE real MySQL freeze, quarantine, rollback and blocked BC/BD signing tests
         run: bun run test:be-freeze-mysql
+      - name: Apply Phase 1BF isolated revocation publisher schema 0034
+        run: bun run db:migrate:bf-publication
+      - name: Verify Phase 1BF 0034 schema checksum and idempotent rerun
+        run: bun run db:migrate:bf-publication
+      - name: Phase 1BF real MySQL publisher history, fork, rollback, issuer-key substitution and tamper suite
+        run: bun run test:bf-publication-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
