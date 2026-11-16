@@ -184,3 +184,38 @@ test('1BD zero-input CI hard HOLD refuses credentials, network URIs and activati
    assert.ok(!bad.stderr.includes(secret));
  }
 });
+
+test('review digest binds candidate signer identity, not merely identical storage claims',()=>{
+ const f=bdFixture(),old=check(f);
+ assert.equal(old.offlineEvidenceConsistent,true);
+ const attacker=generateKeyPairSync('ed25519');
+ const changed=bdFixture();
+ // Use the same underlying dossier, but substitute a fresh independently
+ // untrusted candidate storage signer while retaining the exact policy body.
+ const s=f.storageReceipt;
+ s.pin.sourceRef='replacement-provider-signer-009';
+ s.pin.authorityRef='replacement-provider-authority-009';
+ s.pin.keyId='key-replacement-provider-009';
+ s.pin.publicKeyPem=attacker.publicKey.export({format:'pem',type:'spki'}).toString();
+ s.pin.publicKeySha256=createHash('sha256').update(
+  attacker.publicKey.export({format:'der',type:'spki'})).digest('hex');
+ s.signature.sourceRef=s.pin.sourceRef;
+ s.signature.keyId=s.pin.keyId;
+ s.signature.signatureBase64=sign(null,phase1BdStorageBytes(s.body),
+  attacker.privateKey).toString('base64');
+ const r=check(f);
+ assert.equal(r.offlineEvidenceConsistent,true,r.blockerCodes.join(','));
+ assert.notEqual(r.reviewDigestSha256,old.reviewDigestSha256);
+ assert.equal(r.independentlyVerifiedObjectLock,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(check(changed).offlineEvidenceConsistent,true);
+});
+test('witness/reviewer envelope order does not alter the signed review commitment',()=>{
+ const f=bdFixture(),first=check(f);
+ const permuted={...f,
+  witnessEnrollments:[...f.witnessEnrollments].reverse(),
+  recoveryAttestations:[...f.recoveryAttestations].reverse()};
+ const second=check(permuted);
+ assert.equal(second.offlineEvidenceConsistent,true,second.blockerCodes.join(','));
+ assert.equal(first.reviewDigestSha256,second.reviewDigestSha256);
+});
