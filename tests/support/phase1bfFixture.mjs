@@ -1,5 +1,6 @@
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
-import {beFixture,h} from './phase1beFixture.mjs';
+import {beFixture} from './phase1beFixture.mjs';
+import {h} from './phase1bdFixture.mjs';
 import {assessPhase1BeRevocationFreeze}
  from '../../scripts/lib/phase1BeRevocationFreeze.mjs';
 import {BF_PURPOSE,phase1BfPublicationSigningBytes}
