@@ -95,6 +95,12 @@ export function assessPhase1BeRevocationFreeze({
  bdEvidence=null,body=null,survivingWitnessSignature=null,
  governanceSignatures=[],now=new Date()
 }={}){
+ const supplied=arguments[0];
+ if(supplied!==undefined&&(!supplied||typeof supplied!=='object'||
+    Array.isArray(supplied)||Object.getPrototypeOf(supplied)!==Object.prototype||
+    Object.keys(supplied).some(k=>!['bdEvidence','body','survivingWitnessSignature',
+     'governanceSignatures','now'].includes(k))))
+  throw Error('1BE unrecognized freeze assessment field');
  const current=clock(now),blockers=new Set(OUTSTANDING);
  const deny=(extra={})=>Object.freeze({
   phase:'1BE',locallyCoSignedFreezeConsistent:false,
@@ -149,6 +155,8 @@ export function assessPhase1BeRevocationFreeze({
     body.claimedEncryptedRestoreTelemetrySha256!==
       bdEvidence.recoveryAttestations?.[0]?.body.telemetryReceiptSha256)
   blockers.add('INCIDENT_BINDING_TO_AZ_BD_EVIDENCE_INVALID');
+ if(body.revocationNoticeSha256===body.previousRevocationSnapshotSha256)
+  blockers.add('STALE_REVOKED_KEY_NOTICE_REUSED');
  exact(survivingWitnessSignature,SIGNER);
  if(!good||survivingWitnessSignature.pin.role!=='WITNESS'||
     survivingWitnessSignature.pin.sourceRef!==good?.pin.sourceRef||
@@ -157,7 +165,8 @@ export function assessPhase1BeRevocationFreeze({
     survivingWitnessSignature.pin.publicKeySha256!==good?.pin.publicKeySha256||
     !signed(survivingWitnessSignature,envelope))
   blockers.add('SURVIVING_WITNESS_COSIGNATURE_INVALID');
- const reviewers=new Set(),administrators=new Set();
+ const reviewers=new Set(),administrators=new Set(),
+  signingKeys=new Set([good?.pin?.publicKeySha256,bad?.pin?.publicKeySha256]);
  for(const expectedRole of ['SECURITY','OPERATIONS','OWNER']){
   const signature=governanceSignatures.find(x=>x?.pin?.role===expectedRole);
   const expected=bdEvidence.recoveryAttestations?.find(x=>x.pin.role===expectedRole);
@@ -171,6 +180,9 @@ export function assessPhase1BeRevocationFreeze({
      pin.authorityRef===bdEvidence.storageReceipt?.pin.authorityRef)
    blockers.add('COMMON_CONTROL_OF_FREEZE_REVIEWERS');
   reviewers.add(pin.sourceRef);administrators.add(pin.authorityRef);
+  if(signingKeys.has(pin.publicKeySha256))
+   blockers.add('COMMON_SIGNING_KEY_ACROSS_WITNESSES_OR_REVIEWERS');
+  signingKeys.add(pin.publicKeySha256);
   if(pin.sourceRef!==expected.pin.sourceRef||
      pin.authorityRef!==expected.pin.authorityRef||
      pin.keyId!==expected.pin.keyId||
