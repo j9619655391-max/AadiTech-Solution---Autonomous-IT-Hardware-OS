@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS inv_ax_checkpoint_observations (
   checkpoint_sequence BIGINT UNSIGNED NOT NULL,
   receipt_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   claim_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  signer_pin_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   prior_receipt_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
   outcome ENUM('ACCEPTED_UNTRUSTED','REPLAY_VARIANT','FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE','QUARANTINED_OBSERVATION')
     NOT NULL,
