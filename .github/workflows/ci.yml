@@ -232,6 +232,12 @@ jobs:
         run: bun run db:migrate:provider-onboarding
       - name: Verify Phase 1AO migration checksum and idempotent rerun
         run: bun run db:migrate:provider-onboarding
+      - name: Apply Phase 1AX held checkpoint ledger migration in disposable CI
+        run: bun run db:migrate:ax-checkpoints
+      - name: Verify Phase 1AX migration checksum and idempotent rerun
+        run: bun run db:migrate:ax-checkpoints
+      - name: Phase 1AX real MySQL concurrency, forks, replay and restore-reconstruction drill
+        run: bun run test:ax-checkpoint-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
