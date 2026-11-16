@@ -47,6 +47,8 @@ jobs:
         run: node scripts/phase1be-revocation-freeze-preflight.mjs --ci-hold
       - name: Phase 1BF cross-source revocation publication and WORM/DR acceptance HARD HOLD
         run: node scripts/phase1bf-publication-preflight.mjs --ci-hold
+      - name: Phase 1BG independently claimed CRL/OCSP, WORM and recovery auditor HARD HOLD
+        run: node scripts/phase1bg-cross-source-preflight.mjs --ci-hold
       - name: Phase 1BC Merkle witness key-custody and append-only HEAD HARD HOLD
         run: node scripts/phase1bc-witness-custody-preflight.mjs --ci-hold
       - name: Baseline tests
@@ -302,6 +304,12 @@ jobs:
         run: bun run db:migrate:bf-publication
       - name: Phase 1BF real MySQL publisher history, fork, rollback, issuer-key substitution and tamper suite
         run: bun run test:bf-publication-mysql
+      - name: Apply Phase 1BG isolated three-source audit quorum schema 0035
+        run: bun run db:migrate:bg-cross-source
+      - name: Verify Phase 1BG migration checksum and idempotent rerun
+        run: bun run db:migrate:bg-cross-source
+      - name: Phase 1BG real MySQL auditor signoff, CRL/OCSP lineage, issuer/role substitution and rollback suite
+        run: bun run test:bg-cross-source-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
