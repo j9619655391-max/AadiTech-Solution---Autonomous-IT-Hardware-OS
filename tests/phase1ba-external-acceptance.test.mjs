@@ -235,3 +235,29 @@ test('Phase 1BA CI preflight accepts only zero-input release HOLD',async()=>{
   assert.ok(!rejected.stderr.includes('/tmp/sensitive'));
  }
 });
+
+test('same administrative controller cannot witness and approve storage or recovery',()=>{
+ const storageSame=fixture();
+ storageSame.storage.pin.authorityRef=storageSame.witnesses[0].pin.authorityRef;
+ const a=assess(storageSame);
+ assert.ok(a.blockerCodes.includes('STORAGE_WITNESS_COMMON_CONTROL'));
+ const recoverySame=fixture();
+ recoverySame.restore.pins[2].authorityRef=recoverySame.witnesses[1].pin.authorityRef;
+ const b=assess(recoverySame);
+ assert.ok(b.blockerCodes.includes('NONINDEPENDENT_RECOVERY_OBSERVERS'));
+ assert.equal(b.productionReleaseAuthorized,false);
+});
+test('recovery event source must match predecessor 1AZ timing',()=>{
+ const f=fixture(),b={...f.restore.body,
+  failureAt:'2026-11-15T10:00:01.000Z',latestRecoveredAt:'2026-11-15T09:59:58.000Z'};
+ f.restore.body=b;
+ const r=assess(f);
+ assert.ok(r.blockerCodes.includes('RESTORE_EVENT_DOES_NOT_MATCH_AZ_REHEARSAL'));
+ assert.ok(r.blockerCodes.includes('INVALID_RECOVERY_ATTESTATION_SIGNATURE'));
+ assert.equal(r.productionReleaseBlocked,true);
+});
+test('synthetic signed claims never prove independent append-only consistency',()=>{
+ const r=assess(fixture());
+ assert.ok(r.blockerCodes.includes('INDEPENDENT_LOG_CONSISTENCY_PROOF_NOT_AVAILABLE'));
+ assert.equal(r.externallyAuthenticated,false);
+});
