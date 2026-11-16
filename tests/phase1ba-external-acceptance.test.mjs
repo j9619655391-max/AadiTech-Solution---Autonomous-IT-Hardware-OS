@@ -207,3 +207,31 @@ test('reject unrecognized release flags and hidden credential fields before sign
  assert.throws(()=>phase1BaRestoreBytes({...f.restore.body,productionReleaseAuthorized:true}));
  assert.throws(()=>phase1BaRestoreBytes({...f.restore.body,privateKey:'PRIVATE'}));
 });
+
+test('Phase 1BA CI preflight accepts only zero-input release HOLD',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const script=fileURLToPath(new URL('../scripts/phase1ba-acceptance-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[script,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const ok=run(['--ci-hold']);
+ assert.equal(ok.status,0,ok.stderr);
+ const parsed=JSON.parse(ok.stdout);
+ assert.equal(parsed.productionReleaseAuthorized,false);
+ assert.equal(parsed.productionReleaseBlocked,true);
+ assert.equal(parsed.releaseDecision,'HOLD');
+ assert.equal(parsed.independentWitnessAdministrationVerified,false);
+ assert.equal(parsed.realObjectLockDeletionDenialVerified,false);
+ for(const args of [[],['--approve'],['--ci-hold','--credentials','SECRET'],
+   ['--external-evidence','/tmp/sensitive'],['--enable-production']]){
+  const rejected=run(args);
+  assert.equal(rejected.status,2);
+  assert.equal(rejected.stdout,'');
+  assert.match(rejected.stderr,/HOLD/);
+  assert.ok(!rejected.stderr.includes('SECRET'));
+  assert.ok(!rejected.stderr.includes('/tmp/sensitive'));
+ }
+});
