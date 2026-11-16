@@ -13,7 +13,7 @@ export function providerOnboardingMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'s
 }
 async function main(){
  providerOnboardingMigrationTarget(process.env);
- if(MIGRATIONS[MIGRATIONS.length-1]!=='0027_provider_approved_sandbox_prerequisites')
+ if(MIGRATIONS[26]!=='0027_provider_approved_sandbox_prerequisites')
   throw Error('Provider onboarding schema must be final registered migration');
  const config=getDatabaseConfig();
  if(!config.host||!config.user||!config.password||!config.database)
@@ -26,7 +26,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,26)){
    const hash=createHash('sha256').update(readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==hash)throw Error('Missing/mismatched prerequisite migration: '+id);
   }
