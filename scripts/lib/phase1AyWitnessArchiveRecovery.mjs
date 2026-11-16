@@ -35,9 +35,6 @@ function utc(v){
 function evaluation(now){if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw Error('Invalid clock');return now.getTime();}
 const hashBytes=x=>createHash('sha256').update(x).digest();
 const hashNode=(a,b)=>hashBytes(Buffer.concat([Buffer.from([1]),a,b]));
-export function phase1AyAnchorLeafHash(body){
- return hashBytes(Buffer.concat([Buffer.from([0]),phase1AyAnchorSigningBytes(body)])).toString('hex');
-}
 export function phase1AyAnchorSigningBytes(body){
  exact(body,ANCHOR_FIELDS);
  if(body.schemaVersion!==1||body.purpose!==ANCHOR_PURPOSE||body.releaseDecision!=='HOLD')
@@ -105,15 +102,15 @@ export function assessPhase1AyArchiveWitnesses({
  anchors=[],pins=[],minimumWitnesses=2,now=new Date()
 }={}){
  const time=evaluation(now), blockers=new Set(HOLD),groups=new Map();
+ if(!Array.isArray(anchors)||anchors.length>32||!Array.isArray(pins)||pins.length>16||
+   !Number.isSafeInteger(minimumWitnesses)||minimumWitnesses<2||minimumWitnesses>16)
+  throw Error('Invalid anchor/witness limit');
  if(logRef===null||checkpointReceiptSha256===null||archiveObjectSha256===null||
    anchors.length===0) return Object.freeze({phase:'1AY',validProofs:0,
     independentlyAuthenticatedWitnesses:false,immutableExternalArchiveVerified:false,
     incidentQuarantineRequired:true,productionReleaseAuthorized:false,releaseDecision:'HOLD',
     blockerCodes:Object.freeze([...blockers,'MISSING_ANCHOR_EVIDENCE'].sort())});
  ref(logRef);sha(checkpointReceiptSha256);sha(archiveObjectSha256);
- if(!Array.isArray(anchors)||anchors.length>32||!Array.isArray(pins)||pins.length>16||
-   !Number.isSafeInteger(minimumWitnesses)||minimumWitnesses<2||minimumWitnesses>16)
-  throw Error('Invalid anchor/witness limit');
  const keys=new Map(),authorities=new Set();
  for(const pin of pins){
   publicKey(pin);
