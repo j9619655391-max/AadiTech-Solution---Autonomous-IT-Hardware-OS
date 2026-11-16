@@ -34,6 +34,7 @@ const RESTORE_ENTRY=['body','signatures','pins'];
 const BASE_BLOCKERS=[
  'EXTERNAL_WITNESS_AUTHORITY_NOT_INDEPENDENTLY_AUTHENTICATED',
  'OBJECT_LOCK_ENFORCEMENT_NOT_INDEPENDENTLY_OBSERVED',
+ 'INDEPENDENT_LOG_CONSISTENCY_PROOF_NOT_AVAILABLE',
  'ENCRYPTED_RESTORE_NOT_INDEPENDENTLY_WITNESSED',
  'RCAI_CCA_EMUDHRA_MCA_REVOCATION_NOT_AUTHENTICATED',
  'PRODUCTION_SECURITY_OWNER_OPERATIONS_APPROVAL_PENDING'
@@ -108,7 +109,8 @@ export function assessPhase1BaExternalAcceptance({
  if(!az.packetInspected||!az.internalEvidenceConsistent)
   blockers.add('PREDECESSOR_AZ_PACKET_INVALID');
  const packetSha=az.packetSha256;
- const t=now.getTime(),witnessAuthorities=new Set(),witnessKeys=new Set(),witnessRefs=new Set();
+ const t=now.getTime(),witnessAuthorities=new Set(),witnessKeys=new Set(),
+  witnessRefs=new Set(),witnessSigners=new Set();
  const roots=new Map();
  let validWitnesses=0;
  for(const w of witnesses){
@@ -131,10 +133,11 @@ export function assessPhase1BaExternalAcceptance({
      !packetBinding(b,azPacket,packetSha))
    blockers.add('WITNESS_ENROLLMENT_BINDING_MISMATCH');
   if(witnessRefs.has(b.witnessRef)||witnessAuthorities.has(b.administrativeAuthorityRef)||
-     witnessKeys.has(w.pin.keyId))blockers.add('COMMON_CONTROL_OR_DUPLICATE_WITNESS');
+     witnessKeys.has(w.pin.keyId)||witnessSigners.has(w.pin.reviewerRef))blockers.add('COMMON_CONTROL_OR_DUPLICATE_WITNESS');
   witnessRefs.add(b.witnessRef);
   witnessAuthorities.add(b.administrativeAuthorityRef);
   witnessKeys.add(w.pin.keyId);
+  witnessSigners.add(w.pin.reviewerRef);
   if(!detachedValid(w.signature,w.pin,bytes))
    blockers.add('INVALID_WITNESS_SIGNATURE');
   else validWitnesses++;
@@ -175,6 +178,9 @@ export function assessPhase1BaExternalAcceptance({
     s.versioningEnabled!==true||s.legalHoldEnabled!==true||
     s.deleteProbeResult!=='DENIED')
   blockers.add('OBJECT_LOCK_DELETE_DENIAL_NOT_PROVEN');
+ if(witnessAuthorities.has(storage.pin.authorityRef)||
+    witnessSigners.has(storage.pin.reviewerRef))
+  blockers.add('STORAGE_WITNESS_COMMON_CONTROL');
  if(storage.pin.role!=='STORAGE'||!detachedValid(storage.signature,storage.pin,storageBytes))
   blockers.add('INVALID_STORAGE_ATTESTATION_SIGNATURE');
 
@@ -191,6 +197,9 @@ export function assessPhase1BaExternalAcceptance({
  if(finished>t+300000||actualRto<=0||recovered>failure||
     recovered<utc(azPacket.archive.createdAt)||actualRpo<0)
   blockers.add('INVALID_RECOVERY_MEASUREMENT_CHRONOLOGY');
+ if(r.failureAt!==azPacket.recovery.startedAt||
+    r.recoveryCompleteAt!==azPacket.recovery.completedAt)
+  blockers.add('RESTORE_EVENT_DOES_NOT_MATCH_AZ_REHEARSAL');
  if(actualRto>r.rtoObjectiveMs||actualRpo>r.rpoObjectiveMs||
     r.rtoObjectiveMs!==azPacket.recovery.rtoObjectiveMs||
     r.rpoObjectiveMs!==azPacket.recovery.rpoObjectiveMs||
@@ -213,7 +222,9 @@ export function assessPhase1BaExternalAcceptance({
   for(let i=0;i<3;i++){
    const pin=restore.pins[i],sig=restore.signatures[i];
    if(pin.role!==roles[i]||actors.has(pin.reviewerRef)||
-      authorities.has(pin.authorityRef))
+      authorities.has(pin.authorityRef)||
+      witnessAuthorities.has(pin.authorityRef)||
+      pin.authorityRef===storage.pin.authorityRef)
     blockers.add('NONINDEPENDENT_RECOVERY_OBSERVERS');
    actors.add(pin.reviewerRef);authorities.add(pin.authorityRef);
    const candidate=azPacket.approvers[i];
