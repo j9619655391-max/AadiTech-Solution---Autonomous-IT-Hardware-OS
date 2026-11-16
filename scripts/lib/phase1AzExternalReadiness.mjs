@@ -82,6 +82,7 @@ function assessRecovery(r,a,now){
  if(r.encryptedRestoreState!=='NOT_EXTERNALLY_VERIFIED'||r.outboundHeld!==true)
   throw Error('1AZ encrypted restore cannot self-authorize or dispatch');
  const blockers=[];
+ if(started<utc(a.createdAt))blockers.push('RESTORE_PRECEDES_ARCHIVE_CREATION');
  if(r.sourceCheckpointReceiptSha256!==a.checkpointReceiptSha256||
     r.restoredCheckpointReceiptSha256!==a.checkpointReceiptSha256||
     r.archiveObjectSha256!==a.archiveObjectSha256||
