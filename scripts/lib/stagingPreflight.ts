@@ -592,6 +592,32 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1AX offline checkpoint head/quarantine integrity mismatch');
  if(target==='staging'&&Number(axStreams[0].quarantined)!==0)
   problems.push('Phase 1AX signed checkpoint incident quarantine is unresolved');
+ // Phase 1AZ: only digest metadata exists. These checks do NOT establish
+ // immutable cloud retention, independent witness identity or genuine DR.
+ const [azStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_witnesses_authenticated<>'NO' OR immutable_storage_verified<>'NO'
+   OR real_dr_restore_verified<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND last_packet_sha256 IS NOT NULL)
+   OR (last_revision>0 AND last_packet_sha256 IS NULL)
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+     SELECT 1 FROM inv_az_readiness_packets p
+     WHERE p.log_ref=inv_az_readiness_streams.log_ref
+       AND p.outcome<>'RECORDED_UNTRUSTED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+     SELECT 1 FROM inv_az_readiness_packets p
+     WHERE p.log_ref=inv_az_readiness_streams.log_ref
+       AND p.outcome<>'RECORDED_UNTRUSTED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_az_readiness_streams`);
+ const [azOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_az_readiness_packets p LEFT JOIN inv_az_readiness_streams s
+   ON s.log_ref=p.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(azStreams[0].unsafe)!==0||Number(azOrphans[0].unsafe)!==0)
+  problems.push('Phase 1AZ external readiness packet integrity or HOLD gate mismatch');
+ if(target==='staging'&&Number(azStreams[0].quarantined)!==0)
+  problems.push('Phase 1AZ unresolved readiness evidence quarantine in staging');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -638,6 +664,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1AzOfflineReadinessStreams:Number(azStreams[0].total),
+  phase1AzQuarantinedReadinessStreams:Number(azStreams[0].quarantined),
   phase1AxOfflineCheckpointStreams:Number(axStreams[0].total),
   phase1AxQuarantinedCheckpointStreams:Number(axStreams[0].quarantined),
   unverifiedProviderAgreementPackets:Number(aoPackets[0].total),
@@ -649,6 +677,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1AzExternalWitnessAdministration:'NOT_VERIFIED',
+   phase1AzImmutableWormObjectLock:'NOT_VERIFIED',
+   phase1AzIndependentlyWitnessedEncryptedRestore:'NOT_VERIFIED',
    phase1AxIndependentWitnessSignatures:'NOT_VERIFIED',
    phase1AxImmutableExternalCheckpointStorage:'NOT_VERIFIED',
    encryptedBackupAndRestoreRehearsal:'NOT_VERIFIED',
