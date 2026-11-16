@@ -117,8 +117,8 @@ export function assessPhase1BeRevocationFreeze({
   blockers.add('INCOMPLETE_EMERGENCY_FREEZE_EVIDENCE');
   return deny();
  }
- const supplied=Object.keys(bdEvidence);
- if(supplied.some(k=>!['azPacket','bbRecords','witnessEnrollments',
+ const dossierKeys=Object.keys(bdEvidence);
+ if(dossierKeys.some(k=>!['azPacket','bbRecords','witnessEnrollments',
    'storageReceipt','recoveryAttestations','now'].includes(k)))
   throw Error('1BE unknown BD candidate review field');
  const envelope=phase1BeFreezeSigningBytes(body);
