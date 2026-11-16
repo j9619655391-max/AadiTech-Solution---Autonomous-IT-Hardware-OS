@@ -799,6 +799,57 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1BF candidate revocation issuer, predecessor or release HOLD tampering');
  if(target==='staging'&&Number(bfStreams[0].quarantined)>0)
   problems.push('Phase 1BF unresolved revocation publication fork or issuer change in staging');
+ // Phase 1BG cross-source auditor claims cannot authenticate a real CA,
+ // object-lock authority or restore. Staging requires no unresolved forks.
+ const [bgStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independently_authenticated_issuer<>'NO' OR trusted_live_crl_ocsp<>'NO'
+   OR independently_pinned_auditors<>'NO' OR externally_enforced_object_lock<>'NO'
+   OR real_encrypted_dr_witnessed<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND
+    (last_review_sha256 IS NOT NULL OR last_publication_sha256 IS NOT NULL
+     OR last_auditor_pinset_sha256 IS NOT NULL OR last_publisher_pin_sha256 IS NOT NULL
+     OR last_crl_number<>0 OR last_crl_this_update_ms<>0))
+   OR (last_revision>0 AND
+    (last_review_sha256 IS NULL OR last_publication_sha256 IS NULL
+     OR last_auditor_pinset_sha256 IS NULL OR last_publisher_pin_sha256 IS NULL
+     OR last_crl_number=0 OR last_crl_this_update_ms=0))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts x WHERE x.log_ref=inv_bg_cross_source_streams.log_ref
+     AND x.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts x WHERE x.log_ref=inv_bg_cross_source_streams.log_ref
+     AND x.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bg_cross_source_streams`);
+ const [bgHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bg_cross_source_attempts x
+  WHERE x.outcome='RECORDED_UNVERIFIED' AND (
+   (x.review_revision=1 AND x.previous_review_sha256 IS NOT NULL)
+   OR (x.review_revision>1 AND NOT EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts p
+     WHERE p.log_ref=x.log_ref AND p.review_revision=x.review_revision-1
+      AND p.review_sha256=x.previous_review_sha256
+      AND p.outcome='RECORDED_UNVERIFIED'
+      AND p.publisher_pin_sha256=x.publisher_pin_sha256
+      AND p.auditor_pinset_sha256=x.auditor_pinset_sha256
+      AND p.crl_number<=x.crl_number
+      AND p.crl_this_update_ms<=x.crl_this_update_ms)))`);
+ const [bgUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bg_cross_source_streams s
+   LEFT JOIN inv_bf_publication_streams bf ON bf.log_ref=s.log_ref
+   LEFT JOIN inv_be_freeze_streams be ON be.log_ref=s.log_ref
+  WHERE s.last_revision>0 AND
+   (bf.log_ref IS NULL OR bf.governance_state<>'HELD_UNVERIFIED'
+    OR bf.last_publication_sha256<>s.last_publication_sha256
+    OR bf.last_publisher_spki_sha256<>s.last_publisher_pin_sha256
+    OR be.log_ref IS NULL OR be.state<>'FROZEN_UNVERIFIED')`);
+ if(Number(bgStreams[0].unsafe)!==0||Number(bgHistory[0].unsafe)!==0||
+    Number(bgUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BG candidate CRL/OCSP-auditor lineage, WORM/DR custody or HOLD-state mismatch');
+ if(target==='staging'&&Number(bgStreams[0].quarantined)>0)
+  problems.push('Phase 1BG unresolved cross-source audit quorum incident blocks staging acceptance');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -845,6 +896,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BgCandidateCrossSourceReviewStreams:Number(bgStreams[0].total),
+  phase1BgQuarantinedCrossSourceReviewStreams:Number(bgStreams[0].quarantined),
   phase1BfCandidatePublicationStreams:Number(bfStreams[0].total),
   phase1BfQuarantinedPublicationStreams:Number(bfStreams[0].quarantined),
   phase1BeEmergencyFrozenWitnessStreams:Number(beStreams[0].frozen),
@@ -868,6 +921,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BgIndependentCrlOcspRevocationAuthority:'NOT_VERIFIED',
+   phase1BgOutOfBandAuditorKeyCustody:'NOT_VERIFIED',
+   phase1BgRealProviderWormAndEncryptedDr:'NOT_VERIFIED',
    phase1BfAuthenticatedRevocationIssuerAndCrlOcsp:'NOT_VERIFIED',
    phase1BfActualWitnessKeyRevocation:'NOT_VERIFIED',
    phase1BfRealImmutableStorageAndDrAcceptance:'NOT_VERIFIED',
