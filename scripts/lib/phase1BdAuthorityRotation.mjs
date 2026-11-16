@@ -197,7 +197,9 @@ export function assessPhase1BdRotation({
  const handoverSha256=createHash('sha256').update(
   'AADITECH-PHASE-1BD-ACCEPTANCE-COMMIT-V1\0').update(msg)
   .update(JSON.stringify([
-   previousWitnessSignatures,replacementWitnessSignatures,reviews.map(r=>r.signature)
+   [...previousWitnessSignatures].sort((a,b)=>a.witnessRef.localeCompare(b.witnessRef)),
+   [...replacementWitnessSignatures].sort((a,b)=>a.witnessRef.localeCompare(b.witnessRef)),
+   reviews.map(r=>r.signature)
   ])).digest('hex');
  return deny({
   locallySignedHandoverConsistent:problems.length===0,
