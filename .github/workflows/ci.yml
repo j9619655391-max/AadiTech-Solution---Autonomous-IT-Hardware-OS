@@ -33,6 +33,8 @@ jobs:
         run: node scripts/phase1ba-independent-acceptance-preflight.mjs --ci-hold
       - name: Phase 1BA independent witness and Object Lock/DR acceptance HARD HOLD
         run: node scripts/phase1ba-acceptance-preflight.mjs --ci-hold
+      - name: Phase 1BB digest-only evidence intake and independent key custody HARD HOLD
+        run: node scripts/phase1bb-evidence-intake-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
@@ -252,6 +254,12 @@ jobs:
         run: bun run db:migrate:az-readiness
       - name: Phase 1AZ real MySQL witness/archive/DR packet revision and anti-rollback tests
         run: bun run test:az-readiness-mysql
+      - name: Apply Phase 1BB isolated six-source receipt/nonces schema in disposable MySQL
+        run: bun run db:migrate:bb-evidence
+      - name: Verify Phase 1BB checksum and idempotent schema rerun
+        run: bun run db:migrate:bb-evidence
+      - name: Phase 1BB transactional nonce, fork, replay and tamper adversarial MySQL tests
+        run: bun run test:bb-evidence-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
