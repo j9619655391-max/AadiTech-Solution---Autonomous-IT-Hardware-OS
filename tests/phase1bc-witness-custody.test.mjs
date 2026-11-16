@@ -90,3 +90,31 @@ test('chronology, rollback and wrong witness quorum fail closed',()=>{
  assert.equal(assess(missing).claimCryptographicallyConsistent,false);
  assert.throws(()=>assess({now:new Date('invalid')}));
 });
+
+test('Phase 1BC CLI accepts only zero-input HOLD without leaking evidence paths or credentials',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const file=fileURLToPath(new URL('../scripts/phase1bc-witness-custody-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[file,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const allowed=run(['--ci-hold']);
+ assert.equal(allowed.status,0,allowed.stderr);
+ const result=JSON.parse(allowed.stdout);
+ assert.equal(result.productionReleaseAuthorized,false);
+ assert.equal(result.productionReleaseBlocked,true);
+ assert.equal(result.sourceOfTruthAuthenticated,false);
+ assert.equal(result.releaseDecision,'HOLD');
+ for(const args of [[],['--approve'],['--network'],
+  ['--ci-hold','--provider-token','SUPER_SECRET'],
+  ['--input','/tmp/private-trust-chain']]){
+  const bad=run(args);
+  assert.equal(bad.status,2);
+  assert.equal(bad.stdout,'');
+  assert.match(bad.stderr,/HOLD/);
+  assert.ok(!bad.stderr.includes('SUPER_SECRET'));
+  assert.ok(!bad.stderr.includes('/tmp/private-trust-chain'));
+ }
+});
