@@ -71,7 +71,7 @@ test('Merkle inclusion checks both positions, rejects truncated, altered and ext
   assert.equal(phase1AyVerifyInclusion(body,[digest(81)]),false);
   assert.equal(phase1AyVerifyInclusion(body,[digest(80),digest(80)]),false);
  }
- assert.throws(()=>phase1AyVerifyInclusion(f.body,[digest(1).toUpperCase()]));
+ assert.throws(()=>phase1AyVerifyInclusion(f.body,['A'.repeat(64)]));
 });
 test('forged signature and substituted archive hash cannot become witnessed evidence',()=>{
  const f=fixture(),forged=structuredClone(f.args.anchors);
