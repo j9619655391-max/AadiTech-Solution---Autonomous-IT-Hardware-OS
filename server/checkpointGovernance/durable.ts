@@ -9,7 +9,7 @@ type Pin={role:'LEGAL'|'SECURITY';reviewerRef:string;keyId:string;publicKeyPem:s
 type Checkpoint={signatures:Array<{role:string;reviewerRef:string;keyId:string;signatureBase64:string}>;
  sequence:number;providerCode:string;requestedScope:string;issuedAt:string;expiresAt:string;
  priorCheckpointSha256:string|null;[key:string]:unknown};
-type Outcome='ACCEPTED_UNTRUSTED'|'REPLAY'|'REPLAY_VARIANT'|'FORK'|'ROLLBACK'|'GAP'|'QUARANTINED_OBSERVATION';
+type Outcome='ACCEPTED_UNTRUSTED'|'REPLAY'|'REPLAY_VARIANT'|'FORK'|'ROLLBACK'|'GAP'|'UNAUTHORIZED_KEY_CHANGE'|'QUARANTINED_OBSERVATION';
 const OPAQUE=/^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/;
 const SHA=/^[0-9a-f]{64}$/;
 const PUBLIC_PEM=/^-----BEGIN PUBLIC KEY-----\n(?:[A-Za-z0-9+/=]+\n)+-----END PUBLIC KEY-----\n?$/;
@@ -51,7 +51,9 @@ function validate(checkpoint:Checkpoint,pins:Pin[],now:Date){
   if(!verify(null,message,pub,Buffer.from(sig.signatureBase64,'base64')))
    throw Error('Invalid detached checkpoint signature');
  }
- return {receipt,claim:createHash('sha256').update(PREFIX).update(message).digest('hex')};
+ return {receipt,claim:createHash('sha256').update(PREFIX).update(message).digest('hex'),
+  signerPinHash:createHash('sha256').update('AADITECH-PHASE-1AX-PIN-COMMITMENT-V1\\0')
+   .update(JSON.stringify(pins.map(p=>[p.role,p.reviewerRef,p.keyId,p.publicKeySha256]))).digest('hex')};
 }
 export interface AxWriteArgs{
  logRef:string;checkpoint:Checkpoint;pins:Pin[];now?:Date;env?:NodeJS.ProcessEnv;
@@ -63,7 +65,7 @@ export async function recordPhase1AxOfflineCheckpoint(pool:Pool,{
  if(typeof logRef!=='string'||!OPAQUE.test(logRef))throw Error('Invalid checkpoint log reference');
  if(Buffer.byteLength(JSON.stringify(checkpoint),'utf8')>8192)
   throw Error('Checkpoint evidence exceeds bounded storage limit');
- const {receipt,claim}=validate(checkpoint,pins,now);
+ const {receipt,claim,signerPinHash}=validate(checkpoint,pins,now);
  const conn=await pool.getConnection();
  try{
   await conn.beginTransaction();
@@ -75,7 +77,7 @@ export async function recordPhase1AxOfflineCheckpoint(pool:Pool,{
     [logRef,checkpoint.providerCode,checkpoint.requestedScope]);
   const [heads]=await conn.execute<RowDataPacket[]>(
     `SELECT provider_code,requested_scope,last_sequence,last_receipt_sha256,
-       last_claim_sha256,governance_state FROM inv_ax_checkpoint_streams
+       last_claim_sha256,last_signer_pin_sha256,governance_state FROM inv_ax_checkpoint_streams
        WHERE log_ref=? FOR UPDATE`,[logRef]);
   const head=heads[0];
   if(!head||head.provider_code!==checkpoint.providerCode||
@@ -94,6 +96,7 @@ export async function recordPhase1AxOfflineCheckpoint(pool:Pool,{
   }
   let outcome:Outcome;
   if(head.governance_state==='QUARANTINED')outcome='QUARANTINED_OBSERVATION';
+  else if(priorSeq>0&&head.last_signer_pin_sha256!==signerPinHash)outcome='UNAUTHORIZED_KEY_CHANGE';
   else if(priorSeq===0)
    outcome=checkpoint.sequence===1&&checkpoint.priorCheckpointSha256===null?
     'ACCEPTED_UNTRUSTED':'GAP';
@@ -104,21 +107,21 @@ export async function recordPhase1AxOfflineCheckpoint(pool:Pool,{
   else if(checkpoint.priorCheckpointSha256!==head.last_receipt_sha256)outcome='FORK';
   else outcome='ACCEPTED_UNTRUSTED';
   await conn.execute(`INSERT INTO inv_ax_checkpoint_observations
-    (log_ref,checkpoint_sequence,receipt_sha256,claim_sha256,prior_receipt_sha256,
-     outcome,signed_checkpoint_json) VALUES (?,?,?,?,?,?,?)`,
-    [logRef,checkpoint.sequence,receipt,claim,checkpoint.priorCheckpointSha256,
+    (log_ref,checkpoint_sequence,receipt_sha256,claim_sha256,signer_pin_sha256,prior_receipt_sha256,
+     outcome,signed_checkpoint_json) VALUES (?,?,?,?,?,?,?,?)`,
+    [logRef,checkpoint.sequence,receipt,claim,signerPinHash,checkpoint.priorCheckpointSha256,
      outcome,JSON.stringify(checkpoint)]);
   if(outcome==='ACCEPTED_UNTRUSTED'){
    await conn.execute(`UPDATE inv_ax_checkpoint_streams SET last_sequence=?,
-      last_receipt_sha256=?,last_claim_sha256=? WHERE log_ref=?`,
-    [checkpoint.sequence,receipt,claim,logRef]);
-  }else if(outcome==='FORK'||outcome==='ROLLBACK'||outcome==='GAP'){
+      last_receipt_sha256=?,last_claim_sha256=?,last_signer_pin_sha256=? WHERE log_ref=?`,
+    [checkpoint.sequence,receipt,claim,signerPinHash,logRef]);
+  }else if(['FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE'].includes(outcome)){
    await conn.execute(`UPDATE inv_ax_checkpoint_streams
       SET governance_state='QUARANTINED' WHERE log_ref=?`,[logRef]);
   }
   await conn.commit();
   return Object.freeze({phase:'1AX',outcome,governanceState:
-    outcome==='FORK'||outcome==='ROLLBACK'||outcome==='GAP'?'QUARANTINED':head.governance_state as string,
+    ['FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE'].includes(outcome)?'QUARANTINED':head.governance_state as string,
     duplicateReceipt:false,productionReleaseAuthorized:false,releaseDecision:'HOLD'});
  }catch(error){await conn.rollback();throw error;}
  finally{conn.release();}
@@ -135,7 +138,7 @@ export async function inspectPhase1AxOfflineHistory(pool:Pool,logRef:string,env:
   const [rows]=await conn.execute<RowDataPacket[]>(`SELECT * FROM
    inv_ax_checkpoint_observations WHERE log_ref=? ORDER BY id FOR UPDATE`,[logRef]);
   const problems:string[]=[];let lastSequence=0,lastReceipt:string|null=null;
-  let lastClaim:string|null=null;
+  let lastClaim:string|null=null,lastPin:string|null=null;
   for(const item of rows){
    const cp=typeof item.signed_checkpoint_json==='string'?
     JSON.parse(item.signed_checkpoint_json):item.signed_checkpoint_json;
@@ -154,15 +157,16 @@ export async function inspectPhase1AxOfflineHistory(pool:Pool,logRef:string,env:
        item.prior_receipt_sha256!==lastReceipt)
      problems.push('ACCEPTED_HISTORY_GAP');
     lastSequence=Number(item.checkpoint_sequence);
-    lastReceipt=item.receipt_sha256;lastClaim=item.claim_sha256;
+    lastReceipt=item.receipt_sha256;lastClaim=item.claim_sha256;lastPin=item.signer_pin_sha256;
    }
-   if(['FORK','ROLLBACK','GAP'].includes(item.outcome)&&
+   if(['FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE'].includes(item.outcome)&&
       heads[0].governance_state!=='QUARANTINED')
     problems.push('INCIDENT_WITHOUT_QUARANTINE');
   }
   if(lastSequence!==Number(heads[0].last_sequence)||
      lastReceipt!==heads[0].last_receipt_sha256||
-     lastClaim!==heads[0].last_claim_sha256)problems.push('HEAD_DIVERGES_FROM_ACCEPTED_HISTORY');
+     lastClaim!==heads[0].last_claim_sha256||
+     lastPin!==heads[0].last_signer_pin_sha256)problems.push('HEAD_DIVERGES_FROM_ACCEPTED_HISTORY');
   await conn.commit();
   return Object.freeze({phase:'1AX',logRef,acceptedSequence:lastSequence,
     observationCount:rows.length,governanceState:heads[0].governance_state as string,
