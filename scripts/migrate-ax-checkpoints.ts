@@ -14,7 +14,7 @@ export function axMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
 }
 async function main(){
  axMigrationTarget(process.env);
- if(MIGRATIONS.at(-1)!=='0028_ax_checkpoint_governance')
+ if(MIGRATIONS[27]!=='0028_ax_checkpoint_governance')
   throw Error('Phase 1AX migration must be last registered migration');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
@@ -27,7 +27,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(r=>[String(r.id),String(r.checksum)]));
-  for(const id of MIGRATIONS.slice(0,-1)){
+  for(const id of MIGRATIONS.slice(0,27)){
    const sha=createHash('sha256').update(readFileSync('database/migrations/'+id+'.sql')).digest('hex');
    if(actual.get(id)!==sha)throw Error('Missing/mismatched prerequisite migration: '+id);
   }
