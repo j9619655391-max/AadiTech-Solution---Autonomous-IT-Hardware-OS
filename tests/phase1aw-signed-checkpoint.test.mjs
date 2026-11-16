@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {
  CHECKPOINT_PURPOSE,phase1AwCheckpointSigningBytes,
  phase1AwCheckpointReceiptSha256,phase1AwPolicyClaimsSha256,
+ phase1AwRecoveryClaimSha256,
  assessPhase1AwCheckpointRecovery
 } from '../scripts/lib/phase1AwSignedCheckpoint.mjs';
 import {
@@ -77,7 +78,7 @@ function append(j,type,incident='incident-2026-001',minute=-50){
  return j;
 }
 function checkpoint({sequence=1,issued=-20,expires=20,prior=null,
- journalValue=journal(),policyValue=policy(),keys}){
+ journalValue=journal(),policyValue=policy(),keys,recoveryClaimSha256=null}){
  const summary=verifyPhase1AvClaimJournal(journalValue,now);
  const body={
   schemaVersion:1,purpose:CHECKPOINT_PURPOSE,providerCode:PROVIDER_CODE,
@@ -85,7 +86,7 @@ function checkpoint({sequence=1,issued=-20,expires=20,prior=null,
   expiresAt:at(expires),priorCheckpointSha256:prior,
   journalEventCount:summary.eventCount,journalTailSha256:summary.tailSha256,
   policySnapshotSha256:phase1AwPolicyClaimsSha256(policyValue,now),
-  releaseDecision:'HOLD'
+  recoveryClaimSha256,releaseDecision:'HOLD'
  };
  const message=phase1AwCheckpointSigningBytes(body);
  const signatures=keys.signers.map((s,i)=>({
@@ -263,12 +264,14 @@ test('strict schema rejects unapproved release flags, missing journals, corrupt 
  }
  assert.throws(()=>inspect(f,{priorJournal:null}));
  assert.throws(()=>inspect(f,{priorPolicy:null}));
+ const beforePolicy=resigned({...f.second,issuedAt:at(-35),expiresAt:at(5)},f.keys);
+ assert.throws(()=>inspect(f,{currentCheckpoint:beforePolicy}));
  assert.throws(()=>assessPhase1AwCheckpointRecovery({now:null}));
 });
 test('even complete synthetic incident recovery claims remain held and cannot verify real restore',()=>{
  const f=fixture();
  const recovery={
-  schemaVersion:1,incidentRef:'incident-2026-001',recordedAt:at(-5),
+  schemaVersion:1,incidentRef:'incident-2026-001',recordedAt:at(-15),
   isolatedRestoreClaimSha256:sha(321),
   mfaRecoveryClaimSha256:sha(322),
   networkIsolationClaimSha256:sha(323),
@@ -279,12 +282,27 @@ test('even complete synthetic incident recovery claims remain held and cannot ve
    {role:'OWNER',reviewerRef:'owner-recovery-005'}
   ],outboundDispatchHeld:true,releaseDecision:'HOLD'
  };
- const report=inspect(f,{recovery});
+ const signed=resigned({...f.second,recoveryClaimSha256:phase1AwRecoveryClaimSha256(recovery)},f.keys);
+ const report=inspect(f,{recovery,currentCheckpoint:signed});
  assert.equal(report.recoveryClaimInspected,true);
  assert.equal(report.recoveryClaimSchemaComplete,true);
  assert.equal(report.realRestoreWitnessed,false);
  assert.equal(report.incidentQuarantineActive,true);
+ assert.ok(report.blockerCodes.includes('RECOVERY_CLAIMS_NOT_EXTERNALLY_WITNESSED'));
+ assert.ok(!report.blockerCodes.includes('RECOVERY_CLAIM_NOT_SIGNED_IN_CHECKPOINT'));
  held(report);
+ const detached=inspect(f,{recovery});
+ assert.ok(detached.blockerCodes.includes('RECOVERY_CLAIM_NOT_SIGNED_IN_CHECKPOINT'));
+ assert.equal(detached.incidentQuarantineActive,true);
+ held(detached);
+ const withheld=inspect(f,{currentCheckpoint:signed});
+ assert.ok(withheld.blockerCodes.includes('SIGNED_RECOVERY_CLAIM_MISSING'));
+ held(withheld);
+ const swapped=structuredClone(recovery);
+ swapped.isolatedRestoreClaimSha256=sha(999);
+ const swappedReport=inspect(f,{currentCheckpoint:signed,recovery:swapped});
+ assert.ok(swappedReport.blockerCodes.includes('RECOVERY_CLAIM_NOT_SIGNED_IN_CHECKPOINT'));
+ held(swappedReport);
  for(const change of [
   r=>{r.reviewers[1].reviewerRef=r.reviewers[0].reviewerRef;},
   r=>{r.reviewers[0].role='LEGAL';},
@@ -296,7 +314,7 @@ test('even complete synthetic incident recovery claims remain held and cannot ve
   r=>{r.recordedAt=at(-55);}
  ]){
   const modified=structuredClone(recovery);change(modified);
-  assert.throws(()=>inspect(f,{recovery:modified}));
+  assert.throws(()=>inspect(f,{recovery:modified,currentCheckpoint:signed}));
  }
 });
 test('public policy key sorting is stable, but never an external signed policy',()=>{
