@@ -144,6 +144,9 @@ export function assessPhase1BcOfflineAdapter({
  const nowMs=now.getTime(),issuerAuthorities=new Set(),issuerKeys=new Set();
  const issuerRefs=new Set(),issuerCount=new Map(),witnessAuthorities=
   new Set(bbRecords.map(r=>r.body.authorityRef));
+ const nonReviewerAuthorities=new Set(bbRecords
+  .filter(r=>r.body.sourceRole==='WITNESS'||r.body.sourceRole==='STORAGE_AUDITOR')
+  .map(r=>r.body.authorityRef));
  const byChallenge=new Map(bbRecords.map(r=>[r.body.challengeSha256,r.body]));
  let validIssuers=0;
  for(const entry of challengeIssuances){
@@ -199,7 +202,7 @@ export function assessPhase1BcOfflineAdapter({
      registered.authorityRef!==pin.authorityRef||
      reviewers.has(pin.sourceRef)||reviewAuthorities.has(pin.authorityRef)||
      issuerAuthorities.has(pin.authorityRef)||
-     witnessAuthorities.has(pin.authorityRef)||
+     nonReviewerAuthorities.has(pin.authorityRef)||
      storageReceipt.pin.authorityRef===pin.authorityRef)
    blockers.add('RECOVERY_APPROVER_AUTHORITY_COLLISION');
   reviewers.add(pin.sourceRef);reviewAuthorities.add(pin.authorityRef);
