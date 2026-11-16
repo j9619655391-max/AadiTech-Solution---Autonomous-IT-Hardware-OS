@@ -28,8 +28,8 @@ function subproof(m,items,b){
   [...subproof(m-p,items.slice(p),false),root(items.slice(0,p))];
 }
 const hex=b=>b.toString('hex');
-export function bcFixture(logRef='bc-log-checkpoint-001'){
- const f=bbFixture(logRef),a=f.azPacket.archive;
+export function bcFixture(logRef='bc-log-checkpoint-001',source=null){
+ const f=source??bbFixture(logRef),a=f.azPacket.archive;
  const first={schemaVersion:1,purpose:ANCHOR_PURPOSE,
   logRef:a.logRef,checkpointReceiptSha256:a.checkpointReceiptSha256,
   archiveObjectSha256:a.archiveObjectSha256,treeSize:1,leafIndex:0,
