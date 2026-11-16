@@ -73,7 +73,8 @@
     "db:migrate:bb-evidence": "tsx scripts/migrate-bb-evidence.ts",
     "test:bb-evidence-mysql": "tsx --test tests/bb-evidence-mysql.integration.ts",
     "db:migrate:bc-witness": "tsx scripts/migrate-bc-witness-continuity.ts",
-    "test:bc-witness-mysql": "tsx --test tests/bc-witness-mysql.integration.ts"
+    "test:bc-witness-mysql": "tsx --test tests/bc-witness-mysql.integration.ts",
+    "db:migrate:bd-evidence-review": "tsx scripts/migrate-bd-evidence-review.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
