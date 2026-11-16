@@ -123,7 +123,7 @@ test('missing prior digest and revision gap trigger sticky review quarantine',as
 test('forged signed reviewer or provider cannot create any persisted review',async()=>{
  const f=bdFixture(log());await prepare(f);
  f.recoveryAttestations[0].signature.signatureBase64=Buffer.alloc(64,5).toString('base64');
- await assert.rejects(review(f,1,null),/internally inconsistent/);
+ await assert.rejects(review(f,1,null),/inconsistent candidate evidence/);
  const [rows]=await pool.execute<any[]>(
   'SELECT COUNT(*) AS n FROM inv_bd_review_streams WHERE log_ref=?',
   [f.azPacket.archive.logRef]);
