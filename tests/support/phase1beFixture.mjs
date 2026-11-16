@@ -37,13 +37,13 @@ export function beFixture(logRef='be-revocation-checkpoint-001'){
   quarantineRequired:true,outboundHeld:true,releaseDecision:'HOLD'
  };
  const result={bdEvidence,body,survivingWitnessSignature:null,
-  governanceSignatures:[],now:bdEvidence.now,
-  resign(){
-   const bytes=phase1BeFreezeSigningBytes(this.body);
-   this.survivingWitnessSignature=signature(bdEvidence.actors[1],bytes);
-   this.governanceSignatures=bdEvidence.actors.slice(3).map(x=>signature(x,bytes));
-   return this;
-  }
- };
+  governanceSignatures:[],now:bdEvidence.now};
+ // Synthetic signing helpers must never become accepted evidence fields.
+ Object.defineProperty(result,'resign',{value:function(){
+  const bytes=phase1BeFreezeSigningBytes(this.body);
+  this.survivingWitnessSignature=signature(bdEvidence.actors[1],bytes);
+  this.governanceSignatures=bdEvidence.actors.slice(3).map(x=>signature(x,bytes));
+  return this;
+ }});
  return result.resign();
 }
