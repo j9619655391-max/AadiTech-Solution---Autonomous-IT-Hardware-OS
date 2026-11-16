@@ -182,3 +182,32 @@ test('issuer signing is domain-separated from storage and DR receipts',()=>{
  assert.notDeepEqual(phase1BcRecoveryBytes(f.recoveryReceipts[0].body),
   phase1BcStorageBytes(f.storageReceipt.body));
 });
+
+test('Phase 1BC preflight refuses credentials, file imports, network access and production activation',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const script=fileURLToPath(new URL('../scripts/phase1bc-external-adapter-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[script,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const ok=run(['--ci-hold']);
+ assert.equal(ok.status,0,ok.stderr);
+ const parsed=JSON.parse(ok.stdout);
+ assert.equal(parsed.releaseDecision,'HOLD');
+ assert.equal(parsed.productionReleaseAuthorized,false);
+ assert.equal(parsed.productionReleaseBlocked,true);
+ assert.equal(parsed.authenticProviderContractVerified,false);
+ assert.equal(parsed.providerIssuedObjectLockReceiptsVerified,false);
+ for(const args of [[],['--approve'],['--ci-hold','--credential','SECRET_TOKEN'],
+  ['--external-url','https://example.invalid'],['--evidence-file','/tmp/private-evidence'],
+  ['--restore-production']]){
+  const denied=run(args);
+  assert.equal(denied.status,2);
+  assert.equal(denied.stdout,'');
+  assert.match(denied.stderr,/HARD HOLD/);
+  for(const forbidden of ['SECRET_TOKEN','https://example.invalid','/tmp/private-evidence'])
+   assert.ok(!denied.stderr.includes(forbidden));
+ }
+});
