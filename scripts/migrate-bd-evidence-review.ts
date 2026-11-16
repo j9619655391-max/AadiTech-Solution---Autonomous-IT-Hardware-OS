@@ -18,7 +18,7 @@ export function bdMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 async function main(){
  bdMigrationTarget(process.env);
  const id='0032_bd_external_evidence_reviews';
- if(MIGRATIONS.at(-1)!==id||MIGRATIONS.length!==32)
+ if(MIGRATIONS[31]!==id||MIGRATIONS.length<32)
   throw Error('1BD expected final migration registry 0032');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
