@@ -66,7 +66,7 @@ test('Phase 1AU zero-input snapshot and all synthetic well-formed claims remain 
  assert.equal(r.baselineInventoryInspected,true);
  assert.equal(r.policyDriftDetected,false);
  assert.equal(r.changedClaimCount,0);
- assert.equal(r.dueSoonEvidenceCount,1); // OCSP claim requires recheck shortly
+ assert.equal(r.dueSoonEvidenceCount,2); // OCSP and 12h CRL review both due within 24h
  assert.equal(r.releaseDecision,'HOLD');
  assert.equal(r.productionReleaseAuthorized,false);
  assert.equal(r.authorizedCredentialsBound,false);
