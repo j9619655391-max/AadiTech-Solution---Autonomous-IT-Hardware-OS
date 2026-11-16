@@ -289,6 +289,14 @@ export function assessPhase1AwCheckpointRecovery({
    blockers.add('JOURNAL_HISTORY_ROLLBACK_OR_FORK');
    historyProblem=true;
   }
+  if(current.issuedAt<utc(priorCheckpoint.issuedAt)||
+     current.issuedAt>utc(priorCheckpoint.expiresAt)){
+   blockers.add('SIGNED_CHECKPOINT_CONTINUITY_GAP');
+   historyProblem=true;
+  }
+ }else if(body(currentCheckpoint).sequence>1){
+  blockers.add('MISSING_EXPECTED_SIGNED_PREDECESSOR');
+  historyProblem=true;
  }
  let recoveryChecked=false,recoveryMismatch=false;
  if(recovery!==null){
