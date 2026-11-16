@@ -69,7 +69,9 @@
     "db:migrate:ax-checkpoints": "tsx scripts/migrate-ax-checkpoints.ts",
     "test:ax-checkpoint-mysql": "tsx --test tests/ax-checkpoint-mysql.integration.ts",
     "db:migrate:az-readiness": "tsx scripts/migrate-az-readiness.ts",
-    "test:az-readiness-mysql": "tsx --test tests/az-readiness-mysql.integration.ts"
+    "test:az-readiness-mysql": "tsx --test tests/az-readiness-mysql.integration.ts",
+    "db:migrate:bb-evidence": "tsx scripts/migrate-bb-evidence.ts",
+    "test:bb-evidence-mysql": "tsx --test tests/bb-evidence-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
