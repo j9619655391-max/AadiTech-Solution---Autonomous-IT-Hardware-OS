@@ -111,10 +111,15 @@ export function assessPhase1AxCheckpointWitnesses({observations=[],trustedPins=[
   if(!signature(entry.witnessSignature,msg,p)){blockers.add('INVALID_WITNESS_SIGNATURE');continue;}
   valid++;
   const cp=entry.checkpoint;
+  // Distinct detached signatures on identical checkpoint bodies do not
+  // constitute an equivocation. Compare canonical signed claims, not receipts.
+  const {signatures: ignoredSignatures,...checkpointBody}=cp;
+  const claimDigest=createHash('sha256').update(phase1AwCheckpointSigningBytes(checkpointBody)).digest('hex');
+  if(when<instant(cp.issuedAt)||when>instant(cp.expiresAt))blockers.add('WITNESS_OUTSIDE_CHECKPOINT_WINDOW');
   const locus=cp.providerCode+'|'+cp.requestedScope+'|'+cp.sequence;
   const previous=seen.get(locus);
-  if(previous&&previous!==receipt)blockers.add('SIGNED_CHECKPOINT_EQUIVOCATION');
-  else seen.set(locus,receipt);
+  if(previous&&previous!==claimDigest)blockers.add('SIGNED_CHECKPOINT_EQUIVOCATION');
+  else seen.set(locus,claimDigest);
   if(authorities.has(p.authorityRef))blockers.add('WITNESS_AUTHORITY_COLLISION');
   authorities.add(p.authorityRef);
  }
@@ -122,7 +127,8 @@ export function assessPhase1AxCheckpointWitnesses({observations=[],trustedPins=[
  if(valid!==observations.length)blockers.add('UNVERIFIED_WITNESS_OBSERVATION');
  return Object.freeze({phase:'1AX',validWitnessObservations:valid,distinctWitnessAuthorities:authorities.size,
   equivocationDetected:blockers.has('SIGNED_CHECKPOINT_EQUIVOCATION'),
-  quarantined:blockers.size>1,independentExternalWitnessesAuthenticated:false,
+  quarantined:true,checkpointSignaturesAuthenticated:false,
+  independentExternalWitnessesAuthenticated:false,
   productionReleaseAuthorized:false,releaseDecision:'HOLD',
   blockerCodes:Object.freeze([...blockers].sort())});
 }
