@@ -64,7 +64,8 @@
     "test:staging-security": "tsx --test tests/staging-https-probe.test.ts tests/staging-acceptance.test.ts tests/staging-evidence-integrity.test.ts tests/phase1at-private-staging-inputs.test.ts",
     "release:candidate": "tsx scripts/record-release-candidate.ts",
     "provider:policy-drift-preflight": "node scripts/phase1au-policy-drift-preflight.mjs",
-    "provider:incident-preflight": "node scripts/phase1av-incident-preflight.mjs"
+    "provider:incident-preflight": "node scripts/phase1av-incident-preflight.mjs",
+    "provider:signed-checkpoint-preflight": "node scripts/phase1aw-checkpoint-preflight.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
