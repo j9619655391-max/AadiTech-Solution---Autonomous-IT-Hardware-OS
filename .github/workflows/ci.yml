@@ -280,6 +280,10 @@ jobs:
         run: bun run db:migrate:bc-witness
       - name: Phase 1BC AZ-bound MySQL head continuity, fork, rollback and key-change suite
         run: bun run test:bc-witness-mysql
+      - name: Apply Phase 1BD offline witness/storage/DR review HOLD schema on disposable CI
+        run: bun run db:migrate:bd-evidence-review
+      - name: Verify Phase 1BD migration checksum and idempotent rerun
+        run: bun run db:migrate:bd-evidence-review
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
