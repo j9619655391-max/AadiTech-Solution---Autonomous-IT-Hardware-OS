@@ -266,6 +266,10 @@ jobs:
         run: bun run db:migrate:bb-evidence
       - name: Phase 1BB transactional nonce, fork, replay and tamper adversarial MySQL tests
         run: bun run test:bb-evidence-mysql
+      - name: Apply Phase 1BC held witness custody continuity schema on disposable MySQL
+        run: bun run db:migrate:bc-witness
+      - name: Verify Phase 1BC migration checksum and idempotent rerun
+        run: bun run db:migrate:bc-witness
       - name: Apply Phase 1BC guarded witness continuity schema on disposable CI
         run: bun run db:migrate:bc-witness
       - name: Verify Phase 1BC schema checksum and idempotent rerun
