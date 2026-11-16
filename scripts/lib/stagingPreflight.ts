@@ -24,7 +24,8 @@ export const MIGRATIONS=[
  '0031_bc_witness_continuity_holds',
  '0032_bd_external_evidence_reviews',
  '0033_be_revocation_freeze_holds',
- '0034_bf_revocation_publication_holds'
+ '0034_bf_revocation_publication_holds',
+ '0035_bg_cross_source_acceptance_holds'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
