@@ -37,6 +37,8 @@ jobs:
         run: node scripts/phase1bb-evidence-intake-preflight.mjs --ci-hold
       - name: Phase 1BB RFC6962 append-only cross-witness consistency HARD HOLD
         run: node scripts/phase1bb-consistency-preflight.mjs --ci-hold
+      - name: Phase 1BC provider challenge, Object Lock and witnessed DR HARD HOLD
+        run: node scripts/phase1bc-external-adapter-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
