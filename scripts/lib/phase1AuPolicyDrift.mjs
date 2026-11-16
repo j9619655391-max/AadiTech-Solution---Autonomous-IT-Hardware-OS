@@ -14,7 +14,7 @@ export const EVIDENCE_FIELDS=Object.freeze([
   ...AUTHORITY_DIGEST_FIELDS,...INDEPENDENT_REVIEW_DIGEST_FIELDS
 ]);
 const SHA=/^[a-f0-9]{64}$/;
-const UTC=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+const UTC=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const STATES=new Set(['NOT_CHECKED','CLAIMED_NOT_REVOKED','UNKNOWN','REVOKED']);
 const POLICY_KEYS=['ccaCpsVersion','ccaDisclosureUrl','trustDomain','incidentDenylistSha256'];
 const SNAPSHOT_KEYS=['schemaVersion','providerCode','requestedScope','sequence','recordedAt',
@@ -98,7 +98,7 @@ function hardHold(){
     currentInventoryInspected:false,baselineInventoryInspected:false,
     policyDriftDetected:null,changedClaimCount:0,expiredEvidenceCount:0,
     dueSoonEvidenceCount:0,revokedEvidenceCount:0,unknownRevocationCount:0,
-    evidenceReviewRollbackDetected:false,incidenceInventoryChanged:false,
+    evidenceReviewRollbackDetected:false,incidentInventoryChanged:false,
     currentCpsReferenceMismatch:false,
     externalProviderIdentityVerified:false,independentlyAuthenticatedRcaiCaChain:false,
     authenticatedLiveCrlOcsp:false,authorizedCredentialsBound:false,
@@ -163,14 +163,14 @@ export function assessPhase1AuPolicyDrift(baseline=null,current=null,now=new Dat
   reasons.add('NO_AUTHENTICATED_EXTERNAL_PROVIDER_OR_LEGAL_APPROVAL');
   return {
     ...result,currentInventoryInspected:true,baselineInventoryInspected:baseline!==null,
-    policyDriftDetected:[...reasons].some(r=>[
+    policyDriftDetected:baseline===null?null:[...reasons].some(r=>[
       'PUBLIC_INCIDENT_INVENTORY_CHANGED','PUBLIC_CPS_REFERENCE_MISMATCH',
       'POLICY_REFERENCE_DRIFT','SHA_CLAIM_CHANGED_REVIEW_REQUIRED'
     ].includes(r)),
     changedClaimCount:changed,expiredEvidenceCount:expired,
     dueSoonEvidenceCount:dueSoon,revokedEvidenceCount:revoked,
     unknownRevocationCount:unknown,evidenceReviewRollbackDetected:rollback,
-    incidenceInventoryChanged:reasons.has('PUBLIC_INCIDENT_INVENTORY_CHANGED'),
+    incidentInventoryChanged:reasons.has('PUBLIC_INCIDENT_INVENTORY_CHANGED'),
     currentCpsReferenceMismatch:reasons.has('PUBLIC_CPS_REFERENCE_MISMATCH'),
     blockers:[...reasons].sort()
   };
