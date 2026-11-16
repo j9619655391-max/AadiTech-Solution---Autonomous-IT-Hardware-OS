@@ -54,6 +54,7 @@ export function bfFixture(logRef='bf-revocation-checkpoint-001'){
   quarantineRequired:true,outboundHeld:true,releaseDecision:'HOLD'};
  const result={freezeEvidence,body,publisher:null,survivingWitness:null,
   securityReviewer:null,now};
+ Object.defineProperty(result,'publisherActor',{value:issuer});
  Object.defineProperty(result,'resign',{value:function(){
   const bytes=phase1BfPublicationSigningBytes(this.body);
   this.publisher=wrap(issuer,bytes);
