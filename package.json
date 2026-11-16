@@ -77,7 +77,9 @@
     "db:migrate:bd-evidence-review": "tsx scripts/migrate-bd-evidence-review.ts",
     "test:bd-review-mysql": "tsx --test tests/bd-review-mysql.integration.ts",
     "db:migrate:be-freeze": "tsx scripts/migrate-be-revocation-freeze.ts",
-    "test:be-freeze-mysql": "tsx --test tests/be-revocation-mysql.integration.ts"
+    "test:be-freeze-mysql": "tsx --test tests/be-revocation-mysql.integration.ts",
+    "db:migrate:bf-publication": "tsx scripts/migrate-bf-publication.ts",
+    "test:bf-publication-mysql": "tsx --test tests/bf-publication-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
