@@ -8,7 +8,9 @@ import {fingerprint} from '../externalTrust/validation';
 import {chainEvidence} from '../evidenceChain/validation';
 import {RELEASE_BLOCKERS} from '../providerSelection/validation';
 export {ChainInputError,ChainConflictError,exact,ensureId,sha};
-export const CCA_CURRENT_CPS_REFERENCE='https://cca.gov.in/sites/files/pdf/Licensed-CA/eMudhra%204.2.0_signed.pdf';
+// Stable CCA disclosure index, not a self-updating or provider-authenticated CPS.
+ // The public record listed v4.2.1 on 2026-11-16; each review must confirm it.
+export const CCA_CURRENT_CPS_REFERENCE='https://cca.gov.in/e_mudhra.html';
 export const AO_BLOCKERS=[...RELEASE_BLOCKERS,
  'No externally signed eMudhra sandbox agreement, authenticated API credentials or trusted provider enrollment',
  'No independently authenticated real MCA company record or legally delegated supplier/warehouse signer',
