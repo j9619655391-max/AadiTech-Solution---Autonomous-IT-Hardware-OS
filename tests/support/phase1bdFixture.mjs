@@ -19,8 +19,8 @@ function storageActor(){
   publicKeySha256:digest(publicKey.export({format:'der',type:'spki'}))
  }};
 }
-export function bdFixture(){
- const base=bbFixture();
+export function bdFixture(logRef='checkpoint-log-001'){
+ const base=bbFixture(logRef);
  const {azPacket,records,actors}=base;
  const batch=assessPhase1BbEvidenceIntake({azPacket,records,now}).batchSha256;
  const packetSha=records[0].body.packetSha256,a=azPacket.archive;
