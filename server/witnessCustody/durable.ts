@@ -56,6 +56,12 @@ export async function recordPhase1BcWitnessCustody(pool:Pool,{
    'SELECT * FROM inv_bc_witness_streams WHERE log_ref=? FOR UPDATE',[logRef]);
   const head=heads[0];
   if(!head)throw Error('Phase 1BC missing locked witness head');
+  // Phase 1BE emergency witness freeze: fail before exact replay or append.
+  // Lock order AZ -> BC -> BE matches the downstream freeze transaction.
+  const [beFreezes]=await conn.execute<RowDataPacket[]>(
+   'SELECT state,last_incident_sha256 FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
+  if(beFreezes.some(r=>r.state!=='HELD_UNVERIFIED'||r.last_incident_sha256!==null))
+   throw Error('Phase 1BE emergency witness revocation freeze blocks BC head writes');
   const size=Number(head.last_tree_size);
   if(!Number.isSafeInteger(size)||size<0)
    throw Error('Phase 1BC malformed previous witness head');
