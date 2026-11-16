@@ -72,11 +72,10 @@ test('AZ dossier substitution, forged signature, invalid head and truncated path
 test('witness key substitution, duplicated claimed administration and extra fields cannot self-authenticate',()=>{
  const f=bcFixture(),key=f.make(2,5);
  key.observations[0].pin.publicKeySha256=h(20);
- let r=assess(key);
- assert.equal(r.claimCryptographicallyConsistent,false);
+ assert.throws(()=>assess(key),/unpinned Ed25519 public key/);
  const collision=f.make(2,5);
  collision.observations[1].pin.authorityRef=collision.observations[0].pin.authorityRef;
- r=assess(collision);
+ const r=assess(collision);
  assert.equal(r.claimCryptographicallyConsistent,false);
  const oversized=f.make(2,5);
  oversized.observations[0].credential='NOT_ALLOWED';
@@ -85,7 +84,7 @@ test('witness key substitution, duplicated claimed administration and extra fiel
 test('chronology, rollback and wrong witness quorum fail closed',()=>{
  const f=bcFixture(),future=f.make(2,5);
  future.observations[0].current.body.observedAt='2027-11-16T17:00:00.000Z';
- assert.equal(assess(future).claimCryptographicallyConsistent,false);
+ assert.throws(()=>assess(future),/Invalid anchor lifetime/);
  const missing=f.make(2,5);
  missing.observations.pop();
  assert.equal(assess(missing).claimCryptographicallyConsistent,false);
