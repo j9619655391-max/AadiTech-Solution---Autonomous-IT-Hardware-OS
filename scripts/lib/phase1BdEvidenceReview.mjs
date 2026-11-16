@@ -129,6 +129,12 @@ export function assessPhase1BdEvidenceReview({
  azPacket=null,bbRecords=[],witnessEnrollments=[],storageReceipt=null,
  recoveryAttestations=[],now=new Date()
 }={}){
+ const supplied=arguments[0];
+ if(supplied!==undefined&&(!supplied||typeof supplied!=='object'||
+    Array.isArray(supplied)||Object.getPrototypeOf(supplied)!==Object.prototype||
+    Object.keys(supplied).some(k=>!['azPacket','bbRecords','witnessEnrollments',
+      'storageReceipt','recoveryAttestations','now'].includes(k))))
+  throw Error('1BD unrecognized dossier attribute rejected');
  if(!(now instanceof Date)||!Number.isFinite(now.getTime()))
   throw Error('1BD invalid evaluation clock');
  if(!Array.isArray(bbRecords)||bbRecords.length>6||
