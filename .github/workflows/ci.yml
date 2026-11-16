@@ -27,6 +27,8 @@ jobs:
         run: node scripts/phase1aw-checkpoint-preflight.mjs --ci-hold
       - name: Phase 1AY transparency witness and disaster recovery zero-input HARD HOLD
         run: node scripts/phase1ay-witness-recovery-preflight.mjs --ci-hold
+      - name: Phase 1AZ external witness, WORM archive, and encrypted DR readiness HARD HOLD
+        run: node scripts/phase1az-external-readiness-preflight.mjs --ci-hold
       - name: Baseline tests
         run: bun run test
       - name: Build
