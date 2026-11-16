@@ -46,6 +46,18 @@ export async function recordPhase1AzReadiness(pool:Pool,{
    return Object.freeze({phase:'1AZ',outcome:'REPLAY',governanceState:head.governance_state,
     productionReleaseAuthorized:false,productionReleaseBlocked:true,releaseDecision:'HOLD'});
   }
+  // Repeated rejected evidence is idempotent. An already accepted historical
+  // digest still produces a *first* rollback incident when replayed after a
+  // newer head, but duplicates of that incident must not grow the ledger.
+  const [recordedIncidents]=await conn.execute<RowDataPacket[]>(
+   "SELECT id FROM inv_az_readiness_packets WHERE log_ref=? AND packet_sha256=? AND outcome<>'RECORDED_UNTRUSTED' LIMIT 1 FOR UPDATE",
+   [logRef,digest]);
+  if(recordedIncidents.length){
+   await conn.commit();
+   return Object.freeze({phase:'1AZ',outcome:'DUPLICATE_REJECTED',
+    governanceState:head.governance_state,productionReleaseAuthorized:false,
+    productionReleaseBlocked:true,releaseDecision:'HOLD'});
+  }
   let outcome:string;
   if(head.governance_state==='QUARANTINED')outcome='POST_INCIDENT_QUARANTINED';
   else if(!assessment.internalEvidenceConsistent)outcome='INVALID_CLAIM_QUARANTINED';
