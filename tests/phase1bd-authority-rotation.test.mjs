@@ -153,3 +153,17 @@ test('Phase 1BD CLI rejects activation, credentials and private evidence without
   assert.ok(!rejected.stderr.includes('/tmp/secret-pki'));
  }
 });
+
+test('independently signed witness cosignature ordering cannot change canonical acceptance digest',()=>{
+ const f=bdRotationFixture(),reference=evaluate(f);
+ const g=bdRotationFixture();
+ // Compare order on a single fixture because each fixture has fresh keys.
+ const initial=evaluate(g);
+ g.previousWitnessSignatures.reverse();
+ g.replacementWitnessSignatures.reverse();
+ const reordered=evaluate(g);
+ assert.equal(reordered.locallySignedHandoverConsistent,true,reordered.blockerCodes.join(','));
+ assert.equal(reordered.handoverSha256,initial.handoverSha256);
+ assert.equal(reordered.productionReleaseAuthorized,false);
+ assert.equal(reference.productionReleaseAuthorized,false);
+});
