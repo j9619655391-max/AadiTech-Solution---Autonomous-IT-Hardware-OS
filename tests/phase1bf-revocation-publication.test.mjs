@@ -49,6 +49,7 @@ test('publisher cannot share witness or governance administrator or substitute t
  assert.ok(r.blockerCodes.includes('REPLACED_PUBLISHER_WITNESS_OR_SECURITY_PIN'));
  const g=bfFixture();
  g.securityReviewer.pin.publicKeySha256=g.survivingWitness.pin.publicKeySha256;
+ g.securityReviewer.pin.publicKeyPem=g.survivingWitness.pin.publicKeyPem;
  assert.equal(assess(g).locallySignedPublicationConsistent,false);
  assert.ok(assess(g).blockerCodes.includes('PUBLISHER_COMMON_CONTROL_OR_KEY_REUSE'));
 });
