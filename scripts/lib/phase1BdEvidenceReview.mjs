@@ -251,9 +251,21 @@ export function assessPhase1BdEvidenceReview({
   blockers.add('THREE_PARTY_RECOVERY_QUORUM_MISSING');
  if(drClaims.size!==1)
   blockers.add('RECOVERY_OBSERVERS_DISAGREE_ON_EVIDENCE');
+ // Audit commitment must include signer identity/SPKI and detached signature,
+ // not only the claim bodies. This detects candidate source substitution even
+ // when the same storage retention metadata is re-signed by another local key.
+ const signedRef=(entry,bytes)=>[
+  hash(bytes),entry.pin.role,entry.pin.sourceRef,entry.pin.authorityRef,
+  entry.pin.keyId,entry.pin.publicKeySha256,
+  entry.signature.sourceRef,entry.signature.keyId,entry.signature.signatureBase64
+ ];
+ const ordered=items=>items.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
  const digest=hash(Buffer.from('AADITECH-PHASE-1BD-REVIEW-V1\0'+JSON.stringify([
-  pkt,batch,witnessEnrollments.map(x=>hash(phase1BdWitnessBytes(x.body))).sort(),
-  hash(sbytes),[...drClaims].sort()]),'utf8'));
+  pkt,batch,
+  ordered(witnessEnrollments.map(x=>signedRef(x,phase1BdWitnessBytes(x.body)))),
+  signedRef(storageReceipt,sbytes),
+  ordered(recoveryAttestations.map(x=>signedRef(x,phase1BdRecoveryBytes(x.body))))
+ ]),'utf8'));
  const issues=[...blockers].filter(x=>!BASE.includes(x));
  return deny({offlineEvidenceConsistent:issues.length===0,reviewDigestSha256:digest,
   candidateWitnessSignaturesChecked:witnessValid,
