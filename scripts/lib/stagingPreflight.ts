@@ -645,6 +645,34 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1BB offline nonce custody, persisted head or release-HOLD integrity mismatch');
  if(target==='staging'&&Number(bbStreams[0].quarantined)!==0)
   problems.push('Phase 1BB signed evidence intake quarantine unresolved in staging');
+ // Phase 1BC candidate Merkle heads are not independently authenticated.
+ // Read-only checks prevent silent local head/release state promotion only.
+ const [bcStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_source_authenticated<>'NO' OR independent_key_custody_verified<>'NO'
+   OR immutable_worm_retention_verified<>'NO' OR production_release<>'HOLD'
+   OR (last_tree_size=0 AND (last_root_sha256 IS NOT NULL OR
+     last_az_packet_sha256 IS NOT NULL OR last_witness_pinset_sha256 IS NOT NULL))
+   OR (last_tree_size>0 AND (last_root_sha256 IS NULL OR
+     last_az_packet_sha256 IS NULL OR last_witness_pinset_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bc_witness_observations e
+    WHERE e.log_ref=inv_bc_witness_streams.log_ref AND
+      e.outcome NOT IN ('GENESIS_UNVERIFIED','EXTENSION_UNVERIFIED')))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bc_witness_observations e
+    WHERE e.log_ref=inv_bc_witness_streams.log_ref AND
+      e.outcome NOT IN ('GENESIS_UNVERIFIED','EXTENSION_UNVERIFIED')))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bc_witness_streams`);
+ const [bcOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bc_witness_observations e LEFT JOIN inv_bc_witness_streams s
+   ON e.log_ref=s.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(bcStreams[0].unsafe)!==0||Number(bcOrphans[0].unsafe)!==0)
+  problems.push('Phase 1BC local witness custody HEAD/quarantine or release HOLD mismatch');
+ if(target==='staging'&&Number(bcStreams[0].quarantined)!==0)
+  problems.push('Phase 1BC witness split-view or key-change incident unresolved in staging');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -691,6 +719,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BcHeldWitnessCustodyStreams:Number(bcStreams[0].total),
+  phase1BcQuarantinedWitnessCustodyStreams:Number(bcStreams[0].quarantined),
   phase1BbHeldEvidenceIntakeStreams:Number(bbStreams[0].total),
   phase1BbQuarantinedEvidenceIntakeStreams:Number(bbStreams[0].quarantined),
   phase1AzOfflineReadinessStreams:Number(azStreams[0].total),
@@ -706,6 +736,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BcIndependentSourceOfTruth:'NOT_VERIFIED',
+   phase1BcExternallyPinnedWitnessKeyCustody:'NOT_VERIFIED',
+   phase1BcPublishedImmutableArchiveAndRealDr:'NOT_VERIFIED',
    phase1BbIndependentPublisherEvidence:'NOT_VERIFIED',
    phase1BbWitnessKeyCustody:'NOT_VERIFIED',
    phase1BbCloudRetentionEnforcement:'NOT_VERIFIED',
