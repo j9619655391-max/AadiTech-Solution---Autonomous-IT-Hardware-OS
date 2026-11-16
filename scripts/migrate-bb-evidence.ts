@@ -16,7 +16,7 @@ export function bbMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'{
 async function main(){
  bbMigrationTarget(process.env);
  const id='0030_bb_evidence_intake_holds';
- if(MIGRATIONS.at(-1)!==id||MIGRATIONS.length!==30)
+ if(MIGRATIONS[29]!==id||MIGRATIONS.length<30)
   throw Error('Phase 1BB migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
@@ -29,7 +29,7 @@ async function main(){
   locked=true;
   const [rows]=await conn.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(r=>[String(r.id),String(r.checksum)]));
-  for(const prior of MIGRATIONS.slice(0,-1)){
+  for(const prior of MIGRATIONS.slice(0,29)){
    const hash=createHash('sha256').update(
     readFileSync('database/migrations/'+prior+'.sql')).digest('hex');
    if(actual.get(prior)!==hash)throw Error('Phase 1BB prerequisite mismatch: '+prior);
