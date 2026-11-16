@@ -84,7 +84,17 @@ export function assessPhase1BbEvidenceIntake({
  if(!Array.isArray(records)||records.length>6)
   throw Error('1BB bounded evidence inventory required');
  const blockers=new Set(BASE);
- const deny=(extra={})=>Object.freeze({phase:'1BB',...extra,
+ /** @param {{internalEvidenceConsistent?:boolean,batchSha256?:string|null,
+  challengeDigests?:readonly string[],signedClaimsChecked?:number,
+  requestedSigners?:number,independentChallengeIssuanceVerified?:boolean,
+  externalIssuerIdentityVerified?:boolean}} [extra] */
+ const deny=({internalEvidenceConsistent=false,batchSha256=null,
+  challengeDigests=[],signedClaimsChecked=0,requestedSigners=6,
+  independentChallengeIssuanceVerified=false,
+  externalIssuerIdentityVerified=false}={})=>Object.freeze({phase:'1BB',
+  internalEvidenceConsistent,batchSha256,challengeDigests,
+  signedClaimsChecked,requestedSigners,independentChallengeIssuanceVerified,
+  externalIssuerIdentityVerified,
   independentSourcesAuthenticated:false,keyCustodyAuthenticated:false,
   externalImmutabilityVerified:false,realDRWitnessed:false,
   productionReleaseAuthorized:false,productionReleaseBlocked:true,
