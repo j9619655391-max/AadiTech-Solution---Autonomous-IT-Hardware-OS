@@ -707,6 +707,50 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   problems.push('Phase 1BD local evidence review chain, incident HOLD or trust-promotion mismatch');
  if(target==='staging'&&Number(bdStreams[0].quarantined)!==0)
   problems.push('Phase 1BD unresolved independent evidence review quarantine in staging');
+ // Phase 1BE: a locally signed candidate emergency freeze is *not*
+ // authoritative revocation or a provider-issued release. Staging with an
+ // unresolved freeze is denied even if local digest records are consistent.
+ const [beStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN state='FROZEN_UNVERIFIED' THEN 1 ELSE 0 END),0) AS frozen,
+  COALESCE(SUM(CASE WHEN state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_witness_authority_authenticated<>'NO'
+   OR independently_published_revocation_verified<>'NO'
+   OR provider_worm_denial_verified<>'NO'
+   OR encrypted_dr_restore_witnessed<>'NO'
+   OR production_release<>'HOLD'
+   OR (state='HELD_UNVERIFIED' AND
+    (last_incident_sha256 IS NOT NULL OR frozen_witness_ref IS NOT NULL OR
+     frozen_key_spki_sha256 IS NOT NULL OR last_bd_review_sha256 IS NOT NULL OR
+     EXISTS(SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref)))
+   OR (state<>'HELD_UNVERIFIED' AND
+    (last_incident_sha256 IS NULL OR frozen_witness_ref IS NULL OR
+     frozen_key_spki_sha256 IS NULL OR last_bd_review_sha256 IS NULL OR
+     (SELECT COUNT(*) FROM inv_be_freeze_attempts a
+      WHERE a.log_ref=inv_be_freeze_streams.log_ref AND
+       a.outcome='FROZEN_UNVERIFIED')<>1))
+   OR (state='FROZEN_UNVERIFIED' AND EXISTS(
+     SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref
+      AND a.outcome<>'FROZEN_UNVERIFIED'))
+   OR (state='QUARANTINED' AND NOT EXISTS(
+     SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref
+      AND a.outcome<>'FROZEN_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_be_freeze_streams`);
+ const [beOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_be_freeze_attempts a LEFT JOIN inv_be_freeze_streams s
+  ON a.log_ref=s.log_ref WHERE s.log_ref IS NULL`);
+ const [beUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_be_freeze_streams s LEFT JOIN inv_bd_review_streams bd
+  ON s.log_ref=bd.log_ref
+  WHERE s.state<>'HELD_UNVERIFIED' AND
+   (bd.log_ref IS NULL OR bd.last_review_sha256<>s.last_bd_review_sha256)`);
+ if(Number(beStreams[0].unsafe)!==0||Number(beOrphans[0].unsafe)!==0||
+    Number(beUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BE witness emergency freeze head/review lineage or HARD HOLD mismatch');
+ if(target==='staging'&&
+    (Number(beStreams[0].frozen)>0||Number(beStreams[0].quarantined)>0))
+  problems.push('Phase 1BE unresolved witness key compromise freeze blocks staging acceptance');
  const [mfa]=await db.query<RowDataPacket[]>(`SELECT
    SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
    SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
@@ -753,6 +797,8 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
   unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
   sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BeEmergencyFrozenWitnessStreams:Number(beStreams[0].frozen),
+  phase1BeQuarantinedRevocationStreams:Number(beStreams[0].quarantined),
   phase1BdHeldEvidenceReviewStreams:Number(bdStreams[0].total),
   phase1BdQuarantinedEvidenceReviewStreams:Number(bdStreams[0].quarantined),
   phase1BcHeldWitnessCustodyStreams:Number(bcStreams[0].total),
@@ -772,6 +818,9 @@ export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
   privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
   problems,
   externalGates:{
+   phase1BeExternallyAuthenticatedRevocation:'NOT_VERIFIED',
+   phase1BeRealWormObjectLockDenial:'NOT_VERIFIED',
+   phase1BeIndependentlyObservedEncryptedDR:'NOT_VERIFIED',
    phase1BdIndependentWitnessEnrollment:'NOT_VERIFIED',
    phase1BdProviderObjectLockDeleteDenial:'NOT_VERIFIED',
    phase1BdEncryptedDrIndependentTelemetry:'NOT_VERIFIED',
