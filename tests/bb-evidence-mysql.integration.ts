@@ -177,3 +177,24 @@ test('deleted accepted challenge custody is detected on disposable CI readback',
  }
  assert.equal((await inspect(logRef)).localDigestHistoryConsistent,true);
 });
+
+test('repeated independent-log nonce collisions serialize without transient deadlocks',async()=>{
+ for(let iteration=0;iteration<6;iteration++){
+  const a=fixture(newLog()),b=fixture(newLog());
+  const reused=b.records[iteration%6];
+  reused.body.challengeSha256=a.records[iteration%6].body.challengeSha256;
+  reused.signature.signatureBase64=sign(null,
+   phase1BbSignedBytes(reused.body),b.actors[iteration%6].privateKey).toString('base64');
+  const both=await Promise.all([
+   record(a,a.records,1,null),record(b,b.records,1,null)
+  ]);
+  assert.deepEqual(both.map(x=>x.outcome).sort(),
+   ['ACCEPTED_UNVERIFIED','NONCE_REPLAY_QUARANTINED']);
+  const audits=await Promise.all([
+   inspect(a.azPacket.archive.logRef),inspect(b.azPacket.archive.logRef)
+  ]);
+  assert.ok(audits.every(x=>x.localDigestHistoryConsistent));
+  assert.deepEqual(audits.map(x=>x.acceptedSequence).sort(),[0,1]);
+  assert.ok(audits.every(x=>x.productionReleaseAuthorized===false));
+ }
+});
