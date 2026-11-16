@@ -119,9 +119,13 @@ export async function inspectPhase1BbEvidence(pool:Pool,logRef:string,
    'SELECT sequence_number,batch_sha256,previous_batch_sha256,outcome FROM inv_bb_evidence_attempts WHERE log_ref=? ORDER BY id FOR UPDATE',
    [logRef]);
   const [nonceRows]=await conn.execute<RowDataPacket[]>(
-   'SELECT batch_sha256,COUNT(*) AS count FROM inv_bb_evidence_nonce_claims WHERE log_ref=? GROUP BY batch_sha256 FOR UPDATE',
+   'SELECT batch_sha256 FROM inv_bb_evidence_nonce_claims WHERE log_ref=? FOR UPDATE',
    [logRef]);
-  const countByBatch=new Map(nonceRows.map(x=>[String(x.batch_sha256),Number(x.count)]));
+  const countByBatch=new Map<string,number>();
+  for(const item of nonceRows){
+   const digest=String(item.batch_sha256);
+   countByBatch.set(digest,(countByBatch.get(digest)??0)+1);
+  }
   const anomalies:string[]=[];
   let acceptedSeq=0,acceptedHash:string|null=null,incident=false;
   for(const a of attempts){
