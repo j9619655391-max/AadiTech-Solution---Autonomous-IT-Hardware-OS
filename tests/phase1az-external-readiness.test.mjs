@@ -86,7 +86,7 @@ test('archive retention shortened, zero digest, noncanonical timestamp and futur
   {...p.archive,minimumRetentionDays:1000},
   {...p.archive,retentionPolicySha256:'ABC'},
   {...p.archive,createdAt:'2026-11-01'},
-  {...p.archive,createdAt:'2028-11-01T00:00:00.000Z'}
+  {...p.archive,createdAt:'2028-11-01T00:00:00.000Z',retentionUntil:'2029-11-01T00:00:00.000Z'}
  ]){
   const verdict=()=>evalPacket({...packet(),archive:changed});
   if(changed.createdAt==='2028-11-01T00:00:00.000Z'){
