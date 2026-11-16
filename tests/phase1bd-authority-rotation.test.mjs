@@ -75,7 +75,9 @@ test('forged, swapped or non-independent governance signature is rejected',()=>{
 });
 test('historical tree split view and mismatched AZ predecessor fail even with locally signed co-signers',()=>{
  const f=bdRotationFixture();
- f.replacement.observations[0].previous.body.rootSha256=digest(88);
+ const forked=[...f.replacementFixture.leaves];
+ forked[2]=Buffer.from('synthetic-forked-predecessor-leaf');
+ f.replacement=f.replacementFixture.make(3,5,forked);
  let r=evaluate(f);
  assert.equal(r.locallySignedHandoverConsistent,false);
  assert.ok(r.blockerCodes.includes('ROTATION_FORKED_HISTORICAL_TREE_HEAD'));
