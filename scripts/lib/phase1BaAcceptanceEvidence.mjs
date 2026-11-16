@@ -109,7 +109,7 @@ export function assessPhase1BaExternalAcceptance({
  if(!az.packetInspected||!az.internalEvidenceConsistent)
   blockers.add('PREDECESSOR_AZ_PACKET_INVALID');
  const packetSha=az.packetSha256;
- const t=now.getTime(),witnessAuthorities=new Set(),witnessKeys=new Set(),
+ const t=now.getTime(),witnessAuthorities=new Set(),witnessPinAuthorities=new Set(),witnessKeys=new Set(),
   witnessRefs=new Set(),witnessSigners=new Set();
  const roots=new Map();
  let validWitnesses=0;
@@ -133,9 +133,11 @@ export function assessPhase1BaExternalAcceptance({
      !packetBinding(b,azPacket,packetSha))
    blockers.add('WITNESS_ENROLLMENT_BINDING_MISMATCH');
   if(witnessRefs.has(b.witnessRef)||witnessAuthorities.has(b.administrativeAuthorityRef)||
+     witnessPinAuthorities.has(w.pin.authorityRef)||
      witnessKeys.has(w.pin.keyId)||witnessSigners.has(w.pin.reviewerRef))blockers.add('COMMON_CONTROL_OR_DUPLICATE_WITNESS');
   witnessRefs.add(b.witnessRef);
   witnessAuthorities.add(b.administrativeAuthorityRef);
+  witnessPinAuthorities.add(w.pin.authorityRef);
   witnessKeys.add(w.pin.keyId);
   witnessSigners.add(w.pin.reviewerRef);
   if(!detachedValid(w.signature,w.pin,bytes))
