@@ -85,7 +85,9 @@
     "db:migrate:bm-quote-checkpoints": "tsx scripts/migrate-bm-quote-checkpoints.ts",
     "test:bm-quote-checkpoint-mysql": "tsx --test tests/bm-quote-checkpoint-mysql.integration.ts",
     "db:migrate:bn-quote-reconciliation": "tsx scripts/migrate-bn-quote-reconciliation.ts",
-    "test:bn-quote-reconciliation-mysql": "tsx --test tests/bn-quote-reconciliation-mysql.integration.ts"
+    "test:bn-quote-reconciliation-mysql": "tsx --test tests/bn-quote-reconciliation-mysql.integration.ts",
+    "db:migrate:bo-authority-dossiers": "tsx scripts/migrate-bo-authority-dossiers.ts",
+    "test:bo-authority-mysql": "tsx --test tests/bo-authority-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
