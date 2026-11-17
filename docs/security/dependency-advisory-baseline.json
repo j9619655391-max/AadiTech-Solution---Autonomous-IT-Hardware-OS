@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "kind": "known-unresolved-development-only",
-  "source": "Phase 1T CI dependency advisory artifact",
-  "reviewedAt": "2026-11-10",
+  "source": "Phase 1BS exact-HEAD Bun audit and 2026-11-17 GitHub security advisory / prior Phase 1T CI",
+  "reviewedAt": "2026-11-17",
   "advisories": [
     {
       "id": "GHSA-jqcg-44mw-7w3h",
@@ -58,6 +58,14 @@
       "id": "GHSA-6pq8-jhm2-2vcw",
       "packageName": "qs",
       "severity": "moderate"
+    },
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "packageName": "picomatch",
+      "severity": "high",
+      "status": "UNRESOLVED_DEVELOPMENT_ONLY",
+      "independentSecurityApproval": "PENDING",
+      "remediation": "No patched picomatch listed in GitHub advisory as of 2026-11-17; track vendor and migrate/retest when fixed"
     }
   ]
 }
