@@ -14,7 +14,7 @@ const actor='11111111-1111-4111-8111-111111111111',
  sha='a'.repeat(64);
 function sampleQuote(){
  const draft={id:quote,created_by:actor,customer_id:customer,customer_deleted_at:null,
-  status:'DRAFT',currency:'INR',subtotal:'200.00',tax_estimate:'36.00',total_estimate:'236.00'};
+  status:'DRAFT',currency:'INR',lead_id:null,subtotal:'200.00',tax_estimate:'36.00',total_estimate:'236.00'};
  const lines=[{product_id:product,position:1,sku_snapshot:'Q-SRV-1',
   name_snapshot:'Test Server',hsn_snapshot:'8471',quantity:2,
   unit_price:'100.00',unit_cost:'50.00',gst_rate:'18.00',
@@ -28,14 +28,14 @@ function sampleQuote(){
   revision_number:0,internal_review_id:reviewer,prepared_by:actor,
   snapshot_json:{
    format:'aaditech-internal-release-hold-v1',quoteId:quote,revision:0,
-   customerId:customer,reviewId:reviewer,subtotal:'200.00',
+   customerId:customer,leadId:null,currency:'INR',reviewId:reviewer,subtotal:'200.00',
    taxEstimate:'36.00',totalEstimate:'236.00',items:lines.map(x=>({...x}))
   }};
  return {draft,lines,decision,preparation};
 }
 function sampleProcurement(){
  const requisition={id:request,created_by:actor,supplier_id:supplier,site_id:site,
-  supplier_status:'REVIEWED_INTERNAL',supplier_reviewed_by:reviewer,
+  supplier_status:'REVIEWED_INTERNAL',supplier_code:'SUP-1',supplier_name:'Test Supplier',supplier_reviewed_by:reviewer,
   supplier_reviewer_role:'REVIEWER',quote_evidence_ref:'EXTERNAL-UNVERIFIED-CANDIDATE',
   subtotal:'300.00',status:'APPROVED_INTERNAL'};
  const lines=[{product_id:product,position:1,sku_snapshot:'Q-SRV-1',
@@ -45,7 +45,7 @@ function sampleProcurement(){
  const hold={id:'held',decision_id:reviewer,prepared_by:actor,
   status:'HELD',dispatch_state:'DISABLED',snapshot_sha256:sha,
   snapshot_json:{format:'aaditech-internal-po-hold-v1',
-   requestId:request,supplierId:supplier,siteId:site,
+   requestId:request,supplierId:supplier,supplierCode:'SUP-1',supplierName:'Test Supplier',siteId:site,
    supplierQuoteEvidenceRef:requisition.quote_evidence_ref,subtotal:'300.00',
    reviewId:reviewer,lines:[{
     productId:product,sku:'Q-SRV-1',name:'Test Server',
@@ -129,4 +129,55 @@ test('malformed or unauthorized number fields fail without releasing orders',()=
  const b=inspectInternalProcurementScope(p);
  assert.equal(b.localScopeConsistent,false);
  assert.equal(b.productionReleaseAuthorized,false);
+});
+
+test('Phase 1BJ: held quote rejects metadata and previously ignored product/tax fields',()=>{
+ const cases:[string,(x:ReturnType<typeof sampleQuote>)=>void][]=[
+  ['hsn',x=>{x.preparation.snapshot_json.items[0].hsn_snapshot='9999';}],
+  ['tax',x=>{x.preparation.snapshot_json.items[0].line_tax_estimate='0.00';}],
+  ['sku',x=>{x.preparation.snapshot_json.items[0].sku_snapshot='SWAPPED';}],
+  ['name',x=>{x.preparation.snapshot_json.items[0].name_snapshot='Replacement';}],
+  ['gst',x=>{x.preparation.snapshot_json.items[0].gst_rate='0.00';}],
+  ['currency',x=>{x.preparation.snapshot_json.currency='USD';}],
+  ['lead',x=>{x.preparation.snapshot_json.leadId=customer;}],
+  ['recipient',x=>{(x.preparation.snapshot_json as any).recipientEmail='unauthorized@example.invalid';}],
+  ['item shadow field',x=>{(x.preparation.snapshot_json.items[0] as any).dispatchEnabled=true;}]
+ ];
+ for(const [name,tamper] of cases){
+  const x=sampleQuote();tamper(x);
+  const result=inspectInternalQuoteScope(x);
+  assert.equal(result.localScopeConsistent,false,name);
+  assert.equal(result.releaseDecision,'HOLD');
+ }
+});
+test('Phase 1BJ: held revision cannot silently change tax or HSN but accepts matching revision',()=>{
+ const x=sampleQuote();
+ const revisionLine={productId:product,sku:'Q-SRV-1',name:'Test Server',
+  hsn:'8471',quantity:2,unitCost:'50.00',unitPrice:'100.00',gstRate:'18.00',
+  lineSubtotal:'200.00',lineTaxEstimate:'36.00'};
+ const revision={revision_number:1,line_snapshot:[revisionLine],
+  subtotal:'200.00',tax_estimate:'36.00',total_estimate:'236.00',
+  gross_margin_bps:5000};
+ x.decision.revision_number=1;
+ x.preparation.revision_number=1;
+ x.preparation.snapshot_json.revision=1;
+ x.preparation.snapshot_json.items=[revisionLine as any] as any;
+ assert.equal(inspectInternalQuoteScope({...x,revision}).localScopeConsistent,true);
+ x.preparation.snapshot_json.items[0].hsn='0000';
+ assert.ok(inspectInternalQuoteScope({...x,revision}).anomalyCodes.includes(
+  'QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED'));
+});
+test('Phase 1BJ: held PO rejects supplier-label changes and shadow dispatch metadata',()=>{
+ for(const tamper of [
+  (x:ReturnType<typeof sampleProcurement>)=>{x.hold.snapshot_json.supplierCode='ANOTHER';},
+  (x:ReturnType<typeof sampleProcurement>)=>{x.hold.snapshot_json.supplierName='Impersonator';},
+  (x:ReturnType<typeof sampleProcurement>)=>{(x.hold.snapshot_json as any).recipient='forged';},
+  (x:ReturnType<typeof sampleProcurement>)=>{(x.hold.snapshot_json.lines[0] as any).dispatchEnabled=true;}
+ ]){
+  const x=sampleProcurement();tamper(x);
+  const r=inspectInternalProcurementScope(x);
+  assert.equal(r.localScopeConsistent,false);
+  assert.equal(r.productionReleaseAuthorized,false);
+  assert.equal(r.releaseDecision,'HOLD');
+ }
 });
