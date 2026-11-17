@@ -93,7 +93,9 @@
     "db:migrate:bq-remote-evidence": "tsx scripts/migrate-bq-remote-evidence.ts",
     "test:bq-remote-mysql": "tsx --test tests/bq-remote-mysql.integration.ts",
     "db:migrate:br-provider-bytes": "tsx scripts/migrate-br-provider-bytes.ts",
-    "test:br-provider-bytes-mysql": "tsx --test tests/br-provider-bytes-mysql.integration.ts"
+    "test:br-provider-bytes-mysql": "tsx --test tests/br-provider-bytes-mysql.integration.ts",
+    "db:migrate:bs-signed-revocation": "tsx scripts/migrate-bs-signed-revocation.ts",
+    "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
