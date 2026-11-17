@@ -651,7 +651,6 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                         <button
                           disabled
                            title="Completion requires independently verified work-order signoff"
-                          disabled={!allDone}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                             allDone
                               ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
