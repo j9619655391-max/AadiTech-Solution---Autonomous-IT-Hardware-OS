@@ -350,8 +350,14 @@ jobs:
         run: bun run auth:retention
       - name: Isolated HTTP authentication and MFA smoke
         run: bun run test:auth-smoke
+      - name: Apply Phase 1BN isolated dual-witness reconciliation schema 0037
+        run: bun run db:migrate:bn-quote-reconciliation
+      - name: Verify Phase 1BN immutable checksum schema rerun on disposable MySQL
+        run: bun run db:migrate:bn-quote-reconciliation
       - name: Phase 1BM real MySQL candidate witness concurrency, rollback, incident and key revocation HOLD tests
         run: bun run test:bm-quote-checkpoint-mysql
+      - name: Phase 1BN real MySQL dual-witness freshness, revocation, rollover and DR rollback simulation
+        run: bun run test:bn-quote-reconciliation-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
