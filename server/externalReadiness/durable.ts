@@ -38,6 +38,12 @@ export async function recordPhase1AzReadiness(pool:Pool,{
    [logRef]);
   const head=heads[0];
   if(!head)throw Error('1AZ missing locked history');
+  // A Phase 1BE emergency freeze covers the entire evidence stream, not only
+  // later witness heads. Shared lock order AZ -> BE avoids freeze/write races.
+  const [freezes]=await conn.execute<RowDataPacket[]>(
+   'SELECT state FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
+  if(freezes.length&&freezes[0].state!=='HELD_UNVERIFIED')
+   throw Error('Phase 1BE emergency witness revocation freeze blocks AZ packet writes');
   const revision=Number(head.last_revision);
   if(!Number.isSafeInteger(revision)||revision<0)throw Error('1AZ invalid last revision');
   const current=head.last_packet_sha256 as string|null;
