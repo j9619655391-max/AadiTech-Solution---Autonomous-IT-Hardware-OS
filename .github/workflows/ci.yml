@@ -336,6 +336,10 @@ jobs:
         run: bun run db:migrate:br-provider-bytes
       - name: Verify Phase 1BR checksum locked 0041 idempotent rerun
         run: bun run db:migrate:br-provider-bytes
+      - name: Apply Phase 1BS CRL and OCSP signed candidate status custody 0042
+        run: bun run db:migrate:bs-signed-revocation
+      - name: Verify Phase 1BS strict migration SHA checksum and idempotent rerun
+        run: bun run db:migrate:bs-signed-revocation
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -382,6 +386,8 @@ jobs:
         run: bun run test:bq-remote-mysql
       - name: Phase 1BR raw signed bytes, ephemeral X509, CRL/OCSP binding and MySQL DR/HOLD
         run: bun run test:br-provider-bytes-mysql
+      - name: Phase 1BS real MySQL issuer signed CRL/OCSP serial, nonce, revoked status and rollback HOLD
+        run: bun run test:bs-signed-revocation-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
