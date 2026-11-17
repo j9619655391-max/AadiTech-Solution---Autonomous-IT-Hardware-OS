@@ -533,328 +533,46 @@ export default function App() {
   };
 
   // AMC Renewal
-  const handleTriggerRenewal = (contractId: string) => {
-    setAmcs(prev =>
-      prev.map(c => c.id === contractId ? { ...c, status: 'ACTIVE' } : c)
-    );
-    alert('Autonomous 1-Year Comprehensive AMC Renewal Quote dispatched via WhatsApp & Email to customer finance team.');
+  // Central deny-only boundary for legacy browser-local operations.
+  // Child UI disables these buttons, but a future component may invoke the
+  // callback directly: therefore no localStorage mutation or fake audit event
+  // may be produced by any of these parent handlers.
+  const denyUnverifiedOperation = (action: string): void => {
+    window.alert('RELEASE HOLD: ' + action + ' requires an authenticated, server-authoritative workflow, independent review and explicit release. No transaction, message, payment, stock movement or legal document was created.');
   };
 
-  // Technician Assignment
-  const handleAssignTechnician = (ticketId: string, techName: string) => {
-    setTickets(prev =>
-      prev.map(t => t.id === ticketId ? { ...t, status: 'TECHNICIAN_ASSIGNED', technician: techName } : t)
-    );
-  };
+  const handleTriggerRenewal = (_contractId: string) =>
+    denyUnverifiedOperation('AMC renewal quote dispatch');
+  const handleAssignTechnician = (_ticketId: string, _techName: string) =>
+    denyUnverifiedOperation('Technician assignment');
+  const handleUpdateOrderStatus = (_orderId: string, _status: SalesOrder['fulfillmentStatus']) =>
+    denyUnverifiedOperation('Order fulfillment status change');
+  const handleDispatchOrder = (_orderId: string, _courier: SalesOrder['courierName'],
+    _awb: string, _eWayBill: string) =>
+    denyUnverifiedOperation('Carrier dispatch and GST e-Way bill');
+  const handleToggleWorkOrderChecklist = (_woId: string, _index: number) =>
+    denyUnverifiedOperation('Field-service evidence checklist');
+  const handleUpdateWorkOrderStatus = (_woId: string, _status: InstallationWorkOrder['status']) =>
+    denyUnverifiedOperation('Work order/customer acceptance');
+  const handleCreateWorkOrder = (_wo: InstallationWorkOrder) =>
+    denyUnverifiedOperation('Work order issuance');
+  const handleAddRMA = (_rma: RMARequest) =>
+    denyUnverifiedOperation('RMA/replacement initiation');
+  const handleAcceptQuotation = (_quoteId: string) =>
+    denyUnverifiedOperation('Customer quotation e-sign and sales order conversion');
+  const handleRegisterDeal = (_deal: DealRegistration) =>
+    denyUnverifiedOperation('Partner price-protection registration');
+  const handleApproveCommission = (_commId: string) =>
+    denyUnverifiedOperation('Partner commission settlement');
 
-  // Orders & Fulfillment Handlers
-  const handleUpdateOrderStatus = (orderId: string, status: SalesOrder['fulfillmentStatus']) => {
-    setSalesOrders(prev => {
-      const updated = prev.map(o => o.id === orderId ? { ...o, fulfillmentStatus: status } : o);
-      storageService.saveSalesOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleDispatchOrder = (orderId: string, courier: SalesOrder['courierName'], awb: string, eWayBill: string) => {
-    setSalesOrders(prev => {
-      const updated = prev.map(o => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            fulfillmentStatus: 'DISPATCHED' as const,
-            courierName: courier,
-            awbNumber: awb,
-            eWayBillNumber: eWayBill,
-            irnNumber: o.irnNumber || `irn_${Date.now()}_nic_einvoice_verified`
-          };
-        }
-        return o;
-      });
-      storageService.saveSalesOrders(updated);
-      return updated;
-    });
-
-    const targetOrder = salesOrders.find(o => o.id === orderId);
-    if (targetOrder) {
-      const newEvent: EventBusMessage = {
-        id: `EVT-${Date.now()}`,
-        eventId: `EVT_DSP_${Date.now().toString().slice(-4)}`,
-        eventType: 'DispatchReleased',
-        sourceAgent: 'AI Logistics Agent',
-        targetModule: 'Customer Portal & SMS Gateway',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        payloadSnippet: `Order ${targetOrder.orderNumber} dispatched via ${courier} AWB #${awb} e-Way Bill #${eWayBill}`,
-        status: 'DISPATCHED',
-        latencyMs: 38
-      };
-      setEventBusMessages(prev => {
-        const updated = [newEvent, ...prev];
-        storageService.saveEventBusMessages(updated);
-        return updated;
-      });
-
-      const audit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'AI Logistics & Dispatch Agent',
-        action: 'ORDER_DISPATCHED',
-        entityType: 'ORDER',
-        entityId: targetOrder.orderNumber,
-        details: `Dispatched order to ${targetOrder.customerName} via ${courier} (AWB: ${awb}). GST e-Way Bill transmitted.`,
-        rulesChecked: 'Rule #31: Warehouse QC Seal & Courier Dispatch Compliance',
-        approvalRequired: false,
-        status: 'AUTO_EXECUTED'
-      };
-      setAuditLogs(prev => {
-        const updated = [audit, ...prev];
-        storageService.saveAuditLogs(updated);
-        return updated;
-      });
-    }
-  };
-
-  const handleToggleWorkOrderChecklist = (woId: string, index: number) => {
-    setWorkOrders(prev => {
-      const updated = prev.map(w => {
-        if (w.id === woId) {
-          const newChecklist = [...w.checklist];
-          newChecklist[index] = { ...newChecklist[index], done: !newChecklist[index].done };
-          return { ...w, checklist: newChecklist };
-        }
-        return w;
-      });
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleUpdateWorkOrderStatus = (woId: string, status: InstallationWorkOrder['status']) => {
-    setWorkOrders(prev => {
-      const updated = prev.map(w => {
-        if (w.id === woId) {
-          return {
-            ...w,
-            status,
-            customerSignoff: status === 'COMPLETED' ? true : w.customerSignoff
-          };
-        }
-        return w;
-      });
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleCreateWorkOrder = (wo: InstallationWorkOrder) => {
-    setWorkOrders(prev => {
-      const updated = [wo, ...prev];
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Field Service Agent',
-      action: 'WORK_ORDER_SCHEDULED',
-      entityType: 'WORK_ORDER',
-      entityId: wo.workOrderNumber,
-      details: `On-site commissioning work order assigned to ${wo.assignedTechnician} for ${wo.customerName}.`,
-      rulesChecked: 'Rule #34: Turnkey On-Site Deployment Protocol',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  const handleAddRMA = (rma: RMARequest) => {
-    setRmas(prev => {
-      const updated = [rma, ...prev];
-      storageService.saveRMAs(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI RMA & Reverse Logistics Agent',
-      action: 'RMA_CLAIM_RAISED',
-      entityType: 'RMA',
-      entityId: rma.rmaNumber,
-      details: `DOA Advance replacement initiated for ${rma.customerName} (SN: ${rma.serialNumber}). Assigned to ${rma.technicianAssigned}.`,
-      rulesChecked: 'Rule #35: 14-Day DOA Hardware Replacement Policy',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // 1-Click Accept Quotation & Conversion to Sales Order
-  const handleAcceptQuotation = (quoteId: string) => {
-    let convertedOrderNumber = '';
-    setQuotations(prev => {
-      const updated = prev.map(q => {
-        if (q.id === quoteId) {
-          convertedOrderNumber = `SO-2026-${Math.floor(100 + Math.random() * 900)}`;
-          return { ...q, status: 'WON' as const };
-        }
-        return q;
-      });
-      storageService.saveQuotations(updated);
-      return updated;
-    });
-
-    const quote = quotations.find(q => q.id === quoteId);
-    if (quote) {
-      const newSO: SalesOrder = {
-        id: `so-${Date.now()}`,
-        orderNumber: convertedOrderNumber || `SO-2026-${Math.floor(100 + Math.random() * 900)}`,
-        quoteId: quote.id,
-        customerId: quote.customerId || 'CUST-AUTO',
-        customerName: quote.customerName,
-        customerGst: '27AABCF1290K1ZP',
-        destinationCity: 'Mumbai',
-        deliveryAddress: 'Enterprise IT Data Center, Mumbai, Maharashtra 400051',
-        items: quote.items.map(item => ({
-          productName: item.productName,
-          sku: item.productId || 'SKU-ENT',
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          total: item.total,
-          serialNumbers: [`SN-${Math.floor(100000 + Math.random() * 900000)}`]
-        })),
-        subtotal: quote.subtotal,
-        gstAmount: quote.taxAmount,
-        totalAmount: quote.totalAmount,
-        fulfillmentStatus: 'ORDER_CONFIRMED',
-        paymentStatus: 'PAID',
-        createdDate: new Date().toISOString().split('T')[0],
-        expectedDelivery: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
-      };
-
-      setSalesOrders(prev => {
-        const updated = [newSO, ...prev];
-        storageService.saveSalesOrders(updated);
-        return updated;
-      });
-
-      const audit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'AI Order Processing Agent',
-        action: 'ORDER_CONVERTED_FROM_QUOTE',
-        entityType: 'ORDER',
-        entityId: newSO.orderNumber,
-        details: `Quotation ${quote.quoteNumber} accepted by customer. Generated Sales Order ${newSO.orderNumber} for ₹${quote.totalAmount.toLocaleString('en-IN')}.`,
-        rulesChecked: 'Rule #27: Quote-to-Cash Automation Pipeline',
-        approvalRequired: false,
-        status: 'AUTO_EXECUTED'
-      };
-      setAuditLogs(prev => {
-        const updated = [audit, ...prev];
-        storageService.saveAuditLogs(updated);
-        return updated;
-      });
-    }
-  };
-
-  // Deal Registration Handler
-  const handleRegisterDeal = (deal: DealRegistration) => {
-    setDealRegistrations(prev => {
-      const updated = [deal, ...prev];
-      storageService.saveDealRegistrations(updated);
-      return updated;
-    });
-    setPartners(prev => {
-      const updated = prev.map(p => p.id === deal.partnerId ? { ...p, registeredDealsCount: p.registeredDealsCount + 1 } : p);
-      storageService.savePartners(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Partner Channel Agent',
-      action: 'DEAL_REGISTERED',
-      entityType: 'DEAL',
-      entityId: deal.dealNumber,
-      details: `Registered deal for ${deal.partnerName} on end-customer ${deal.endCustomerName} (₹${deal.estimatedValue.toLocaleString('en-IN')}) with 60-day price protection lock.`,
-      rulesChecked: 'Rule #44: Channel Partner Deal Protection Protocol',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Approve Commission
-  const handleApproveCommission = (commId: string) => {
-    setCommissions(prev => {
-      const updated = prev.map(c => c.id === commId ? { ...c, payoutStatus: 'PAID' as const, disbursedDate: new Date().toISOString().split('T')[0] } : c);
-      storageService.saveCommissions(updated);
-      return updated;
-    });
-  };
-
-  // Workflow Handlers
-  const handleToggleWorkflowRule = (ruleId: string) => {
-    setWorkflowRules(prev => {
-      const updated = prev.map(r => r.id === ruleId ? { ...r, status: (r.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE') as any } : r);
-      storageService.saveWorkflowRules(updated);
-      return updated;
-    });
-  };
-
-  const handleExecuteWorkflowRule = (ruleId: string) => {
-    const targetRule = workflowRules.find(r => r.id === ruleId);
-    if (targetRule) {
-      setWorkflowRules(prev => {
-        const updated = prev.map(r => r.id === ruleId ? {
-          ...r,
-          executionsCount: r.executionsCount + 1,
-          lastTriggered: 'Just now'
-        } : r);
-        storageService.saveWorkflowRules(updated);
-        return updated;
-      });
-
-      const newMsg: EventBusMessage = {
-        id: `EVT-${Date.now()}`,
-        eventId: `EVT_WF_${Date.now().toString().slice(-4)}`,
-        eventType: 'WorkflowTriggerExecuted',
-        sourceAgent: 'Autonomous Workflow Engine',
-        targetModule: targetRule.channel,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        payloadSnippet: `Dispatched action: "${targetRule.action}" upon condition check: [${targetRule.condition}]`,
-        status: 'PROCESSED',
-        latencyMs: 42
-      };
-      setEventBusMessages(prev => {
-        const updated = [newMsg, ...prev];
-        storageService.saveEventBusMessages(updated);
-        return updated;
-      });
-
-      alert(`Workflow rule "${targetRule.name}" simulated successfully! Action: ${targetRule.action} dispatched via ${targetRule.channel}.`);
-    }
-  };
-
-  const handleCreateWorkflowRule = (rule: WorkflowRule) => {
-    setWorkflowRules(prev => {
-      const updated = [rule, ...prev];
-      storageService.saveWorkflowRules(updated);
-      return updated;
-    });
-  };
+  // Browser-local rules cannot be mistaken for an actual event bus,
+  // independent delivery receipt, active integration or executed workflow.
+  const handleToggleWorkflowRule = (_ruleId: string) =>
+    denyUnverifiedOperation('Workflow activation');
+  const handleExecuteWorkflowRule = (_ruleId: string) =>
+    denyUnverifiedOperation('Workflow execution and outbound dispatch');
+  const handleCreateWorkflowRule = (_rule: WorkflowRule) =>
+    denyUnverifiedOperation('Operational workflow publication');
 
   // Predictive Analytics Handlers
   const handleUpdateDeadStock = (items: DeadStockItem[]) => {
@@ -867,51 +585,17 @@ export default function App() {
     storageService.saveDemandForecasts(forecasts);
   };
 
-  const handleTriggerNextBestAction = (actionId: string) => {
-    const updated = nextBestActions.map(a => a.id === actionId ? { ...a, status: 'TRIGGERED' as const } : a);
-    setNextBestActions(updated);
-    storageService.saveNextBestActions(updated);
-  };
+  const handleTriggerNextBestAction = (_actionId: string) =>
+    denyUnverifiedOperation('Predictive next-best-action execution');
 
-  // System Hub Handlers
-  const handleSwitchTenant = (tenantId: string) => {
-    const updated = tenants.map(t => ({
-      ...t,
-      isCurrent: t.id === tenantId
-    }));
-    setTenants(updated);
-    storageService.saveTenants(updated);
-  };
-
-  const handleRetryDeadLetterJob = (jobId: string) => {
-    const updated = deadLetterJobs.map(j => {
-      if (j.id === jobId) {
-        return {
-          ...j,
-          status: 'RESOLVED' as const,
-          retryCount: j.retryCount + 1
-        };
-      }
-      return j;
-    });
-    setDeadLetterJobs(updated);
-    storageService.saveDeadLetterJobs(updated);
-  };
-
-  const handleToggleIntegration = (id: string) => {
-    const updated = integrations.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          connectionStatus: item.connectionStatus === 'CONNECTED' ? ('DISCONNECTED' as const) : ('CONNECTED' as const),
-          lastSyncTimestamp: 'Just now'
-        };
-      }
-      return item;
-    });
-    setIntegrations(updated);
-    storageService.saveIntegrations(updated);
-  };
+  // The system hub is not a tenant switch, connected-provider console or
+  // durable job worker. Do not forge successful retries or connector states.
+  const handleSwitchTenant = (_tenantId: string) =>
+    denyUnverifiedOperation('Tenant context switch');
+  const handleRetryDeadLetterJob = (_jobId: string) =>
+    denyUnverifiedOperation('Failed job retry');
+  const handleToggleIntegration = (_id: string) =>
+    denyUnverifiedOperation('External integration connect/disconnect');
 
   const formatINR = (val: number) => {
     return '₹' + Number(val || 0).toLocaleString('en-IN');
