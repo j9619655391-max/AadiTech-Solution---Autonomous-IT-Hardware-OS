@@ -41,6 +41,7 @@ import commercialIntegrityOwnerRouter from "./server/commercialIntegrity/ownerRo
 import securityAdminRouter from "./server/security/adminRouter";
 import mfaRouter from "./server/auth/mfaRouter";
 import {resolveDeploymentSecurity,securityTransportMiddleware} from "./server/security/deploymentGuards";
+import {resolveDevToolExposure,devToolHostGate} from "./server/security/devToolExposure";
 import {normalizeBomDraft,normalizeCampaignDraft,requiredAiText,parseListenPort} from "./server/ai/safety";
 
 dotenv.config();
@@ -50,11 +51,15 @@ dotenv.config();
 const deploymentSecurity = resolveDeploymentSecurity(process.env);
 const app = express();
 const PORT = parseListenPort(process.env.PORT);
+// Local dev/test is never a public Vite endpoint, even when Host/DNS rebinding is attempted.
+const devExposure = deploymentSecurity.production ? null :
+  resolveDevToolExposure(process.env, PORT);
 const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 app.disable("x-powered-by");
 app.set("trust proxy", deploymentSecurity.trustedProxyCidrs.length
   ? deploymentSecurity.trustedProxyCidrs : false);
 app.use(securityTransportMiddleware(deploymentSecurity));
+if (devExposure) app.use(devToolHostGate(devExposure));
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
@@ -265,7 +270,14 @@ async function startServer() {
     // No Vite/picomatch import executes in the production serving process.
     const {createServer: createViteServer} = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        host: '127.0.0.1',
+        hmr: false,
+        cors: false,
+        strictPort: true,
+        allowedHosts: ['localhost','127.0.0.1'],
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
