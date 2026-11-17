@@ -74,10 +74,12 @@ export function canonicalCandidateQuoteRollover(body:CandidateKeyRolloverBody){
  return encoded(body);
 }
 export function candidateQuoteReconciliationDigest(args:{
- observations:CandidateHeadObservation[],rollover?:CandidateKeyRollover|null
+ observations:CandidateHeadObservation[],rollover?:CandidateKeyRollover|null,
+ recoverySnapshot?:{sequence:number,receiptSha256:string,sourceSha256:string}|null
 }){
  return hash('aaditech/quote/head-reconciliation/v1\n'+encoded({
-  observations:args.observations,rollover:args.rollover??null
+  observations:args.observations,rollover:args.rollover??null,
+  recoverySnapshot:args.recoverySnapshot??null
  }));
 }
 export function candidateQuotePinsetDigest(keys:CandidatePinnedKey[]){
