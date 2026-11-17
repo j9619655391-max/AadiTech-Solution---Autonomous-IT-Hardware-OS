@@ -86,6 +86,7 @@ export function assessCandidateExternalAuthorityDossier(args:{
  now:Date
 }){
  const errors=new Set<string>(),{dossier:d,expected:e,now}=args;
+ if(!d||typeof d!=='object'||Array.isArray(d))throw Error('BO invalid candidate dossier object');
  const at=now instanceof Date?now.getTime():NaN;
  if(!Number.isFinite(at))errors.add('BO_CLOCK_INVALID');
  if(!fields(d,['format','quoteId','bnPacketSha256','bmReceiptSha256',
@@ -109,7 +110,7 @@ export function assessCandidateExternalAuthorityDossier(args:{
    d.quoteSourceSha256!==e?.quoteSourceSha256||
    d.candidatePinsetSha256!==e?.candidatePinsetSha256)
   errors.add('BO_UPSTREAM_BM_BN_HEAD_OR_PINSET_MISMATCH');
- const enrol=d.enrollment;
+ const enrol=d.enrollment??{};
  if(!fields(enrol,['providerId','agreementSha256','certificatePolicySha256',
     'chainEvidenceSha256','hsmCustodyClaimSha256','enrolmentState'])||
     !ID.test(String(enrol.providerId))||
@@ -117,7 +118,7 @@ export function assessCandidateExternalAuthorityDossier(args:{
       enrol.chainEvidenceSha256,enrol.hsmCustodyClaimSha256].every(x=>
       SHA.test(String(x)))||enrol.enrolmentState!=='UNVERIFIED')
   errors.add('BO_ENROLLMENT_CLAIM_INVALID_OR_PREMATURE_TRUST');
- const pub=d.publication;
+ const pub=d.publication??{};
  if(!fields(pub,['publisherId','claimedHeadSha256','receiptEvidenceSha256',
     'objectLockEvidenceSha256','observedAt','retentionUntil',
     'publicationState'])||!ID.test(String(pub.publisherId))||
@@ -132,7 +133,7 @@ export function assessCandidateExternalAuthorityDossier(args:{
     seen>at+60000||at-seen>15*60000||
     expires<=at+30*24*3600000)
   errors.add('BO_PUBLISHER_HEAD_STALE_OR_RETENTION_UNPROVEN');
- const rev=d.revocation;
+ const rev=d.revocation??{};
  if(!fields(rev,['issuerId','crlEvidenceSha256','ocspEvidenceSha256',
     'distributionPointSha256','epoch','thisUpdate','nextUpdate',
     'revokedKeyIds','revocationState'])||!ID.test(String(rev.issuerId))||
@@ -152,7 +153,7 @@ export function assessCandidateExternalAuthorityDossier(args:{
     revFrom>at+60000||at-revFrom>3600000||revUntil<=at||
     revUntil<=revFrom)
   errors.add('BO_CLAIMED_REVOCATION_STALE_OR_FUTURE');
- const dr=d.disasterRecovery;
+ const dr=d.disasterRecovery??{};
  if(!fields(dr,['encryptedArchiveEvidenceSha256','restoreTranscriptSha256',
     'restoredReceiptSha256','restoredSourceSha256','recoveredSequence',
     'rehearsedAt','operatorId','witnessId','rtoSeconds','rpoSeconds',
