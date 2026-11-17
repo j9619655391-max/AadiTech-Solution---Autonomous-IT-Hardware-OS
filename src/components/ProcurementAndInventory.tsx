@@ -158,7 +158,7 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
       cost: Number(newSerialForm.cost),
       supplier: newSerialForm.supplierName,
       ageDays: 1,
-      state: 'QUARANTINED',
+      state: 'QC_CHECK', // legacy type has no unverified/quarantine state; parent rejects this entirely
       isDeadStock: false
     };
 
