@@ -25,7 +25,7 @@ import {issueCandidateIntakeChallenge,recordCandidateEvidenceIntake,
  inspectCandidateEvidenceIntakeOnConnection,bpCandidateIntakeWriteTarget}
  from '../server/commercialIntegrity/quoteEvidenceCustody';
 import {candidateIntakePacketDigest} from '../server/commercialIntegrity/quoteEvidenceIntake';
-import {bpNow,bpPins,bpPinsetSha,bpPacketFixture,bpResign,bpClone}
+import {bpNow,bpSha,bpPins,bpPinsetSha,bpPacketFixture,bpResign,bpClone}
  from './bp-intake-fixtures';
 
 if(process.env.NODE_ENV!=='test'||process.env.CRM_TEST_DB!=='1'||
