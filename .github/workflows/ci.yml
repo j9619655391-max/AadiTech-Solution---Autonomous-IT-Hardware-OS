@@ -332,6 +332,10 @@ jobs:
         run: bun run db:migrate:bq-remote-evidence
       - name: Verify Phase 1BQ immutable checksum and idempotent migration rerun
         run: bun run db:migrate:bq-remote-evidence
+      - name: Apply Phase 1BR strict offline byte-evidence X509 custody schema 0041
+        run: bun run db:migrate:br-provider-bytes
+      - name: Verify Phase 1BR checksum locked 0041 idempotent rerun
+        run: bun run db:migrate:br-provider-bytes
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -376,6 +380,8 @@ jobs:
         run: bun run test:bp-evidence-intake-mysql
       - name: Phase 1BQ real MySQL registrar spoof, dual-source remote fork, revocation and recovery HOLD
         run: bun run test:bq-remote-mysql
+      - name: Phase 1BR raw signed bytes, ephemeral X509, CRL/OCSP binding and MySQL DR/HOLD
+        run: bun run test:br-provider-bytes-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
