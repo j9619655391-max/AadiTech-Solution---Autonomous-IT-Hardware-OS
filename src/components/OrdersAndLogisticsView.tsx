@@ -328,25 +328,21 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                       <div className="flex items-center gap-2">
                         {order.fulfillmentStatus !== 'DISPATCHED' && order.fulfillmentStatus !== 'DELIVERED' && (
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenDispatch(order);
-                            }}
+                            disabled
+                            title="Supplier/customer dispatch is disabled until independently authorized"
                             className="px-2.5 py-1 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-medium transition-colors"
                           >
-                            Dispatch Order &rarr;
+                            Dispatch HOLD
                           </button>
                         )}
                         {order.fulfillmentStatus === 'DISPATCHED' && (
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onUpdateOrderStatus(order.id, 'DELIVERED');
-                            }}
+                            disabled
+                            title="Delivery confirmation requires carrier-signed proof and server-side review"
                             className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium transition-colors flex items-center gap-1"
                           >
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>Mark Delivered</span>
+                            <span>Delivery Verification HOLD</span>
                           </button>
                         )}
                       </div>
@@ -443,11 +439,11 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                     <span>₹{selectedOrder.subtotal.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-slate-400">
-                    <span>GST (18% Output CGST/SGST/IGST):</span>
+                    <span>Browser-estimated GST (not tax posted):</span>
                     <span>₹{selectedOrder.gstAmount.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-sm font-bold text-white pt-1.5 border-t border-slate-800">
-                    <span>Gross Invoice Total:</span>
+                    <span>Browser-only Order Preview Total (not an invoice):</span>
                     <span className="text-emerald-400">₹{selectedOrder.totalAmount.toLocaleString('en-IN')}</span>
                   </div>
                 </div>
@@ -764,7 +760,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Generated Air Waybill (AWB) Barcode</label>
+                <label className="block text-slate-300 mb-1 font-medium">Carrier-issued AWB (not available)</label>
                 <input
                   type="text"
                   value={awbInput}
@@ -775,7 +771,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">GST e-Way Bill Number (NIC Portal)</label>
+                <label className="block text-slate-300 mb-1 font-medium">NIC-issued e-Way bill (not available)</label>
                 <input
                   type="text"
                   value={eWayBillInput}
