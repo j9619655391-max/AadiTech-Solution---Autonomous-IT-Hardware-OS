@@ -83,3 +83,20 @@ test('BOM server proof needed before validating compatibility and issuing a comm
  assert.match(s,/NOT VERIFIED: Keyword screening is not a vendor hardware validation/);
  assert.match(s,/Commercial Quote Issuance HOLD/);
 });
+
+test('legacy procurement screen cannot turn local SKU/serial/RFQ into saleable stock or an issued PO',()=>{
+ const file='src/components/ProcurementAndInventory.tsx',s=source(file);
+ absent(s,[
+  'state: \'AVAILABLE\',','onRaisePO(rfq.id, quote.supplierId)',
+  'onClick={() => setShowAddSerialModal(true)}',
+  'onClick={() => setShowAddProductModal(true)}',
+  'onClick={() => setShowCreateRFQModal(true)}',
+  'Issue Purchase Order (PO)',
+  'Compare authorized national distributors',
+ ],file);
+ assert.match(s,/PO Issuance HOLD/);
+ assert.match(s,/Supplier RFQ HOLD/);
+ assert.match(s,/Serial Posting HOLD/);
+ assert.match(s,/SKU Registration HOLD/);
+ assert.match(s,/Real stock ownership and availability NOT VERIFIED/);
+});
