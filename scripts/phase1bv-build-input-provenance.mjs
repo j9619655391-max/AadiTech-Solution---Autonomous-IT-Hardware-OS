@@ -13,11 +13,13 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'index.html',
  'package.json',
  'scripts/phase1bt-production-scope.mjs',
+ 'scripts/phase1bv-build-input-provenance.mjs',
  'scripts/verify-patched-dependencies.mjs',
  'server.ts',
  'server/security/deploymentGuards.ts',
  'server/security/devToolExposure.ts',
  'tsconfig.json',
+ 'tests/phase1bv-build-input-provenance.test.mjs',
  'vite.config.ts'
 ]);
 const EXACT_SCRIPTS=Object.freeze({
