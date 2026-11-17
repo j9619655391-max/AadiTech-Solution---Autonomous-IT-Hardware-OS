@@ -81,7 +81,9 @@
     "db:migrate:bf-publication": "tsx scripts/migrate-bf-publication.ts",
     "test:bf-publication-mysql": "tsx --test tests/bf-publication-mysql.integration.ts",
     "db:migrate:bg-cross-source": "tsx scripts/migrate-bg-cross-source.ts",
-    "test:bg-cross-source-mysql": "tsx --test tests/bg-cross-source-mysql.integration.ts"
+    "test:bg-cross-source-mysql": "tsx --test tests/bg-cross-source-mysql.integration.ts",
+    "db:migrate:bm-quote-checkpoints": "tsx scripts/migrate-bm-quote-checkpoints.ts",
+    "test:bm-quote-checkpoint-mysql": "tsx --test tests/bm-quote-checkpoint-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
