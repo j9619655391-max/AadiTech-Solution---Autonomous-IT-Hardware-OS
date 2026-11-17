@@ -78,10 +78,10 @@ export function assessReviewerGovernance(policy,workflow,template,pr={}){
     !contains(workflow,/node scripts\/verify-patched-dependencies\.mjs/)||
     !contains(workflow,/bun install --frozen-lockfile --production/))
   reasons.add('BW_ZERO_HIGH_AUDIT_OR_FROZEN_INSTALL_REMOVED');
- if(!contains(template,/two distinct, non-author approvals/)||
-    !contains(template,/independently signed CI provenance/)||
+ if(!contains(template,/two distinct, non-author approvals/i)||
+    !contains(template,/independently signed CI provenance/i)||
     !contains(template,/productionReleaseAuthorized=false/)||
-    !contains(template,/GHSA-fc5q-39xc-vjpf/))
+    !contains(template,/GHSA-fc5q-39xc-vjpf/i))
   reasons.add('BW_PR_INDEPENDENT_REVIEW_TEMPLATE_DRIFT');
  // PR metadata is contextual only. Never infer real GitHub protection from it.
  if(pr.state!==undefined&&pr.state!=='open')
