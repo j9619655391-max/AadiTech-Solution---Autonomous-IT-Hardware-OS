@@ -9,7 +9,7 @@ import {bmQuoteCheckpointWriteTarget} from '../server/commercialIntegrity/quoteC
 async function main(){
  bmQuoteCheckpointWriteTarget(process.env);
  const id='0036_bm_quote_candidate_checkpoints';
- if(MIGRATIONS[35]!==id||MIGRATIONS.length!==36)
+ if(MIGRATIONS[35]!==id||MIGRATIONS.length<36)
   throw Error('Phase 1BM migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
