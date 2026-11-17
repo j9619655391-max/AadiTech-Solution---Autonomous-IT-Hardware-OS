@@ -84,7 +84,8 @@ export type CandidateRemoteCapture={
  transportMode:'REPLAY_CAPTURE_ONLY';httpStatus:200;
  redirectCount:0;contentType:'application/vnd.aaditech.checkpoint+json';
  remoteSequence:number;remoteReceiptSha256:string;remoteSourceSha256:string;
- revocationEpoch:number;crlSha256:string;ocspSha256:string;issuerChainSha256:string;
+ revocationEpoch:number;revocationThisUpdate:string;revocationNextUpdate:string;
+ crlSha256:string;ocspSha256:string;issuerChainSha256:string;
  wormDeleteDenied:boolean;wormOverwriteDenied:boolean;wormRetentionUntil:string;
  drRestoredSequence:number;drRestoredReceiptSha256:string;drRestoredSourceSha256:string;
  drTranscriptSha256:string
@@ -107,7 +108,8 @@ const MANIFEST_FIELDS=['format','quoteId','providerId','registrarKeyId',
 const CAPTURE_FIELDS=['format','quoteId','role','collectorKeyId','manifestSha256',
  'challengeSha256','origin','tlsSpkiSha256','retrievedAt','transportMode',
  'httpStatus','redirectCount','contentType','remoteSequence','remoteReceiptSha256',
- 'remoteSourceSha256','revocationEpoch','crlSha256','ocspSha256','issuerChainSha256',
+ 'remoteSourceSha256','revocationEpoch','revocationThisUpdate',
+ 'revocationNextUpdate','crlSha256','ocspSha256','issuerChainSha256',
  'wormDeleteDenied','wormOverwriteDenied','wormRetentionUntil','drRestoredSequence',
  'drRestoredReceiptSha256','drRestoredSourceSha256','drTranscriptSha256'];
 export const canonicalCandidateRegistrarManifest=(manifest:CandidateEnrollmentManifest)=>
@@ -270,6 +272,10 @@ export function assessCandidateRemoteEvidence(args:{
    errors.add('BQ_REMOTE_HEAD_FORK_OR_LOCAL_LAG');
   if(b.revocationEpoch<e?.minRevocationEpoch)
    errors.add('BQ_REVOCATION_EPOCH_ROLLBACK');
+  const revFrom=stamp(b.revocationThisUpdate),revUntil=stamp(b.revocationNextUpdate);
+  if(revFrom===null||revUntil===null||!Number.isFinite(at)||
+     revFrom>at+60000||at-revFrom>3600000||revUntil<=at||revUntil<=revFrom)
+   errors.add('BQ_CLAIMED_REVOCATION_WINDOW_INVALID');
   if(!b.wormDeleteDenied||!b.wormOverwriteDenied||
     stamp(b.wormRetentionUntil)===null||
     stamp(b.wormRetentionUntil)!<=at+30*86400000)
@@ -284,6 +290,8 @@ export function assessCandidateRemoteEvidence(args:{
       b.remoteReceiptSha256!==first.remoteReceiptSha256||
       b.remoteSourceSha256!==first.remoteSourceSha256||
       b.revocationEpoch!==first.revocationEpoch||
+      b.revocationThisUpdate!==first.revocationThisUpdate||
+      b.revocationNextUpdate!==first.revocationNextUpdate||
       b.crlSha256!==first.crlSha256||b.ocspSha256!==first.ocspSha256||
       b.issuerChainSha256!==first.issuerChainSha256||
       b.wormDeleteDenied!==first.wormDeleteDenied||
