@@ -69,8 +69,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
     customerName: salesOrders[0]?.customerName || '',
     siteAddress: salesOrders[0]?.deliveryAddress || '',
     hardwareSummary: 'Network Switch & Firewall Installation',
-    assignedTechnician: 'Amit Verma (Senior Network Specialist)',
-    technicianPhone: '+91 98112 33491',
+    assignedTechnician: '',
+    technicianPhone: '',
     scheduledDate: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]
   });
 
@@ -78,7 +78,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
   const [isNewRMAModalOpen, setIsNewRMAModalOpen] = useState(false);
   const [newRMAForm, setNewRMAForm] = useState({
     customerName: salesOrders[0]?.customerName || '',
-    serialNumber: 'PF49X099',
+    serialNumber: '',
     productModel: 'Enterprise Hardware Unit',
     issueReported: 'Boot failure after power surge',
     pickupAddress: salesOrders[0]?.deliveryAddress || ''
@@ -91,63 +91,23 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
       o.destinationCity.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleOpenDispatch = (order: SalesOrder) => {
-    setDispatchOrderTarget(order);
-    setAwbInput(`BD-${Math.floor(10000000 + Math.random() * 90000000)}`);
-    setEWayBillInput(`2718${Math.floor(10000000 + Math.random() * 90000000)}`);
-    setIsDispatchModalOpen(true);
+  // This legacy view has no server-authorized outbound logistics/RMA/WO API.
+  // Never generate fictitious carrier tracking, e-Way bill or completion IDs.
+  const handleOpenDispatch = (_order: SalesOrder) => {
+    setDispatchOrderTarget(null);
+    setIsDispatchModalOpen(false);
   };
-
   const handleConfirmDispatch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (dispatchOrderTarget) {
-      onDispatchOrder(dispatchOrderTarget.id, selectedCourier, awbInput, eWayBillInput);
-      setIsDispatchModalOpen(false);
-      setDispatchOrderTarget(null);
-    }
+    setDispatchOrderTarget(null);
+    setIsDispatchModalOpen(false);
   };
-
   const handleCreateWO = (e: React.FormEvent) => {
     e.preventDefault();
-    const wo: InstallationWorkOrder = {
-      id: `WO-2026-${Math.floor(10 + Math.random() * 90)}`,
-      workOrderNumber: `WO-2026-${Math.floor(10 + Math.random() * 90)}`,
-      orderId: newWOForm.orderId,
-      customerName: newWOForm.customerName,
-      siteAddress: newWOForm.siteAddress,
-      hardwareSummary: newWOForm.hardwareSummary,
-      assignedTechnician: newWOForm.assignedTechnician,
-      technicianPhone: newWOForm.technicianPhone,
-      scheduledDate: newWOForm.scheduledDate,
-      status: 'SCHEDULED',
-      checklist: [
-        { item: 'Site Power & Cooling Readiness Verification', done: true },
-        { item: 'Hardware Unboxing & Serial QC Barcode Scan', done: false },
-        { item: 'Rack Mounting & Patch Cable Dressing', done: false },
-        { item: 'Firmware & Initial Configuration', done: false },
-        { item: 'Customer Acceptance Signoff & Handover', done: false }
-      ],
-      customerSignoff: false
-    };
-    onCreateWorkOrder(wo);
     setIsNewWOModalOpen(false);
   };
-
   const handleCreateRMA = (e: React.FormEvent) => {
     e.preventDefault();
-    const rma: RMARequest = {
-      id: `RMA-2026-${Math.floor(10 + Math.random() * 90)}`,
-      rmaNumber: `RMA-2026-${Math.floor(10 + Math.random() * 90)}`,
-      customerName: newRMAForm.customerName,
-      serialNumber: newRMAForm.serialNumber,
-      productModel: newRMAForm.productModel,
-      issueReported: newRMAForm.issueReported,
-      status: 'RMA_INITIATED',
-      pickupAddress: newRMAForm.pickupAddress,
-      technicianAssigned: 'Suresh Patil (Field Diagnostics)',
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-    onAddRMA(rma);
     setIsNewRMAModalOpen(false);
   };
 
@@ -174,14 +134,16 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsNewWOModalOpen(true)}
+              disabled
+               title="Work-order creation requires authoritative server approval"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Schedule On-Site Engineer</span>
             </button>
             <button
-              onClick={() => setIsNewRMAModalOpen(true)}
+              disabled
+               title="RMA creation requires verified ownership and server authorization"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition-all"
             >
               <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
@@ -206,7 +168,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
               <span className="text-lg font-bold text-cyan-400">
                 {salesOrders.filter((o) => o.fulfillmentStatus === 'DISPATCHED').length}
               </span>
-              <span className="text-[10px] text-slate-400 font-medium">Live AWB Sync</span>
+              <span className="text-[10px] text-slate-400 font-medium">Tracking NOT VERIFIED</span>
             </div>
           </div>
 
@@ -405,7 +367,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                     <h3 className="text-base font-bold text-white font-mono">{selectedOrder.orderNumber}</h3>
                   </div>
                   <button
-                    onClick={() => window.print()}
+                    disabled
+                       title="An official shipping document cannot be printed from browser-only data"
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700"
                   >
                     <Printer className="w-3.5 h-3.5" />
@@ -493,7 +456,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                 <div className="pt-2">
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => onUpdateOrderStatus(selectedOrder.id, 'PICKED_IN_QC')}
+                      disabled
+                         title="Warehouse release is not available in preview mode"
                       className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
                         selectedOrder.fulfillmentStatus === 'PICKED_IN_QC'
                           ? 'bg-amber-500 text-slate-950 border-amber-400'
@@ -503,7 +467,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                       QC Inward Pass
                     </button>
                     <button
-                      onClick={() => handleOpenDispatch(selectedOrder)}
+                      disabled
+                         title="External dispatch is blocked until formal release"
                       className="py-2 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
                     >
                       Dispatch & AWB
@@ -588,7 +553,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsNewWOModalOpen(true)}
+              disabled
+               title="Work-order creation requires authoritative server approval"
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -657,7 +623,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                           <input
                             type="checkbox"
                             checked={item.done}
-                            onChange={() => onToggleWorkOrderChecklist(wo.id, cIdx)}
+                            disabled
                             className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-blue-500"
                           />
                           <span className={item.done ? 'text-slate-300 line-through' : 'text-white'}>
@@ -687,7 +653,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                     <div className="flex items-center gap-2">
                       {wo.status !== 'COMPLETED' ? (
                         <button
-                          onClick={() => onUpdateWorkOrderStatus(wo.id, 'COMPLETED')}
+                          disabled
+                           title="Completion requires independently verified work-order signoff"
                           disabled={!allDone}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                             allDone
@@ -725,7 +692,8 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsNewRMAModalOpen(true)}
+              disabled
+               title="RMA creation requires verified ownership and server authorization"
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -769,7 +737,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <h3 className="text-base font-bold text-white">Generate Dispatch & Transmit AWB</h3>
+                <h3 className="text-base font-bold text-white">Dispatch DISABLED — No Valid AWB</h3>
                 <p className="text-xs text-slate-400">Order: {dispatchOrderTarget.orderNumber}</p>
               </div>
               <button
@@ -835,7 +803,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs shadow-sm"
                 >
-                  Confirm Dispatch & Transmit
+                  Dispatch HARD HOLD
                 </button>
               </div>
             </form>
@@ -940,7 +908,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-sm"
                 >
-                  Generate Work Order
+                  Work Order HARD HOLD
                 </button>
               </div>
             </form>
@@ -1034,7 +1002,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold text-xs shadow-sm"
                 >
-                  Initiate RMA & Pickup
+                  RMA HARD HOLD
                 </button>
               </div>
             </form>
