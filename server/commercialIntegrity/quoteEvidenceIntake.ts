@@ -26,7 +26,7 @@ function canonical(value:unknown,depth=0):unknown{
  }
  if(value&&typeof value==='object'){
   const o=value as Row,keys=Object.keys(o).sort();
-  if(keys.length>25||keys.some(k=>['__proto__','constructor','prototype'].includes(k)))
+  if(keys.length>32||keys.some(k=>['__proto__','constructor','prototype'].includes(k)))
    throw Error('BP evidence shape rejected');
   const r:Row={};
   for(const k of keys)r[k]=canonical(o[k],depth+1);
