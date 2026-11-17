@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import express from 'express';
 import { getPool } from '../server/db';
 import { hashPassword, hashToken } from '../server/auth/crypto';
@@ -341,10 +341,19 @@ test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper a
  const [held]=await db.query<any[]>('SELECT quote_id FROM sales_quote_release_preparations WHERE prepared_by=? ORDER BY created_at DESC LIMIT 1',[actor]);
  assert.equal(held.length,1);
  const route='/api/commercial-integrity/quotes/'+held[0].quote_id;
+ const freshOwnerToken=randomBytes(32).toString('base64url');
+ const freshReviewerToken=randomBytes(32).toString('base64url');
+ for(const [sessionToken,userId] of [[freshOwnerToken,actor],[freshReviewerToken,reviewerId]]){
+  await db.execute(
+   'INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
+   [hashToken(sessionToken),userId,csrf]);
+ }
+ const ownerRequest=(target:string)=>call(target,'GET',undefined,true,true,
+  {cookie:'aaditech_session='+freshOwnerToken});
  assert.equal((await call(route,'GET',undefined,false)).status,401);
  assert.equal((await call(route,'GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
- assert.equal((await call('/api/commercial-integrity/quotes/'+randomUUID())).status,404);
- const start=await call(route);
+ assert.equal((await ownerRequest('/api/commercial-integrity/quotes/'+randomUUID())).status,404);
+ const start=await ownerRequest(route);
  assert.equal(start.status,200);
  assert.equal(start.data.localScopeConsistent,true,start.data.anomalyCodes?.join(','));
  assert.equal(start.data.hasInternalReview,true);
@@ -357,7 +366,7 @@ test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper a
  assert.equal(rows.length,1);
  try{
   await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',['0.01',rows[0].id]);
-  const changed=await call(route);
+  const changed=await ownerRequest(route);
   assert.equal(changed.status,200);
   assert.equal(changed.data.localScopeConsistent,false);
   assert.ok(changed.data.anomalyCodes.includes('QUOTE_LINE_SNAPSHOT_MONEY_CHANGED'));
@@ -365,7 +374,7 @@ test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper a
  }finally{
   await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',[rows[0].line_subtotal,rows[0].id]);
  }
- assert.equal((await call(route)).data.localScopeConsistent,true);
+ assert.equal((await ownerRequest(route)).data.localScopeConsistent,true);
 });
 
 test('step-up requires correct password and creates session-bound short-lived token',async()=>{
