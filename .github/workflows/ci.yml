@@ -320,6 +320,10 @@ jobs:
         run: bun run db:migrate:bn-quote-reconciliation
       - name: Verify Phase 1BN immutable checksum schema rerun on disposable MySQL
         run: bun run db:migrate:bn-quote-reconciliation
+      - name: Apply Phase 1BO candidate-only authority dossier schema 0038
+        run: bun run db:migrate:bo-authority-dossiers
+      - name: Verify Phase 1BO migration checksum and idempotent rerun
+        run: bun run db:migrate:bo-authority-dossiers
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -358,6 +362,8 @@ jobs:
         run: bun run test:bm-quote-checkpoint-mysql
       - name: Phase 1BN real MySQL dual-witness freshness, revocation, rollover and DR rollback simulation
         run: bun run test:bn-quote-reconciliation-mysql
+      - name: Phase 1BO real MySQL candidate authority dossier, upstream tamper and quorum segregation HOLD tests
+        run: bun run test:bo-authority-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
