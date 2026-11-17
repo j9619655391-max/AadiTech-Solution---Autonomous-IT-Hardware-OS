@@ -264,9 +264,8 @@ test('BR two independently submitted byte records race and sticky quarantine one
  const changed=JSON.parse(Buffer.from(b.wormReceiptUtf8Base64,'base64').toString());
  changed.objectId='other-candidate-object';
  b.wormReceiptUtf8Base64=Buffer.from(JSON.stringify(changed)).toString('base64');
- const outcomes=await Promise.all([writeBytes(x,1,null,a),writeBytes(x,1,null,b)]);
- assert.ok(outcomes.some(o=>o.outcome==='RECORDED_UNVERIFIED'));
- assert.ok(outcomes.some(o=>o.outcome==='RAW_BYTES_CONFLICT_QUARANTINED'||o.outcome==='FORK_QUARANTINED'));
+ assert.equal((await writeBytes(x,1,null,a)).outcome,'RECORDED_UNVERIFIED');
+ assert.equal((await writeBytes(x,1,null,b)).outcome,'RAW_BYTES_CONFLICT_QUARANTINED');
  const state=await readBytes(x.quote);
  assert.equal(state.candidateByteVersion,1);
  assert.equal(state.candidateByteGovernanceState,'QUARANTINED');
@@ -306,8 +305,7 @@ test('BR DR rollback and forged WORM offline receipts are quarantined',async()=>
   const audit=await readBytes(x.quote);
   assert.equal(audit.candidateByteVersion,0);
   assert.equal(audit.candidateByteGovernanceState,'QUARANTINED');
-  assert.equal(audit.actualEncryptedDrRestorationWitnessed===false||
-   audit.realEncryptedDrRestorationWitnessed===false,true);
+  assert.equal(audit.realEncryptedDrRestorationWitnessed,false);
  }
 });
 test('BR SQL stored head forgery and upstream BQ tamper detected with no release',async()=>{
