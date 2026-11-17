@@ -60,7 +60,8 @@ export function devToolHostGate(config:DevToolExposure):RequestHandler{
   const origin=req.headers.origin;
   if(typeof host!=='string'||!allowedHosts.has(host)||
      (origin!==undefined&&(
-       typeof origin!=='string'||!allowedOrigins.has(origin)
+       typeof origin!=='string'||!allowedOrigins.has(origin)||
+       new URL(origin).host!==host
      ))||
      req.headers['x-forwarded-host']!==undefined||
      req.headers['x-original-host']!==undefined||
