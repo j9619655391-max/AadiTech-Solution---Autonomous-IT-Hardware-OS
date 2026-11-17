@@ -1,4 +1,5 @@
 import {isIP} from 'node:net';
+import {resolveDevToolExposure} from './devToolExposure';
 import type {RequestHandler} from 'express';
 
 export interface DeploymentSecurityConfig {
@@ -33,7 +34,9 @@ export function parseTrustedProxyCidrs(value:string|undefined):string[]{
 export function resolveDeploymentSecurity(env:NodeJS.ProcessEnv):DeploymentSecurityConfig{
  const production=env.NODE_ENV==='production';
  if(!production){
-  return {production:false,bindHost:env.APP_BIND_HOST||'127.0.0.1',
+  // Phase 1BU fail closed before any HTTP listener or Vite import.
+  const dev=resolveDevToolExposure(env,3000);
+  return {production:false,bindHost:dev.bindHost,
    trustedProxyCidrs:[],httpsRequired:false,publicBind:false,appOrigin:null};
  }
  const errors:string[]=[];
