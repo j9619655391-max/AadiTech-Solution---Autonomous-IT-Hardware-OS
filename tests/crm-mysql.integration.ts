@@ -20,7 +20,8 @@ if (!db) throw new Error('Integration test MySQL pool unavailable');
 after(async()=>{await db.end();});
 const actor=randomUUID(), token='a'.repeat(43), csrf='b'.repeat(43);
 const ownerPassword='CI-owner-strong-password-2026';
-let stepUpToken='';
+const reviewerPassword='CI-independent-reviewer-password-2026';
+let stepUpToken='',reviewerStepUpToken='';
 let base='';
 let closeServer:()=>Promise<void>;
 const cookie='aaditech_session='+token;
@@ -31,7 +32,7 @@ test('setup isolated owner session',async()=>{
     [actor,'ci-owner@example.invalid','CI Owner',await hashPassword(ownerPassword),'OWNER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",[hashToken(token),actor,csrf]);
   await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
-    [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer','test-only','REVIEWER']);
+    [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer',await hashPassword(reviewerPassword),'REVIEWER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
     [hashToken(reviewerToken),reviewerId,csrf]);
   const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
@@ -50,8 +51,10 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   if(body!==undefined)headers['content-type']='application/json';
   if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
   if(includeCsrf&& !['GET','HEAD'].includes(method)&&!('x-csrf-token' in headers))headers['x-csrf-token']=csrf;
-  if(stepUpToken && !('x-step-up-token' in headers) && ((route.startsWith('/api/security/reviewers/')&&method!=='GET') || route==='/api/auth/revoke-my-sessions'))
+  if(stepUpToken && !('x-step-up-token' in headers) && ((route.startsWith('/api/security/reviewers/')&&method!=='GET') || route==='/api/auth/revoke-my-sessions' || (method==='POST' && route.startsWith('/api/quotes/release-preparations/'))))
     headers['x-step-up-token']=stepUpToken;
+  if(reviewerStepUpToken && method==='POST' && route.startsWith('/api/quotes/reviews/') && !('x-step-up-token' in headers) && headers.cookie===reviewerCookie)
+    headers['x-step-up-token']=reviewerStepUpToken;
   const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
   const raw=await response.text();
   return {status:response.status,data:raw?JSON.parse(raw):null,setCookie:response.headers.get('set-cookie')};
@@ -231,6 +234,13 @@ test('owner reviews exact latest draft revision with enforced margin override an
   assert.equal(draft.status,201);
   const path='/api/quotes/reviews/'+draft.data.id;
   assert.equal((await call(path,'GET',undefined,false)).status,401);
+  const missingStepUp=await call(path,'POST',{expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Missing password verification',overrideRequested:false});
+  assert.equal(missingStepUp.status,403);
+  const verifiedReviewer=await call('/api/auth/step-up','POST',{currentPassword:reviewerPassword},true,true,{cookie:reviewerCookie});
+  assert.equal(verifiedReviewer.status,200);
+  reviewerStepUpToken=verifiedReviewer.data.stepUpToken;
+  assert.match(reviewerStepUpToken,/^[A-Za-z0-9_-]{43}$/);
+  assert.equal((await call(path,'POST',{expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Invalid password verification',overrideRequested:false},true,true,{'x-step-up-token':'invalid'})).status,403);
   assert.equal((await call(path,'POST',{expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Not commercially acceptable',overrideRequested:false},true,false)).status,403);
   const review={expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Approved by owner',overrideRequested:false};
   assert.equal((await call(path,'POST',review)).status,400);
@@ -283,6 +293,11 @@ test('release-preparation outbox stays disabled, replays safely and stales after
   assert.equal(draft.status,201);
   const path='/api/quotes/release-preparations/'+draft.data.id;
   assert.equal((await call(path,'GET',undefined,false)).status,401);
+  assert.equal((await call(path,'POST',{expectedRevision:0})).status,403);
+  const ownerVerified=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(ownerVerified.status,200);
+  stepUpToken=ownerVerified.data.stepUpToken;
+  assert.equal((await call(path,'POST',{expectedRevision:0},true,true,{'x-step-up-token':'invalid'})).status,403);
   assert.equal((await call(path,'POST',{expectedRevision:0},true,false)).status,403);
   assert.equal((await call(path,'POST',{expectedRevision:0,recipient:'buyer@example.invalid'})).status,400);
   assert.equal((await call(path,'POST',{expectedRevision:0})).status,409);
