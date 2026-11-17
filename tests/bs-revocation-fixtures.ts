@@ -40,7 +40,7 @@ const oid=(str:string):Buffer=>{
 const rsaAlg=()=>seq(oid('1.2.840.113549.1.1.11'),tag(0x05,Buffer.alloc(0)));
 const hashAlg=()=>seq(oid('2.16.840.1.101.3.4.2.1'),tag(0x05,Buffer.alloc(0)));
 const gtime=(at:Date)=>tag(0x18,Buffer.from(
- at.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z'),'ascii'));
+ at.toISOString().replace(/[-:T]/g,'').replace(/\.\d{3}Z$/,'Z'),'ascii'));
 const signed=(tbs:Buffer)=>{
  const sign=createSign('RSA-SHA256');sign.update(tbs);
  return sign.sign(brRootKeyPem);
