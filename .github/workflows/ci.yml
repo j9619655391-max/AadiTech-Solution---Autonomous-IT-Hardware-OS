@@ -124,6 +124,21 @@ jobs:
           path: phase0-audit-report.json
           if-no-files-found: warn
 
+  build-input-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 1BV verify frozen build command, local glob inputs, CI runner and token boundary
+        run: node scripts/phase1bv-build-input-provenance.mjs
+      - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1bv-held-unsigned-build-input-inventory
+          path: phase1bv-held-build-input-report.json
+          if-no-files-found: warn
+
   production-runtime-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
