@@ -6,12 +6,14 @@ import {triageDependencyAudit} from '../scripts/triage-dependencies.mjs';
 const make=()=>{
  const packages=Object.fromEntries(Object.entries(REVIEWED_PATCHES)
   .map(([name,version])=>[name,[name+'@'+version]]));
+ const dev={vite:'6.4.5','@tailwindcss/vite':'^4.1.14',
+  '@vitejs/plugin-react':'^5.0.4'};
  return {
-  packageJson:{dependencies:{vite:'6.4.5'},devDependencies:{vite:'6.4.5'},
+  packageJson:{dependencies:{},devDependencies:dev,
    overrides:{'proxy-addr':'2.0.8','body-parser':'1.20.9',
     'source-map-js':'1.2.2','qs':'6.16.1'}},
-  lock:{packages,workspaces:{'':{dependencies:{vite:'6.4.5'},
-   devDependencies:{vite:'6.4.5'}}}}
+  lock:{packages,workspaces:{'':{dependencies:{},
+   devDependencies:dev}}}
  };
 };
 test('reviewed patched dependencies must match exact lockfile and manifest versions',()=>{
@@ -21,7 +23,8 @@ test('reviewed patched dependencies must match exact lockfile and manifest versi
  assert.equal(checkLockedPatches(packageJson,
   {...lock,packages:{...lock.packages,'proxy-addr':['proxy-addr@2.0.7']}}).lockedPatchVersionsVerified,false);
  assert.equal(checkLockedPatches(packageJson,{
-  ...lock,workspaces:{'':{dependencies:{vite:'^6.2.3'},devDependencies:{vite:'6.4.5'}}}
+  ...lock,workspaces:{'':{dependencies:{vite:'^6.2.3'},
+   devDependencies:lock.workspaces[''].devDependencies}}
  }).lockedPatchVersionsVerified,false);
 });
 test('critical/high advisory matches fail, no findings does not certify production',()=>{
