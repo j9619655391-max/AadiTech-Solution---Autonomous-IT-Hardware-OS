@@ -81,7 +81,8 @@ export async function inspectCandidateSignedRevocationOnConnection(
  for(const row of events){
   const v=Number(row.version_number),number=Number(row.crl_number);
   if(!Number.isSafeInteger(v)||v<1||!Number.isSafeInteger(number)||
-     number<1||![row.packet_sha256,row.br_packet_sha256,row.issuer_root_sha256]
+     number<0||(row.outcome===GOOD&&number<1)||
+     ![row.packet_sha256,row.br_packet_sha256,row.issuer_root_sha256]
       .every(x=>SHA.test(String(x)))||
      (row.predecessor_packet_sha256!==null&&
       !SHA.test(String(row.predecessor_packet_sha256))))
