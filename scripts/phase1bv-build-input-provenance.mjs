@@ -10,10 +10,14 @@ import {readBunLock} from './phase1bt-production-scope.mjs';
 export const BUILD_INPUT_PATHS=Object.freeze([
  '.github/workflows/ci.yml',
  'bun.lock',
+ 'index.html',
  'package.json',
  'scripts/phase1bt-production-scope.mjs',
+ 'scripts/verify-patched-dependencies.mjs',
  'server.ts',
+ 'server/security/deploymentGuards.ts',
  'server/security/devToolExposure.ts',
+ 'tsconfig.json',
  'vite.config.ts'
 ]);
 const EXACT_SCRIPTS=Object.freeze({
@@ -78,7 +82,11 @@ export function assessBuildInputBoundary({pkg,lock,server,vite,ci,devExposure,en
     !present(vite,/import react from '@vitejs\/plugin-react'/)||
     !present(vite,/import tailwindcss from '@tailwindcss\/vite'/))
   anomalies.add('BV_VITE_UNREVIEWED_PLUGIN_CHAIN');
- if(SCAN.test(vite))
+ // A comment mentioning a vulnerability is not executable glob input.
+ // This is an intentionally bounded configuration heuristic, not a parser or
+ // a full repository-wide dataflow / regex exploitability proof.
+ const viteCode=vite.replace(/^\s*\/\/[^\n]*$/gm,'');
+ if(SCAN.test(viteCode))
   anomalies.add('BV_DYNAMIC_GLOB_OR_BUILD_INPUT_DISCOVERY');
  if(!present(vite,/server:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
     !present(vite,/preview:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
