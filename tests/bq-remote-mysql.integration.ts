@@ -26,6 +26,7 @@ import {issueCandidateIntakeChallenge,recordCandidateEvidenceIntake,
  from '../server/commercialIntegrity/quoteEvidenceCustody';
 import {candidateIntakePacketDigest} from '../server/commercialIntegrity/quoteEvidenceIntake';
 import {bpNow,bpSha,bpPins,bpPinsetSha,bpPacketFixture,bpResign,bpClone}
+ from './bp-intake-fixtures';
 import {issueCandidateRemoteChallenge,recordCandidateRemoteEvidence,
  inspectCandidateRemoteEvidence,readCandidateRemoteExpectedUnderLock,
  inspectCandidateRemoteEvidenceOnConnection,bqRemoteWriteTarget}
@@ -35,7 +36,6 @@ import {bqNow,bqSha,bqRoot,bqRootSha,bqCollectors,bqCollectorsSha,
  bqEndpoints,bqEndpointsSha,bqPacketFixture,bqResignCapture,
  bqResignManifest,bqClone}
  from './bq-remote-fixtures';
- from './bp-intake-fixtures';
 
 if(process.env.NODE_ENV!=='test'||process.env.CRM_TEST_DB!=='1'||
    process.env.DB_NAME!=='aaditech_ci')
