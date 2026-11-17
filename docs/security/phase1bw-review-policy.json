@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "phase": "1BW",
+  "policyKind": "REQUIRED_BUT_UNVERIFIED_INDEPENDENT_GOVERNANCE",
+  "repository": "j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS",
+  "protectedBranch": "main",
+  "engineeringBranch": "chore/phase0-foundation-20261106",
+  "requiredControls": {
+    "preventDirectPush": true,
+    "preventForcePush": true,
+    "preventDeletion": true,
+    "requirePullRequest": true,
+    "minimumIndependentApprovals": 2,
+    "dismissStaleReviews": true,
+    "requireApprovalOfMostRecentPush": true,
+    "requireCodeOwnerReview": true,
+    "requireConversationResolution": true,
+    "forbidBypassForAdmins": true,
+    "requireSuccessfulChecks": [
+      "baseline",
+      "mysql-integration",
+      "production-runtime-scope",
+      "build-input-provenance",
+      "review-vendor-intake-hold"
+    ],
+    "requireExactHeadRevalidation": true,
+    "requireSeparateSecurityReviewer": true,
+    "requireSeparateBusinessOwnerReviewer": true,
+    "prohibitSelfApproval": true,
+    "requireIndependentSignedCIProvenance": true,
+    "requireExternalImmutableAttestationRetention": true,
+    "requireAuthenticatedSecurityAcceptance": true
+  },
+  "observedState": {
+    "mainProtectionIndependentlyVerified": false,
+    "independentReviewersAuthenticated": false,
+    "distinctReviewerApprovalsVerified": 0,
+    "independentSignedProvenanceVerified": false,
+    "externalImmutableAttestationVerified": false,
+    "upstreamPicomatchPatchVerified": false,
+    "criticalHighAuditGreen": false,
+    "externalAuthorityAuthenticated": false,
+    "securityReleaseApprovalVerified": false,
+    "productionReleaseAuthorized": false,
+    "releaseDecision": "HOLD"
+  },
+  "releaseGate": "HARD_HOLD",
+  "note": "Requirements are requested configuration only. GitHub review settings cannot be inferred from this policy file. Never convert local fixture or codeowner text into independently authenticated approvals."
+}
