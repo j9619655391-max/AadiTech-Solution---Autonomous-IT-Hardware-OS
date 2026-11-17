@@ -124,6 +124,33 @@ jobs:
           path: phase0-audit-report.json
           if-no-files-found: warn
 
+  production-runtime-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install exact frozen production-only dependency closure
+        run: bun install --frozen-lockfile --production
+      - name: Verify locked production graph and dev-only Vite server import
+        run: node scripts/phase1bt-production-scope.mjs
+      - name: Prove unpatched picomatch and Vite were not installed in production-only tree
+        run: |
+          for directory in node_modules/picomatch node_modules/vite node_modules/@vitejs/plugin-react node_modules/@tailwindcss/vite; do
+            if test -e "$directory"; then
+              echo "BLOCKED: build-only package present in production install: $directory"
+              exit 1
+            fi
+          done
+          echo "Only the production dependency scope is isolated; global advisory GHSA-fc5q-39xc-vjpf remains unresolved."
+      - name: Upload held production dependency closure (not a release approval)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1bt-held-production-dependency-closure
+          path: phase1bt-production-closure-report.json
+          if-no-files-found: warn
+
   mysql-integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
