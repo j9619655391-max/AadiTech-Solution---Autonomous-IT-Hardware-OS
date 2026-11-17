@@ -84,6 +84,7 @@ test('BU real HTTP refuses hostile Host, Origin, DNS rebinding and proxy spoofin
    {Host:'localhost.evil.invalid:'+port},
    {Host:'[::ffff:127.0.0.1]:'+port},
    {Host:host,Origin:'http://attacker.invalid'},
+   {Host:host,Origin:'http://localhost:'+port},
    {Host:host,Origin:'null'},
    {Host:host,Origin:'http://127.0.0.1:'+port+'/'},
    {Host:host,'X-Forwarded-Host':'attacker.invalid'},
