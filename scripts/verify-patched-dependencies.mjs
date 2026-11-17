@@ -19,14 +19,21 @@ export function checkLockedPatches(pkg,lock){
   const actual=lock.packages[name]?.[0];
   if(actual!==name+'@'+wanted)problems.push('Unexpected locked version for '+name);
   if(name==='vite'){
-   if(pkg.dependencies?.vite!==wanted||pkg.devDependencies?.vite!==wanted)
-    problems.push('Vite dependency constraints are not pinned');
+   if(Object.hasOwn(pkg.dependencies??{},'vite')||pkg.devDependencies?.vite!==wanted)
+    problems.push('Vite must be dev-only and exact-version pinned');
   }else if(pkg.overrides?.[name]!==wanted)
    problems.push('Missing reviewed override: '+name);
  }
- if(workspace.dependencies?.vite!==REVIEWED_PATCHES.vite||
+ if(Object.hasOwn(workspace.dependencies??{},'vite')||
    workspace.devDependencies?.vite!==REVIEWED_PATCHES.vite)
-  problems.push('Bun workspace Vite constraint is not pinned');
+  problems.push('Bun workspace Vite must be dev-only and exact-version pinned');
+ for(const plugin of ['@tailwindcss/vite','@vitejs/plugin-react']){
+  if(Object.hasOwn(pkg.dependencies??{},plugin)||
+     Object.hasOwn(workspace.dependencies??{},plugin)||
+     !pkg.devDependencies?.[plugin]||
+     workspace.devDependencies?.[plugin]!==pkg.devDependencies[plugin])
+   problems.push('Unisolated Vite build plugin: '+plugin);
+ }
  return {lockedPatchVersionsVerified:problems.length===0,problems,
   productionReleaseAuthorized:false};
 }
