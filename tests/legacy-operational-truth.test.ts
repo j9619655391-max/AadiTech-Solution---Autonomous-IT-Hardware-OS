@@ -53,3 +53,28 @@ test('legacy logistics has no outbound dispatch/order mutation or generated carr
  assert.match(s,/Delivery confirmation requires carrier-signed proof/);
  assert.match(s,/Browser-only Order Preview Total/);
 });
+
+test('central App callback layer denies legacy business side effects even if child UI invokes handlers',()=>{
+ const file='src/App.tsx',s=source(file);
+ refusesClaims(file,[
+  'irn_1794875710749_nic_einvoice_verified',
+  "payoutStatus: 'PAID' as const",
+  "fulfillmentStatus: 'DISPATCHED' as const",
+  "status: 'WON' as const",
+  'customerGst: \'27AABCF1290K1ZP\'',
+  'storageService.saveSalesOrders(updated)',
+  'storageService.saveCommissions(updated)',
+  "action: 'ORDER_DISPATCHED'",
+  "action: 'ORDER_CONVERTED_FROM_QUOTE'",
+  "action: 'DEAL_REGISTERED'"
+ ]);
+ for(const action of [
+  'AMC renewal quote dispatch','Customer quotation e-sign and sales order conversion',
+  'Carrier dispatch and GST e-Way bill','Partner commission settlement',
+  'Workflow execution and outbound dispatch','External integration connect/disconnect',
+  'Failed job retry','Tenant context switch',
+  'Work order/customer acceptance','RMA/replacement initiation'
+ ])assert.ok(s.includes("denyUnverifiedOperation('"+action+"')"),
+  'missing central denial for '+action);
+ assert.match(s,/No transaction, message, payment, stock movement or legal document was created/);
+});
