@@ -59,14 +59,8 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
 }) => {
   const [activePortalTab, setActivePortalTab] = useState<'customer_portal' | 'partner_portal' | 'commission_engine'>('customer_portal');
 
-  // Customer simulator
-  const customerList = [
-    { id: 'CUST-101', name: 'FinStack Technologies Ltd', email: 'procurement@finstack.in', gstin: '27AABCF1290K1ZP' },
-    { id: 'CUST-102', name: 'Apex Health Logistics', email: 'infra@apexhealth.org', gstin: '29AABCA4412L1Z9' },
-    { id: 'CUST-103', name: 'Navi Mumbai Cold Storage Pvt Ltd', email: 'it@nmcoldstorage.com', gstin: '27AABCN8821M1Z1' }
-  ];
-  const [selectedCustomerId, setSelectedCustomerId] = useState(customerList[0].id);
-  const activeCustomer = customerList.find((c) => c.id === selectedCustomerId) || customerList[0];
+  // Customer portal requires a server-authenticated customer principal.
+  // This admin/browser view must not pretend to be a different legal customer.
 
   // Deal registration form
   const [isDealModalOpen, setIsDealModalOpen] = useState(false);
@@ -77,35 +71,11 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
     estimatedValue: '3500000'
   });
 
-  // Filter for active customer
-  const customerQuotes = quotations.filter((q) => q.customerName.toLowerCase().includes(activeCustomer.name.toLowerCase().split(' ')[0]));
-  const customerOrders = salesOrders.filter((o) => o.customerName.toLowerCase().includes(activeCustomer.name.toLowerCase().split(' ')[0]));
-  const customerWarranties = warranties.filter((w) => w.customerName.toLowerCase().includes(activeCustomer.name.toLowerCase().split(' ')[0]));
-  const customerAmcs = amcs.filter((a) => a.customerName.toLowerCase().includes(activeCustomer.name.toLowerCase().split(' ')[0]));
-
+  // No server-authorized deal protection/price-lock API is installed.
+  // This handler intentionally cannot create, approve, or sign a deal.
   const handleRegisterDealSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const partner = partners.find((p) => p.id === dealForm.partnerId) || partners[0];
-    const newDeal: DealRegistration = {
-      id: `DEAL-${Date.now()}`,
-      dealNumber: `DR-2026-${Math.floor(100 + Math.random() * 900)}`,
-      partnerId: partner.id,
-      partnerName: partner.partnerName,
-      endCustomerName: dealForm.endCustomerName,
-      solutionType: dealForm.solutionType,
-      estimatedValue: Number(dealForm.estimatedValue),
-      status: 'LOCKED_APPROVED',
-      validUntil: new Date(Date.now() + 86400000 * 60).toISOString().split('T')[0],
-      protectionDaysRemaining: 60
-    };
-    onRegisterDeal(newDeal);
     setIsDealModalOpen(false);
-    setDealForm({
-      partnerId: partners[0]?.id || 'PARTNER-01',
-      endCustomerName: '',
-      solutionType: 'Enterprise HCI Server Cluster & 25G Switching',
-      estimatedValue: '3500000'
-    });
   };
 
   return (
@@ -123,7 +93,7 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
                   Portals, Reseller Network & Commission Engine
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Sections 43, 44 & 45 &bull; Customer 360 Self-Service &bull; Tiered Channel Reseller Portal &bull; Automated Margin Payouts
+                  Sections 43–45 are held previews; no authenticated customer portal, legal deal lock or financial payout
                 </p>
               </div>
             </div>
@@ -183,12 +153,12 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
           </div>
 
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Channel Revenue Generated</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Local Partner Revenue Preview (Unverified)</span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold text-emerald-400 font-mono">
                 ₹{((partners.reduce((sum, p) => sum + p.totalRevenueGenerated, 0)) / 10000000).toFixed(2)} Cr
               </span>
-              <span className="text-[10px] text-slate-400 font-medium">High Margin</span>
+              <span className="text-[10px] text-slate-400 font-medium">NOT VERIFIED</span>
             </div>
           </div>
 
@@ -204,150 +174,12 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
         </div>
       </div>
 
-      {/* Tab 1: Customer Self-Service Portal (Section 43) */}
+      {/* Authenticated customer principals and tenant-scoped APIs are not yet provisioned. */}
       {activePortalTab === 'customer_portal' && (
-        <div className="space-y-6">
-          {/* Customer Perspective Simulator Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center font-bold">
-                {activeCustomer.name.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Logged In Client View</span>
-                <span className="font-bold text-white text-sm">{activeCustomer.name}</span>
-                <span className="text-[10px] text-slate-400 font-mono block">GSTIN: {activeCustomer.gstin}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400">Switch Customer Simulator:</span>
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-purple-500"
-              >
-                {customerList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Column: Quotations awaiting customer action */}
-            <div className="lg:col-span-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <FileCheck2 className="w-4 h-4 text-purple-400" />
-                  <span>Quotations & Commercial Proposals</span>
-                </h3>
-                <span className="text-[10px] text-slate-400 font-mono">{customerQuotes.length} Proposal(s)</span>
-              </div>
-
-              {customerQuotes.length > 0 ? (
-                <div className="space-y-3">
-                  {customerQuotes.map((q) => (
-                    <div key={q.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 text-xs">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-white">{q.quoteNumber}</span>
-                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 text-[10px] border border-blue-500/30 font-semibold">
-                              {q.status}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-slate-400 block mt-1">Valid Until: {q.validUntil}</span>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-emerald-400 font-mono">
-                            ₹{q.totalAmount.toLocaleString('en-IN')}
-                          </span>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">Includes 18% GST</span>
-                        </div>
-                      </div>
-
-                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] space-y-1">
-                        {q.items.map((item, i) => (
-                          <div key={i} className="flex justify-between text-slate-300">
-                            <span>{item.qty}x {item.productName}</span>
-                            <span className="font-mono">₹{item.total.toLocaleString('en-IN')}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="pt-2 flex items-center justify-between border-t border-slate-800">
-                        <span className="text-[10px] text-slate-400">Payment: {q.paymentTerms}</span>
-                        {q.status !== 'WON' ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => onAcceptQuotation(q.id)}
-                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-sm flex items-center gap-1.5 transition-all"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>1-Click Accept & E-Sign</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Accepted & Converted to Sales Order</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-xs">
-                  No pending quotations for {activeCustomer.name}.
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Live Shipments & Active Service Contracts */}
-            <div className="lg:col-span-6 space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>Active Deliveries, Warranties & AMC</span>
-              </h3>
-
-              {/* Order Deliveries */}
-              <div className="space-y-3">
-                {customerOrders.map((o) => (
-                  <div key={o.id} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-white">{o.orderNumber}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 font-semibold text-[10px] border border-cyan-500/30">
-                        {o.fulfillmentStatus.replace(/_/g, ' ')}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center p-2 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px]">
-                      <span className="text-slate-400">Carrier: {o.courierName || 'BlueDart'}</span>
-                      <span className="text-cyan-300 font-semibold">AWB: {o.awbNumber || 'Live Tracking Ready'}</span>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Warranties */}
-                {customerWarranties.map((w) => (
-                  <div key={w.id} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-white">{w.productName}</span>
-                      <span className="font-mono text-emerald-400 text-[10px] bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
-                        {w.daysRemaining} Days Warranty Active
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-mono block">Serial Barcode: {w.serialNumber}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        <div className="p-8 bg-slate-900 border border-amber-800/50 rounded-2xl space-y-3 text-sm text-slate-300">
+          <h3 className="font-bold text-amber-300">Customer Portal — NOT AVAILABLE / RELEASE HOLD</h3>
+          <p>A verified customer login, tenant/object authorization and issued customer-specific records are required before displaying quotations, deliveries, warranties or tax identifiers.</p>
+          <p>No customer account is impersonated, no quotation can be e-signed here, and no customer acceptance, order, invoice or shipment is created from this preview.</p>
         </div>
       )}
 
@@ -366,7 +198,8 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
             </div>
 
             <button
-              onClick={() => setIsDealModalOpen(true)}
+              disabled
+              title="Requires server-authorized deal registration and customer verification"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-all"
             >
               <Lock className="w-3.5 h-3.5" />
@@ -467,10 +300,10 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-emerald-400" />
-                <span>Automated Partner Margin & Sales Commission Engine</span>
+                <span>Commission Preview — No Automatic Payout</span>
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Section 45 &bull; Real-time commission accruals based on net gross margin, order value, and partner tier.
+                Section 45 &bull; Browser-only claim records; no posted commissions or authorized bank payout.
               </p>
             </div>
 
@@ -512,10 +345,11 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
                     </span>
                     {comm.payoutStatus !== 'PAID' && (
                       <button
-                        onClick={() => onApproveCommission(comm.id)}
+                        disabled
+                         title="Commission disbursement requires server-backed finance approval"
                         className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-sm transition-all"
                       >
-                        Approve & Disburse
+                        Payout HOLD
                       </button>
                     )}
                   </div>
@@ -533,7 +367,7 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-bold text-white">Register Deal for Price Protection</h3>
-                <p className="text-xs text-slate-400">Lock wholesale pricing for 60 calendar days</p>
+                <p className="text-xs text-slate-400">Price protection is unavailable without a signed partner agreement and reviewed server workflow</p>
               </div>
               <button
                 onClick={() => setIsDealModalOpen(false)}
@@ -595,8 +429,8 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400 space-y-1">
                 <span className="text-cyan-400 font-semibold block">AadiTech Deal Protection Policy:</span>
-                <span>&bull; No other partner will receive equal or lower pricing on this customer account</span>
-                <span>&bull; Automatic AI margin discount rate applied at quotation time</span>
+                <span>&bull; Price protection is not yet authorized or enforceable</span>
+                <span>&bull; AI cannot approve prices, contract terms or commercial releases</span>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -611,7 +445,7 @@ export const PortalsAndResellersView: React.FC<PortalsAndResellersViewProps> = (
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-sm"
                 >
-                  Lock Deal Registration
+                  Deal Registration HOLD
                 </button>
               </div>
             </form>
