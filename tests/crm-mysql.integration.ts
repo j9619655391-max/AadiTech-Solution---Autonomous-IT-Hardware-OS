@@ -337,6 +337,67 @@ test('release-preparation outbox stays disabled, replays safely and stales after
   assert.equal((await call(path,'POST',{expectedRevision:1})).status,409);
 });
 
+test('Phase 1BJ real MySQL: a forged held quote snapshot cannot pass owner integrity readback',async()=>{
+ const customer=await call('/api/crm/customers','POST',{
+  name:'Integrity Readback Customer',contactPerson:'Owner',email:'integrity-readback@example.invalid',
+  phone:'9988776600',city:'Mumbai',state:'Maharashtra'});
+ assert.equal(customer.status,201);
+ const product=await call('/api/crm/products','POST',{
+  sku:'HOLD-INTEGRITY-1',brand:'HP',model:'Integrity Test',category:'SERVER',
+  specs:'Internal fixture only',unitCost:'600.00',minPrice:'900.00',
+  sellingPrice:'1000.00',gstRate:'18.00',hsn:'8471'});
+ assert.equal(product.status,201);
+ const draft=await call('/api/quotes/drafts','POST',
+  {customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]});
+ assert.equal(draft.status,201);
+ const reviewerStep=await call('/api/auth/step-up','POST',
+  {currentPassword:reviewerPassword},true,true,{cookie:reviewerCookie});
+ assert.equal(reviewerStep.status,200);
+ reviewerStepUpToken=reviewerStep.data.stepUpToken;
+ const approval=await call('/api/quotes/reviews/'+draft.data.id,'POST',{
+  expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Internal-only hold reviewer',
+  overrideRequested:false});
+ assert.equal(approval.status,201);
+ const ownerStep=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+ assert.equal(ownerStep.status,200);
+ stepUpToken=ownerStep.data.stepUpToken;
+ const hold=await call('/api/quotes/release-preparations/'+draft.data.id,'POST',{expectedRevision:0});
+ assert.equal(hold.status,201);
+ const route='/api/commercial-integrity/quotes/'+draft.data.id;
+ const before=await call(route);
+ assert.equal(before.status,200);
+ assert.equal(before.data.localScopeConsistent,true,before.data.anomalyCodes?.join(','));
+ const [rows]=await db.query<any[]>(
+  'SELECT snapshot_json FROM sales_quote_release_preparations WHERE quote_id=?',[draft.data.id]);
+ assert.equal(rows.length,1);
+ const original=typeof rows[0].snapshot_json==='string'?
+  rows[0].snapshot_json:JSON.stringify(rows[0].snapshot_json);
+ try{
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.items[0].hsn_snapshot','FORGED-HSN')
+   WHERE quote_id=?`,[draft.data.id]);
+  const hsn=await call(route);
+  assert.equal(hsn.status,200);
+  assert.equal(hsn.data.localScopeConsistent,false);
+  assert.ok(hsn.data.anomalyCodes.includes('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED'));
+  assert.equal(hsn.data.productionReleaseAuthorized,false);
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.recipientEmail','fake@example.invalid')
+   WHERE quote_id=?`,[draft.data.id]);
+  const shadow=await call(route);
+  assert.equal(shadow.status,200);
+  assert.equal(shadow.data.localScopeConsistent,false);
+  assert.ok(shadow.data.anomalyCodes.includes('QUOTE_HELD_OUTBOX_SCOPE_OR_DISPATCH_INVALID'));
+  assert.equal(shadow.data.releaseDecision,'HOLD');
+ }finally{
+  await db.execute('UPDATE sales_quote_release_preparations SET snapshot_json=? WHERE quote_id=?',
+   [original,draft.data.id]);
+ }
+ const restored=await call(route);
+ assert.equal(restored.status,200);
+ assert.equal(restored.data.localScopeConsistent,true,restored.data.anomalyCodes?.join(','));
+});
+
 test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper and always blocks issuance',async()=>{
  const [held]=await db.query<any[]>('SELECT quote_id FROM sales_quote_release_preparations WHERE prepared_by=? ORDER BY created_at DESC LIMIT 1',[actor]);
  assert.equal(held.length,1);
