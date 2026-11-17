@@ -18,6 +18,15 @@ const obj=(x:unknown):Record<string,unknown>|null=>{
  catch{return null;}
 };
 const num=(x:unknown):number=>Number(x);
+// The source-created held snapshots have a fixed wire schema. Treat extra
+// (especially recipient, dispatch or authority) fields as suspicious, rather
+// than overlooking injected fields when checking expected values.
+const exactKeys=(value:Record<string,unknown>,fields:string[])=>
+ Object.keys(value).sort().join('|')===fields.slice().sort().join('|');
+const equalSnapValue=(a:unknown,b:unknown,key:string)=>
+ key==='quantity'?Number.isSafeInteger(num(a))&&Number.isSafeInteger(num(b))&&
+  num(a)===num(b):str(a)===str(b);
+
 
 export function inspectInternalQuoteScope(args:{
  draft:Record<string,any>,lines:Record<string,any>[],
@@ -119,7 +128,12 @@ export function inspectInternalQuoteScope(args:{
      num(p.revision_number)!==revisionNumber||
      str(p.internal_review_id)!==str(decision.id)||
      str(p.prepared_by)!==str(draft.created_by)||
-     !contents||contents.format!=='aaditech-internal-release-hold-v1'||
+     !contents||!exactKeys(contents,[
+      'format','quoteId','revision','customerId','leadId','reviewId',
+      'currency','subtotal','taxEstimate','totalEstimate','items'])||
+     contents.format!=='aaditech-internal-release-hold-v1'||
+     str(contents.currency)!=='INR'||
+     str(contents.leadId??null)!==str(draft.lead_id??null)||
      str(contents.quoteId)!==str(draft.id)||
      num(contents.revision)!==revisionNumber||
      str(contents.customerId)!==str(draft.customer_id)||
@@ -133,19 +147,23 @@ export function inspectInternalQuoteScope(args:{
     const expected=revision?(
      Array.isArray(revision.line_snapshot)?revision.line_snapshot:
      JSON.parse(str(revision.line_snapshot))):lines;
-    if(!Array.isArray(expected)||JSON.stringify(contents.items)!==JSON.stringify(expected))
-     // JSON key order normalization is a MySQL storage property, so compare
-     // values using field mappings rather than claiming a provider WORM hash.
-     for(let i=0;i<contents.items.length;i++){
-      const x=contents.items[i] as Record<string,unknown>;
-      const row=expected[i] as Record<string,unknown>|undefined;
-      if(!x||!row||
-       (revision?(str(x.productId)!==str(row.productId)||num(x.quantity)!==num(row.quantity)||
-        str(x.unitPrice)!==str(row.unitPrice)||str(x.unitCost)!==str(row.unitCost)):
-       (str(x.product_id)!==str(row.product_id)||num(x.quantity)!==num(row.quantity)||
-        str(x.unit_price)!==str(row.unit_price)||str(x.unit_cost)!==str(row.unit_cost))))
-       problems.add('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED');
-     }
+    const fields=revision?[
+     'productId','sku','name','hsn','quantity','unitCost','unitPrice',
+     'gstRate','lineSubtotal','lineTaxEstimate'
+    ]:[
+     'product_id','sku_snapshot','name_snapshot','hsn_snapshot','quantity',
+     'unit_cost','unit_price','gst_rate','line_subtotal','line_tax_estimate'
+    ];
+    if(!Array.isArray(expected)||expected.length!==contents.items.length)
+     problems.add('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED');
+    else for(let i=0;i<expected.length;i++){
+     const x=contents.items[i],original=expected[i];
+     if(!x||typeof x!=='object'||Array.isArray(x)||
+        !original||typeof original!=='object'||Array.isArray(original)||
+        !exactKeys(x as Record<string,unknown>,fields)||
+        fields.some(key=>!equalSnapValue(x[key],original[key],key)))
+      problems.add('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED');
+    }
    }
   }
  }catch{
@@ -212,7 +230,12 @@ export function inspectInternalProcurementScope(args:{
      str(h.prepared_by)!==str(r.created_by)||
      str(h.status)!=='HELD'||str(h.dispatch_state)!=='DISABLED'||
      !/^[0-9a-f]{64}$/.test(str(h.snapshot_sha256))||
-     !snapshot||snapshot.format!=='aaditech-internal-po-hold-v1'||
+     !snapshot||!exactKeys(snapshot,[
+      'format','requestId','supplierId','supplierCode','supplierName',
+      'siteId','supplierQuoteEvidenceRef','subtotal','reviewId','lines'])||
+     snapshot.format!=='aaditech-internal-po-hold-v1'||
+     str(snapshot.supplierCode)!==str(r.supplier_code)||
+     str(snapshot.supplierName)!==str(r.supplier_name)||
      str(snapshot.requestId)!==str(r.id)||
      str(snapshot.supplierId)!==str(r.supplier_id)||
      str(snapshot.siteId)!==str(r.site_id)||
@@ -224,7 +247,9 @@ export function inspectInternalProcurementScope(args:{
    else if(snapshot&&Array.isArray(snapshot.lines)){
     for(let i=0;i<lines.length;i++){
      const original=lines[i],held=snapshot.lines[i] as Record<string,unknown>|undefined;
-     if(!held||str(held.productId)!==str(original.product_id)||
+     if(!held||typeof held!=='object'||Array.isArray(held)||
+      !exactKeys(held,['productId','sku','name','quantity','quotedUnitCost','lineSubtotal'])||
+      str(held.productId)!==str(original.product_id)||
       str(held.sku)!==str(original.sku_snapshot)||
       str(held.name)!==str(original.name_snapshot)||
       num(held.quantity)!==num(original.quantity)||
