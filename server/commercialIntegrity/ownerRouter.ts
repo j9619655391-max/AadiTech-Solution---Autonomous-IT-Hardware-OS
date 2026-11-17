@@ -10,6 +10,8 @@ import {readCandidateAuthorityExpectedUnderLock,
  inspectCandidateExternalAuthorityDossierOnConnection} from './quoteAuthorityCustody';
 import {readCandidateIntakeExpectedUnderLock,
  inspectCandidateEvidenceIntakeOnConnection} from './quoteEvidenceCustody';
+import {readCandidateRemoteExpectedUnderLock,
+ inspectCandidateRemoteEvidenceOnConnection} from './quoteRemoteCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -73,6 +75,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    conn,req.params.id);
   const intake=await inspectCandidateEvidenceIntakeOnConnection(
    conn,req.params.id,intakeExpected);
+  const {expected:remoteExpected}=await readCandidateRemoteExpectedUnderLock(
+   conn,req.params.id);
+  const remote=await inspectCandidateRemoteEvidenceOnConnection(
+   conn,req.params.id,remoteExpected);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
@@ -82,9 +88,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    ...checkpoint.candidateCheckpointAnomalyCodes,
    ...reconciliation.candidateReconciliationAnomalyCodes,
    ...dossier.candidateAuthorityDossierAnomalyCodes,
-   ...intake.candidateIntakeAnomalyCodes
+   ...intake.candidateIntakeAnomalyCodes,
+   ...remote.candidateRemoteAnomalyCodes
   ])].sort();
-  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,...intake,
+  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,...intake,...remote,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
@@ -95,6 +102,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
     reconciliation.candidateReconciliationLocallyConsistent&&
     dossier.candidateAuthorityDossierLocallyConsistent&&
     intake.candidateIntakeLocallyConsistent&&
+    remote.candidateRemoteLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
