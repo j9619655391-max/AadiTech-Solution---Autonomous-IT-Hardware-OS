@@ -1,0 +1,193 @@
+import {createHash} from 'node:crypto';
+import {readFileSync,lstatSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {readBunLock} from './phase1bt-production-scope.mjs';
+
+// Phase 1BV is a *local CI build-input integrity and execution-boundary
+// inventory*, not a signed SLSA provenance, external independent witness,
+// patched picomatch, vulnerability waiver or release authorization.
+export const BUILD_INPUT_PATHS=Object.freeze([
+ '.github/workflows/ci.yml',
+ 'bun.lock',
+ 'package.json',
+ 'scripts/phase1bt-production-scope.mjs',
+ 'server.ts',
+ 'server/security/devToolExposure.ts',
+ 'vite.config.ts'
+]);
+const EXACT_SCRIPTS=Object.freeze({
+ dev:'tsx server.ts',
+ start:'node dist/server.cjs',
+ build:'vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs',
+ lint:'tsc --noEmit',
+ test:'node --test tests/*.test.mjs && tsx --test tests/*.test.ts'
+});
+const FORBIDDEN_LIFECYCLE=Object.freeze([
+ 'preinstall','install','postinstall','prepare','prepack','postpack',
+ 'prepublish','prepublishOnly','predev','postdev','prebuild','postbuild',
+ 'pretest','posttest','prestart','poststart'
+]);
+const sha256=s=>createHash('sha256').update(s).digest('hex');
+const DOMAIN='aaditech/ci/build-input-provenance/v1\n';
+const SCAN=/\b(?:import\.meta\.glob|fast-glob|micromatch|picomatch|globSync|globStream)\b|(?:glob(?:Pattern|Input|Source|Entry|Entries)|optimizeDeps\.entries|rollupOptions\.input)\s*[:=]/;
+function present(source,rx){return rx.test(source);}
+export function assessBuildInputBoundary({pkg,lock,server,vite,ci,devExposure,environment={}}){
+ const anomalies=new Set();
+ if(!pkg||!lock||typeof server!=='string'||typeof vite!=='string'||
+    typeof ci!=='string'||typeof devExposure!=='string')
+  throw Error('BV build boundary requires all exact source inputs');
+ const scripts=pkg.scripts;
+ if(!scripts||typeof scripts!=='object'||Array.isArray(scripts))
+  anomalies.add('BV_PACKAGE_SCRIPTS_MALFORMED');
+ else{
+  for(const [key,value] of Object.entries(EXACT_SCRIPTS)){
+   if(scripts[key]!==value)anomalies.add('BV_UNREVIEWED_EXECUTABLE_SCRIPT_'+key);
+  }
+  for(const key of FORBIDDEN_LIFECYCLE)
+   if(Object.hasOwn(scripts,key))anomalies.add('BV_INSTALL_OR_BUILD_LIFECYCLE_SCRIPT_'+key);
+  for(const [name,command] of Object.entries(scripts)){
+   if(typeof command!=='string'||command.length>512||/[\r\n\0]/.test(command))
+    anomalies.add('BV_MALFORMED_SCRIPT_'+name);
+  }
+ }
+ if(Object.hasOwn(pkg,'trustedDependencies')&&
+    (!Array.isArray(pkg.trustedDependencies)||pkg.trustedDependencies.length))
+  anomalies.add('BV_UNREVIEWED_BUN_TRUSTED_INSTALL_SCRIPTS');
+ if(pkg.workspaces||pkg.patchedDependencies)
+  anomalies.add('BV_UNREVIEWED_WORKSPACES_OR_PATCHES');
+ const workspace=lock.workspaces?.[''];
+ if(!workspace||!lock.packages||
+    workspace.dependencies?.vite!==undefined||
+    workspace.devDependencies?.vite!=='6.4.5'||
+    lock.packages.picomatch?.[0]!=='picomatch@4.0.7')
+  anomalies.add('BV_BUILD_DEPENDENCY_GRAPH_UNEXPECTED');
+ if(!present(server,/process\.env\.NODE_ENV\s*!==\s*["']production["']\s*\)\s*\{[\s\S]{0,300}await import\(["']vite["']\)/))
+  anomalies.add('BV_VITE_IMPORT_PRODUCTION_BOUNDARY_CHANGED');
+ if(!present(server,/app\.use\(devToolHostGate\(devExposure\)\)/))
+  anomalies.add('BV_DEV_HTTP_GATE_MISSING');
+ if(!present(server,/host:\s*'127\.0\.0\.1'/)||
+    !present(server,/hmr:\s*false/)||
+    !present(server,/cors:\s*false/))
+  anomalies.add('BV_VITE_MIDDLEWARE_UNRESTRICTED');
+ if(!present(devExposure,/devToolHostGate/)||
+    !present(devExposure,/APP_ALLOW_PUBLIC_BIND/)||
+    !present(devExposure,/Local-only developer tooling request denied/))
+  anomalies.add('BV_DEV_TOOL_BOUNDARY_MISSING');
+ if(!present(vite,/plugins:\s*\[react\(\),\s*tailwindcss\(\)\]/)||
+    !present(vite,/import react from '@vitejs\/plugin-react'/)||
+    !present(vite,/import tailwindcss from '@tailwindcss\/vite'/))
+  anomalies.add('BV_VITE_UNREVIEWED_PLUGIN_CHAIN');
+ if(SCAN.test(vite))
+  anomalies.add('BV_DYNAMIC_GLOB_OR_BUILD_INPUT_DISCOVERY');
+ if(!present(vite,/server:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
+    !present(vite,/preview:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
+    !present(vite,/fs:\s*\{strict:\s*true\}/)||
+    !present(vite,/hmr:\s*false/))
+  anomalies.add('BV_VITE_LOCAL_ONLY_CONSTRAINT_DRIFT');
+ if(!present(ci,/^on:\s*\n\s*push:\s*\n\s*pull_request:\s*$/m)||
+    present(ci,/pull_request_target:|workflow_run:|repository_dispatch:|workflow_dispatch:/))
+  anomalies.add('BV_UNREVIEWED_CI_ENTRYPOINT');
+ if(!present(ci,/^permissions:\s*\n\s*contents:\s*read\s*$/m)||
+    present(ci,/^\s*(?:id-token|packages|actions|contents|security-events):\s*write\s*$/m))
+  anomalies.add('BV_CI_TOKEN_PERMISSION_ESCALATION');
+ if(!present(ci,/^  baseline:\s*\n    runs-on: ubuntu-24\.04/m)||
+    !present(ci,/^  mysql-integration:\s*\n    runs-on: ubuntu-24\.04/m)||
+    !present(ci,/^  production-runtime-scope:\s*\n    runs-on: ubuntu-24\.04/m))
+  anomalies.add('BV_NON_GITHUB_HOSTED_RUNNER_OR_JOB_REMOVED');
+ if(!present(ci,/bun install --frozen-lockfile/)||
+    !present(ci,/bun install --frozen-lockfile --production/)||
+    !present(ci,/Verify patched dependency versions and zero critical\/high advisory matches/)||
+    !present(ci,/node scripts\/verify-patched-dependencies\.mjs/))
+  anomalies.add('BV_FROZEN_INSTALL_OR_HIGH_RISK_GATE_REMOVED');
+ if(!present(ci,/BROWSER_E2E_BASE_URL: 'http:\/\/127\.0\.0\.1:3000'/)||
+    !present(ci,/node --import tsx scripts\/browser-smoke\.mjs/)||
+    !present(ci,/APP_PID=\$!/)||
+    !present(ci,/trap 'kill "\$APP_PID" 2>\/dev\/null \|\| true' EXIT/))
+  anomalies.add('BV_CI_BROWSER_LOOPBACK_AND_CLEANUP_CHANGED');
+ if(/^\s*(?:secrets|environment):/m.test(ci)||
+    present(ci,/^\s*uses:\s*docker:\/\//m))
+  anomalies.add('BV_CI_SECRET_OR_REMOTE_EXECUTION_ENTRYPOINT');
+ if(environment.CI==='true'||environment.GITHUB_ACTIONS==='true'){
+  if(environment.GITHUB_REPOSITORY!==
+      'j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS')
+   anomalies.add('BV_UNEXPECTED_CI_REPOSITORY');
+  if(!/^[0-9a-f]{40}$/.test(environment.GITHUB_SHA??''))
+   anomalies.add('BV_INVALID_CI_COMMIT_SHA');
+  if(!/^refs\/heads\/chore\/phase0-foundation-20261106$|^refs\/pull\/\d+\/merge$/.test(
+      environment.GITHUB_REF??''))
+   anomalies.add('BV_UNREVIEWED_CI_REF');
+ }
+ return Object.freeze({
+  schemaVersion:1,phase:'1BV',
+  localBuildInputBoundaryConsistent:anomalies.size===0,
+  anomalyCodes:Object.freeze([...anomalies].sort()),
+  reviewedBuildEntryPoints:Object.keys(EXACT_SCRIPTS).length,
+  untrustedGlobPatternAccepted:false,
+  externallySignedBuildProvenance:false,
+  independentSourceAndReviewerApprovalVerified:false,
+  vulnerablePicomatchStillInDevLock:true,
+  picomatchCve:'CVE-2026-112366',
+  upstreamVendorFixVerified:false,
+  independentSecurityApprovalVerified:false,
+  criticalHighSecurityGateMayBeBypassed:false,
+  productionReleaseAuthorized:false,
+  productionReleaseBlocked:true,releaseDecision:'HOLD'
+ });
+}
+export function makeBuildInputInventory(sources,environment={}){
+ const anomalies=[];
+ const files=[];
+ for(const name of BUILD_INPUT_PATHS){
+  const value=sources[name];
+  if(typeof value!=='string'||value.length<1||Buffer.byteLength(value)>1024*1024)
+   anomalies.push('BV_UNREADABLE_OR_OVERSIZED_INPUT_'+name);
+  else files.push({path:name,bytes:Buffer.byteLength(value),sha256:sha256(value)});
+ }
+ if(anomalies.length)throw Error(anomalies.join(','));
+ const bundleSha256=sha256(DOMAIN+
+   files.map(f=>f.path+'\0'+f.bytes+'\0'+f.sha256+'\n').join(''));
+ return Object.freeze({
+  schemaVersion:1,kind:'UNSIGNED_LOCAL_CI_INPUT_INVENTORY',
+  phase:'1BV',algorithm:'SHA-256',
+  claimedGithubSha:/^[0-9a-f]{40}$/.test(environment.GITHUB_SHA??'')?
+   environment.GITHUB_SHA:null,
+  bundleSha256,
+  files:Object.freeze(files),
+  signedByIndependentWitness:false,
+  verifiedExternalWormRetention:false,
+  independentSecurityApprovalVerified:false,
+  releaseDecision:'HOLD',
+  productionReleaseAuthorized:false
+ });
+}
+function main(){
+ const sources={};
+ for(const path of BUILD_INPUT_PATHS){
+  const info=lstatSync(path);
+  if(!info.isFile()||info.isSymbolicLink()||info.size>1024*1024)
+   throw Error('BV untrusted source file type/size '+path);
+  sources[path]=readFileSync(path,'utf8');
+ }
+ const pkg=JSON.parse(sources['package.json']);
+ const lock=readBunLock(sources['bun.lock']);
+ const boundary=assessBuildInputBoundary({
+  pkg,lock,server:sources['server.ts'],
+  vite:sources['vite.config.ts'],ci:sources['.github/workflows/ci.yml'],
+  devExposure:sources['server/security/devToolExposure.ts'],
+  environment:process.env
+ });
+ const inventory=makeBuildInputInventory(sources,process.env);
+ const output={boundary,inventory};
+ writeFileSync('phase1bv-held-build-input-report.json',
+  JSON.stringify(output,null,2)+'\n',{flag:'w',mode:0o600});
+ console.log(JSON.stringify(output,null,2));
+ if(!boundary.localBuildInputBoundaryConsistent)process.exitCode=1;
+}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+ try{main();}catch(e){
+  console.error('Phase 1BV local build-input custody failed:',
+    e instanceof Error?e.message:'Unknown');
+  process.exitCode=1;
+ }
+}
