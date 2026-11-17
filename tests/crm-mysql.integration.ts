@@ -9,6 +9,7 @@ import quoteDraftRouter from '../server/quotes/router';
 import quoteReviewRouter from '../server/quotes/reviewRouter';
 import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
 import securityAdminRouter from '../server/security/adminRouter';
+import commercialIntegrityRouter from '../server/commercialIntegrity/ownerRouter';
 import authRouter from '../server/auth/router';
 import mfaRouter from '../server/auth/mfaRouter';
 import {totpAt} from '../server/auth/totp';
@@ -35,7 +36,7 @@ test('setup isolated owner session',async()=>{
     [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer',await hashPassword(reviewerPassword),'REVIEWER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
     [hashToken(reviewerToken),reviewerId,csrf]);
-  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -620,4 +621,36 @@ test('recovery rotation requires verified second factor and invalidates every ol
     'SELECT COUNT(*) AS n FROM auth_security_events WHERE target_user_id=? AND event_type=?',
     [id,'MFA_RECOVERY_ROTATED']);
   assert.equal(Number(events[0].n),1);
+});
+
+
+test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper and always blocks issuance',async()=>{
+ const [held]=await db.query<any[]>('SELECT quote_id FROM sales_quote_release_preparations WHERE prepared_by=? ORDER BY created_at DESC LIMIT 1',[actor]);
+ assert.equal(held.length,1);
+ const route='/api/commercial-integrity/quotes/'+held[0].quote_id;
+ assert.equal((await call(route,'GET',undefined,false)).status,401);
+ assert.equal((await call(route,'GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+ assert.equal((await call('/api/commercial-integrity/quotes/'+randomUUID())).status,404);
+ const start=await call(route);
+ assert.equal(start.status,200);
+ assert.equal(start.data.localScopeConsistent,true,start.data.anomalyCodes?.join(','));
+ assert.equal(start.data.hasInternalReview,true);
+ assert.equal(start.data.legalCustomerIdentityIndependentlyVerified,false);
+ assert.equal(start.data.actualInvoiceOrCustomerDispatch,false);
+ assert.equal(start.data.productionReleaseAuthorized,false);
+ assert.equal(start.data.releaseDecision,'HOLD');
+ assert.equal('email' in start.data,false);
+ const [rows]=await db.query<any[]>('SELECT id,line_subtotal FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position LIMIT 1',[held[0].quote_id]);
+ assert.equal(rows.length,1);
+ try{
+  await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',['0.01',rows[0].id]);
+  const changed=await call(route);
+  assert.equal(changed.status,200);
+  assert.equal(changed.data.localScopeConsistent,false);
+  assert.ok(changed.data.anomalyCodes.includes('QUOTE_LINE_SNAPSHOT_MONEY_CHANGED'));
+  assert.equal(changed.data.productionReleaseAuthorized,false);
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',[rows[0].line_subtotal,rows[0].id]);
+ }
+ assert.equal((await call(route)).data.localScopeConsistent,true);
 });
