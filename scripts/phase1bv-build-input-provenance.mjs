@@ -88,10 +88,19 @@ export function assessBuildInputBoundary({pkg,lock,server,vite,ci,devExposure,en
  const viteCode=vite.replace(/^\s*\/\/[^\n]*$/gm,'');
  if(SCAN.test(viteCode))
   anomalies.add('BV_DYNAMIC_GLOB_OR_BUILD_INPUT_DISCOVERY');
- if(!present(vite,/server:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
-    !present(vite,/preview:\s*\{[\s\S]*?host:\s*'127\.0\.0\.1'[\s\S]*?cors:\s*false/)||
-    !present(vite,/fs:\s*\{strict:\s*true\}/)||
-    !present(vite,/hmr:\s*false/))
+ // Verify dev and preview independently: a permissive server must never
+ // be accepted merely because preview still has a restrictive cors setting.
+ const serverBlock=viteCode.match(/server:\s*\{([\s\S]*?)\n\s*\},\s*\n\s*preview:/)?.[1]??'';
+ const previewBlock=viteCode.match(/preview:\s*\{([\s\S]*?)\n\s*\},/)?.[1]??'';
+ for(const block of [serverBlock,previewBlock]){
+  if(!present(block,/host:\s*'127\.0\.0\.1'/)||
+     !present(block,/allowedHosts:\s*\['localhost','127\.0\.0\.1'\]/)||
+     !present(block,/strictPort:\s*true/)||
+     !present(block,/cors:\s*false/))
+   anomalies.add('BV_VITE_LOCAL_ONLY_CONSTRAINT_DRIFT');
+ }
+ if(!present(serverBlock,/fs:\s*\{strict:\s*true\}/)||
+    !present(serverBlock,/hmr:\s*false/))
   anomalies.add('BV_VITE_LOCAL_ONLY_CONSTRAINT_DRIFT');
  if(!present(ci,/^on:\s*\n\s*push:\s*\n\s*pull_request:\s*$/m)||
     present(ci,/pull_request_target:|workflow_run:|repository_dispatch:|workflow_dispatch:/))
