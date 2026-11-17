@@ -209,14 +209,14 @@ test('BM stored candidate checkpoint head forgery is detected, restoration does 
 test('BM substituted pin, invalid signature and absent quote cannot be persisted',async()=>{
  const x=await quoteFixture(),w=witness(),r=w.receipt(x.quote,x.digest,1);
  const other=witness();
- const [bad]=await db.query<any[]>(
+ const [badRows]=await db.query<any[]>(
   'SELECT COUNT(*) AS n FROM quote_bm_candidate_checkpoint_streams WHERE quote_id=?',[x.quote]);
- assert.equal(Number(bad.n),0);
+ assert.equal(Number(badRows[0].n),0);
  await assert.rejects(record(x.quote,[r],[other.pin]),/candidate signature/);
  const forged=structuredClone(r);forged.signatureBase64=Buffer.alloc(64,8).toString('base64');
  await assert.rejects(record(x.quote,[forged],[w.pin]),/candidate signature/);
  await assert.rejects(record(randomUUID(),[r],[w.pin]),/unbound witness receipt/);
- const [still]=await db.query<any[]>(
+ const [stillRows]=await db.query<any[]>(
   'SELECT COUNT(*) AS n FROM quote_bm_candidate_checkpoint_streams WHERE quote_id=?',[x.quote]);
- assert.equal(Number(still.n),0);
+ assert.equal(Number(stillRows[0].n),0);
 });
