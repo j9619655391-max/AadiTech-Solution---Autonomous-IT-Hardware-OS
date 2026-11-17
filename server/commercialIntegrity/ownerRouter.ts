@@ -6,8 +6,8 @@ import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inspectInternalQuoteScope,inspectInternalProcurementScope} from './checks';
 import {inspectInternalQuoteHistory} from './quoteHistory';
 import {buildLocalQuoteHistoryCommitment} from './quoteAnchors';
-import {inspectCandidateQuoteCheckpointOnConnection} from './quoteCheckpointCustody';
-import {inspectCandidateQuoteReconciliationOnConnection} from './quoteReconciliationCustody';
+import {readCandidateAuthorityExpectedUnderLock,
+ inspectCandidateExternalAuthorityDossierOnConnection} from './quoteAuthorityCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -63,10 +63,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
   const commitment=truncated?null:buildLocalQuoteHistoryCommitment({
    draft:drafts[0],lines,revisions,decisions,preparations:preps
   });
-  const checkpoint=await inspectCandidateQuoteCheckpointOnConnection(
-   conn,req.params.id,commitment?.sourceCommitmentSha256??null);
-  const reconciliation=await inspectCandidateQuoteReconciliationOnConnection(
-   conn,req.params.id,checkpoint);
+  const {expected:authorityExpected,bm:checkpoint,bn:reconciliation}=
+   await readCandidateAuthorityExpectedUnderLock(conn,req.params.id);
+  const dossier=await inspectCandidateExternalAuthorityDossierOnConnection(
+   conn,req.params.id,authorityExpected);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
@@ -74,9 +74,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    ...(currentPreps.length>1?['DUPLICATE_HELD_PREPARATION']:[]),
    ...history.historyAnomalyCodes,
    ...checkpoint.candidateCheckpointAnomalyCodes,
-   ...reconciliation.candidateReconciliationAnomalyCodes
+   ...reconciliation.candidateReconciliationAnomalyCodes,
+   ...dossier.candidateAuthorityDossierAnomalyCodes
   ])].sort();
-  res.json({...result,...history,...checkpoint,...reconciliation,
+  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
@@ -85,6 +86,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    localScopeConsistent:result.localScopeConsistent&&history.historyConsistent&&
     checkpoint.candidateCheckpointLocallyConsistent&&
     reconciliation.candidateReconciliationLocallyConsistent&&
+    dossier.candidateAuthorityDossierLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
