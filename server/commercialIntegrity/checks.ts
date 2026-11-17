@@ -93,6 +93,10 @@ export function inspectInternalQuoteScope(args:{
    }
   }
   if(decision){
+   const initialMargin=total===0n?0:Number(((total-cost)*10000n)/total);
+   if((!revision&&num(decision.gross_margin_bps)!==initialMargin)||
+      (revision&&num(decision.gross_margin_bps)!==num(revision.gross_margin_bps)))
+    problems.add('QUOTE_REVIEW_MARGIN_SNAPSHOT_CHANGED');
    if(num(decision.revision_number)!==revisionNumber||
      !['APPROVED_INTERNAL','REJECTED_INTERNAL'].includes(str(decision.decision))||
      str(decision.reviewer_role)!=='REVIEWER'||
@@ -125,6 +129,24 @@ export function inspectInternalQuoteScope(args:{
      str(contents.totalEstimate)!==str(revision?revision.total_estimate:draft.total_estimate)||
      !Array.isArray(contents.items)||contents.items.length!==snapshots.length)
     problems.add('QUOTE_HELD_OUTBOX_SCOPE_OR_DISPATCH_INVALID');
+   else if(contents&&Array.isArray(contents.items)){
+    const expected=revision?(
+     Array.isArray(revision.line_snapshot)?revision.line_snapshot:
+     JSON.parse(str(revision.line_snapshot))):lines;
+    if(!Array.isArray(expected)||JSON.stringify(contents.items)!==JSON.stringify(expected))
+     // JSON key order normalization is a MySQL storage property, so compare
+     // values using field mappings rather than claiming a provider WORM hash.
+     for(let i=0;i<contents.items.length;i++){
+      const x=contents.items[i] as Record<string,unknown>;
+      const row=expected[i] as Record<string,unknown>|undefined;
+      if(!x||!row||
+       (revision?(str(x.productId)!==str(row.productId)||num(x.quantity)!==num(row.quantity)||
+        str(x.unitPrice)!==str(row.unitPrice)||str(x.unitCost)!==str(row.unitCost)):
+       (str(x.product_id)!==str(row.product_id)||num(x.quantity)!==num(row.quantity)||
+        str(x.unit_price)!==str(row.unit_price)||str(x.unit_cost)!==str(row.unit_cost))))
+       problems.add('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED');
+     }
+   }
   }
  }catch{
   problems.add('QUOTE_UNPARSABLE_OR_MALFORMED_STORED_EVIDENCE');
@@ -199,6 +221,17 @@ export function inspectInternalProcurementScope(args:{
      str(snapshot.reviewId)!==str(decision.id)||
      !Array.isArray(snapshot.lines)||snapshot.lines.length!==lines.length)
     problems.add('PROCUREMENT_HELD_SNAPSHOT_OR_DISPATCH_INVALID');
+   else if(snapshot&&Array.isArray(snapshot.lines)){
+    for(let i=0;i<lines.length;i++){
+     const original=lines[i],held=snapshot.lines[i] as Record<string,unknown>|undefined;
+     if(!held||str(held.productId)!==str(original.product_id)||
+      str(held.sku)!==str(original.sku_snapshot)||
+      num(held.quantity)!==num(original.quantity)||
+      str(held.unit)!==str(original.quoted_unit_cost)||
+      str(held.line)!==str(original.line_subtotal))
+      problems.add('PROCUREMENT_HELD_LINE_SCOPE_CHANGED');
+    }
+   }
   }
  }catch{problems.add('PROCUREMENT_MALFORMED_STORED_EVIDENCE');}
  return Object.freeze({kind:'PROCUREMENT',recordId:str(r.id),
