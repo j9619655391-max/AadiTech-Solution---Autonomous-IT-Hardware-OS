@@ -6,6 +6,7 @@ import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inspectInternalQuoteScope,inspectInternalProcurementScope} from './checks';
 import {inspectInternalQuoteHistory} from './quoteHistory';
 import {buildLocalQuoteHistoryCommitment} from './quoteAnchors';
+import {inspectCandidateQuoteCheckpointOnConnection} from './quoteCheckpointCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -61,20 +62,24 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
   const commitment=truncated?null:buildLocalQuoteHistoryCommitment({
    draft:drafts[0],lines,revisions,decisions,preparations:preps
   });
+  const checkpoint=await inspectCandidateQuoteCheckpointOnConnection(
+   conn,req.params.id,commitment?.sourceCommitmentSha256??null);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
    ...(currentDecisions.length>1?['DUPLICATE_QUOTE_REVIEW']:[]),
    ...(currentPreps.length>1?['DUPLICATE_HELD_PREPARATION']:[]),
-   ...history.historyAnomalyCodes
+   ...history.historyAnomalyCodes,
+   ...checkpoint.candidateCheckpointAnomalyCodes
   ])].sort();
-  res.json({...result,...history,
+  res.json({...result,...history,...checkpoint,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
    authenticatedWitnessCheckpointAvailable:false,
    independentlyAuthenticatedRevocationAvailable:false,
    localScopeConsistent:result.localScopeConsistent&&history.historyConsistent&&
+    checkpoint.candidateCheckpointLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
