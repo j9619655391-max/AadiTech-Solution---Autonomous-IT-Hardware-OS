@@ -270,14 +270,10 @@ jobs:
         run: bun run db:migrate:az-readiness
       - name: Verify Phase 1AZ migration checksum and idempotent rerun
         run: bun run db:migrate:az-readiness
-      - name: Phase 1AZ real MySQL witness/archive/DR packet revision and anti-rollback tests
-        run: bun run test:az-readiness-mysql
       - name: Apply Phase 1BB isolated six-source receipt/nonces schema in disposable MySQL
         run: bun run db:migrate:bb-evidence
       - name: Verify Phase 1BB checksum and idempotent schema rerun
         run: bun run db:migrate:bb-evidence
-      - name: Phase 1BB transactional nonce, fork, replay and tamper adversarial MySQL tests
-        run: bun run test:bb-evidence-mysql
       - name: Apply Phase 1BC held witness custody continuity schema on disposable MySQL
         run: bun run db:migrate:bc-witness
       - name: Verify Phase 1BC migration checksum and idempotent rerun
@@ -294,6 +290,10 @@ jobs:
         run: bun run db:migrate:be-freeze
       - name: Verify Phase 1BE migration checksum and idempotent rerun
         run: bun run db:migrate:be-freeze
+      - name: Phase 1AZ real MySQL witness/archive/DR packet revision and anti-rollback tests
+        run: bun run test:az-readiness-mysql
+      - name: Phase 1BB transactional nonce, fork, replay and tamper adversarial MySQL tests
+        run: bun run test:bb-evidence-mysql
       - name: Phase 1BC AZ-bound MySQL head continuity, fork, rollback and key-change suite
         run: bun run test:bc-witness-mysql
       - name: Phase 1BD real MySQL evidence quorum, replay, fork and predecessor-gate tests
