@@ -42,30 +42,61 @@ test('BU nonproduction bind, override, stage/prod typos and malformed ports fail
  for(const port of [-1,0,65536,NaN,1.4])assert.throws(
   ()=>resolveDevToolExposure(env,port),/port/);
 });
-test('BU real Express HTTP rejects hostile Host, Origin, DNS rebinding and reverse proxy spoofing',async()=>{
- const conf=resolveDevToolExposure(env,PORT);
+test('BU real HTTP refuses hostile Host, Origin, DNS rebinding and proxy spoofing',async()=>{
  const app=express();
- app.use(devToolHostGate(conf));
+ let guard:ReturnType<typeof devToolHostGate>|null=null;
+ app.use((req,res,next)=>{
+  if(!guard){res.status(503).end();return;}
+  return guard(req,res,next);
+ });
  app.get('/api/health',(_req,res)=>res.json({status:'ok'}));
  app.get('/@vite/client',(_req,res)=>res.json({devOnly:true}));
  const server=app.listen(0,'127.0.0.1');
  await once(server,'listening');
  try{
-  const address=server.address();assert.ok(address&&typeof address!=='string');
-  const port=address.port;
-  // A separate in-memory candidate configured with the actual ephemeral port.
-  const middleware=devToolHostGate(resolveDevToolExposure(env,port));
-  const guarded=express();guarded.use(middleware);
-  guarded.get('/api/health',(_req,res)=>res.json({status:'ok'}));
-  guarded.get('/@vite/client',(_req,res)=>res.json({devOnly:true}));
-  const guardedServer=guarded.listen(0,'127.0.0.1');
-  await once(guardedServer,'listening');
-  try{
-   const a=guardedServer.address();assert.ok(a&&typeof a!=='string');
-   // Use matching port in a fresh separate listener so Host checks are exact.
-   // The fixed-config gate above is tested directly under its real port below.
-  }finally{await new Promise<void>((resolve,reject)=>
-   guardedServer.close(e=>e?reject(e):resolve()));}
+  const addr=server.address();assert.ok(addr&&typeof addr!=='string');
+  const port=addr.port;
+  guard=devToolHostGate(resolveDevToolExposure(env,port));
+  const probe=(urlPath:string,headers:Record<string,string>={})=>
+   new Promise<{status:number,body:string,cache:string|undefined}>((resolve,reject)=>{
+    const req=request({hostname:'127.0.0.1',port,path:urlPath,
+      method:'GET',headers},res=>{
+     const chunks:Buffer[]=[];
+     res.on('data',(b:Buffer)=>chunks.push(b));
+     res.on('end',()=>resolve({status:res.statusCode??0,
+      body:Buffer.concat(chunks).toString('utf8'),
+      cache:res.headers['cache-control']}));
+     res.on('error',reject);
+    });
+    req.on('error',reject);req.end();
+   });
+  const host='127.0.0.1:'+port;
+  const accepted=await probe('/api/health');
+  assert.equal(accepted.status,200);
+  assert.equal(accepted.cache,'no-store');
+  assert.equal((await probe('/@vite/client',{Host:host})).status,200);
+  assert.equal((await probe('/api/health',{Host:'localhost:'+port,
+    Origin:'http://localhost:'+port})).status,200);
+  for(const headers of [
+   {Host:'evil.invalid:'+port},
+   {Host:'127.0.0.1.evil.invalid:'+port},
+   {Host:'0.0.0.0:'+port},
+   {Host:'localhost.evil.invalid:'+port},
+   {Host:'[::ffff:127.0.0.1]:'+port},
+   {Host:host,Origin:'http://attacker.invalid'},
+   {Host:host,Origin:'null'},
+   {Host:host,Origin:'http://127.0.0.1:'+port+'/'},
+   {Host:host,'X-Forwarded-Host':'attacker.invalid'},
+   {Host:host,'X-Forwarded-For':'203.0.113.8'},
+   {Host:host,'X-Forwarded-Proto':'https'},
+   {Host:host,'X-Original-Host':'attacker.invalid'},
+   {Host:host,Forwarded:'host=attacker.invalid'}
+  ]){
+   const rejected=await probe('/@vite/client',headers);
+   assert.equal(rejected.status,403,JSON.stringify(headers));
+   assert.match(rejected.body,/Local-only developer tooling request denied/);
+   assert.equal(rejected.cache,'no-store');
+  }
  }finally{
   await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));
  }
