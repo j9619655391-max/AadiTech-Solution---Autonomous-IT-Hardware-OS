@@ -438,6 +438,82 @@ test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper a
  assert.equal((await ownerRequest(route)).data.localScopeConsistent,true);
 });
 
+test('Phase 1BK MySQL: previous held revision remains inspected after newer draft and refuses history tampering',async()=>{
+ const [found]=await db.query<any[]>(`SELECT p.quote_id,i.product_id FROM sales_quote_release_preparations p
+ JOIN sales_quote_draft_items i ON i.quote_id=p.quote_id
+ WHERE i.sku_snapshot='HOLD-INTEGRITY-1' LIMIT 1`);
+ assert.equal(found.length,1);
+ const quoteId=found[0].quote_id;
+ const route='/api/commercial-integrity/quotes/'+quoteId;
+ const revision=await call('/api/quotes/drafts/'+quoteId+'/revisions','POST',{
+  expectedRevision:0,reason:'Phase 1BK newest unreleased draft only',
+  items:[{productId:found[0].product_id,quantity:2}]});
+ assert.equal(revision.status,201,JSON.stringify(revision.data));
+ const baseline=await call(route);
+ assert.equal(baseline.status,200);
+ assert.equal(baseline.data.localScopeConsistent,true,baseline.data.anomalyCodes?.join(','));
+ assert.equal(baseline.data.historyConsistent,true);
+ assert.equal(baseline.data.inspectedRevisionCount,1);
+ assert.equal(baseline.data.inspectedHeldCount,1);
+ assert.equal(baseline.data.hasInternalReview,false);
+ assert.equal(baseline.data.independentRollbackProofVerified,false);
+ assert.equal(baseline.data.productionReleaseAuthorized,false);
+ const [preps]=await db.query<any[]>(
+  'SELECT id,snapshot_json FROM sales_quote_release_preparations WHERE quote_id=?',[quoteId]);
+ assert.equal(preps.length,1);
+ const original=typeof preps[0].snapshot_json==='string'?
+  preps[0].snapshot_json:JSON.stringify(preps[0].snapshot_json);
+ try{
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.items[0].hsn_snapshot','HISTORY-FORGERY')
+   WHERE id=?`,[preps[0].id]);
+  const changed=await call(route);
+  assert.equal(changed.status,200);
+  assert.equal(changed.data.currentRevision,1);
+  assert.equal(changed.data.localScopeConsistent,false);
+  assert.equal(changed.data.historyConsistent,false);
+  assert.ok(changed.data.historyAnomalyCodes.includes('HISTORY_HELD_SCOPE_INVALID'));
+  assert.equal(changed.data.releaseDecision,'HOLD');
+ }finally{
+  await db.execute('UPDATE sales_quote_release_preparations SET snapshot_json=? WHERE id=?',
+   [original,preps[0].id]);
+ }
+ const [revisions]=await db.query<any[]>(
+  'SELECT id,line_snapshot FROM sales_quote_draft_revisions WHERE quote_id=?',[quoteId]);
+ assert.equal(revisions.length,1);
+ const savedRevision=typeof revisions[0].line_snapshot==='string'?
+  revisions[0].line_snapshot:JSON.stringify(revisions[0].line_snapshot);
+ try{
+  await db.execute(`UPDATE sales_quote_draft_revisions
+   SET line_snapshot=JSON_SET(line_snapshot,'$[0].lineTaxEstimate','0.01')
+   WHERE id=?`,[revisions[0].id]);
+  const altered=await call(route);
+  assert.equal(altered.status,200);
+  assert.equal(altered.data.historyConsistent,false);
+  assert.ok(altered.data.historyAnomalyCodes.includes('HISTORY_REVISION_LINE_MONEY_CHANGED'));
+  assert.equal(altered.data.productionReleaseAuthorized,false);
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_revisions SET line_snapshot=? WHERE id=?',
+   [savedRevision,revisions[0].id]);
+ }
+ try{
+  await db.execute('UPDATE sales_quote_draft_revisions SET revision_number=3 WHERE id=?',
+   [revisions[0].id]);
+  const gap=await call(route);
+  assert.equal(gap.status,200);
+  assert.equal(gap.data.localScopeConsistent,false);
+  assert.ok(gap.data.historyAnomalyCodes.includes('HISTORY_REVISION_SEQUENCE_GAP_OR_FORK'));
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_revisions SET revision_number=1 WHERE id=?',
+   [revisions[0].id]);
+ }
+ const restored=await call(route);
+ assert.equal(restored.status,200);
+ assert.equal(restored.data.localScopeConsistent,true,restored.data.anomalyCodes?.join(','));
+ assert.equal(restored.data.historyConsistent,true);
+ assert.equal(restored.data.releaseDecision,'HOLD');
+});
+
 test('step-up requires correct password and creates session-bound short-lived token',async()=>{
   assert.equal((await call('/api/auth/step-up','POST',{currentPassword:ownerPassword},true,false)).status,403);
   assert.equal((await call('/api/auth/step-up','POST',{currentPassword:'wrong-password'})).status,401);
