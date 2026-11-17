@@ -316,8 +316,6 @@ jobs:
         run: bun run db:migrate:bm-quote-checkpoints
       - name: Verify Phase 1BM checksum-locked migration idempotent rerun
         run: bun run db:migrate:bm-quote-checkpoints
-      - name: Phase 1BM real MySQL candidate witness concurrency, rollback, incident and key revocation HOLD tests
-        run: bun run test:bm-quote-checkpoint-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -352,6 +350,8 @@ jobs:
         run: bun run auth:retention
       - name: Isolated HTTP authentication and MFA smoke
         run: bun run test:auth-smoke
+      - name: Phase 1BM real MySQL candidate witness concurrency, rollback, incident and key revocation HOLD tests
+        run: bun run test:bm-quote-checkpoint-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
