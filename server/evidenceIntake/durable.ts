@@ -55,6 +55,12 @@ export async function recordPhase1BbEvidence(pool:Pool,{
    [logRef]);
   const head=headRows[0];
   if(!head)throw Error('Phase 1BB missing serializable stream');
+  // Freeze propagates into the prior signed-intake ledger as well as BC/BD.
+  // Lock order BB -> BE agrees with BE freeze's AZ -> BB -> BC -> BD -> BE.
+  const [freezes]=await conn.execute<RowDataPacket[]>(
+   'SELECT state FROM inv_be_freeze_streams WHERE log_ref=? FOR UPDATE',[logRef]);
+  if(freezes.length&&freezes[0].state!=='HELD_UNVERIFIED')
+   throw Error('Phase 1BE emergency witness revocation freeze blocks BB batch writes');
   const latest=Number(head.last_sequence);
   if(!Number.isSafeInteger(latest))throw Error('Phase 1BB invalid persisted sequence');
   if(latest===sequence&&head.last_batch_sha256===hash){
