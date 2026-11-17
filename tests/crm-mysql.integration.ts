@@ -534,11 +534,20 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
   const oldPolicy=process.env.MFA_REQUIRE_PRIVILEGED;
   try{
     process.env.MFA_REQUIRE_PRIVILEGED='true';
-    // A session created after the real TOTP challenge may reach the
-    // owner-only action; 404 is the expected unknown-draft result.
-    const accepted=await call('/api/quotes/release-preparations/'+randomUUID(),'POST',
-      {expectedRevision:0},true,false,
-      {cookie:verifiedCookie,'x-csrf-token':signed.data.csrfToken});
+    // TOTP-authenticated ownership alone is not a substitute for the
+    // separate recent password step-up required before held quote preparation.
+    const heldDraftUrl='/api/quotes/release-preparations/'+randomUUID();
+    const authHeaders={cookie:verifiedCookie,'x-csrf-token':signed.data.csrfToken};
+    const blocked=await call(heldDraftUrl,'POST',{expectedRevision:0},
+      true,false,authHeaders);
+    assert.equal(blocked.status,403);
+    const stepped=await call('/api/auth/step-up','POST',{currentPassword:password},
+      true,false,authHeaders);
+    assert.equal(stepped.status,200);
+    assert.match(stepped.data.stepUpToken,/^[A-Za-z0-9_-]{43}$/);
+    // Only after TOTP AND password step-up should an unknown draft return 404.
+    const accepted=await call(heldDraftUrl,'POST',{expectedRevision:0},
+      true,false,{...authHeaders,'x-step-up-token':stepped.data.stepUpToken});
     assert.equal(accepted.status,404);
   }finally{
     if(oldPolicy===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
