@@ -222,8 +222,9 @@ export async function recordCandidateSignedRevocation(pool:Pool,args:{
     expected.brGovernanceState!=='HELD_UNVERIFIED'||
     prior.candidateSignedRevocationAnomalyCodes.includes('BS_UPSTREAM_BR_HEAD_CHANGED'))
    outcome='UPSTREAM_DRIFT_QUARANTINED';
-  else if(number<expected.minimumRevocationEpoch||
-    number<Number(h.last_crl_number))
+  else if(assessed.candidateSignedRevocationAnomalyCodes.includes('BS_CRL_NUMBER_ROLLBACK')||
+    (assessed.crlNumber!==null&&
+     (number<expected.minimumRevocationEpoch||number<Number(h.last_crl_number))))
    outcome='CRL_EPOCH_REGRESSION_QUARANTINED';
   else if(assessed.candidateSignedRevocationAnomalyCodes.some(x=>
    x.includes('STALE')||x.includes('FUTURE'))||
