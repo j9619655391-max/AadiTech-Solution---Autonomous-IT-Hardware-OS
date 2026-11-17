@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import express from 'express';
 import {getPool} from '../server/db';
 import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
+import commercialIntegrityRouter from '../server/commercialIntegrity/ownerRouter';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/procurement/ownerRouter';
 import reviewRouter from '../server/procurement/reviewRouter';
@@ -57,7 +58,7 @@ test('establish disposable real MySQL identities and supplier/catalog/site fixtu
  const app=express();app.use(express.json({limit:'32kb'}));
  app.use('/api/auth',authRouter);
  app.use('/api/procurement/review',reviewRouter);
- app.use('/api/procurement',ownerRouter);
+ app.use('/api/procurement',ownerRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
  const listener=app.listen(0,'127.0.0.1');
  await new Promise<void>(resolve=>listener.once('listening',resolve));
@@ -191,4 +192,34 @@ test('rejection fails closed; does not permit PO hold or stock movement',async()
  const [audit]=await db.query<any[]>('SELECT entity_type,action FROM proc_audit_events WHERE entity_id=?',
   [request.data.id]);
  assert.ok(audit.some((x:any)=>x.action==='SUBMITTED_FOR_INDEPENDENT_REVIEW'));
+});
+
+
+test('Phase 1BI owner-only source readback catches supplier line-cost tamper and forbids PO dispatch',async()=>{
+ const route='/api/commercial-integrity/procurement/'+requestId;
+ assert.equal((await call(route,'GET',undefined,'anonymous')).status,401);
+ assert.equal((await call(route,'GET',undefined,'reviewer')).status,403);
+ assert.equal((await call('/api/commercial-integrity/procurement/'+randomUUID())).status,404);
+ const initial=await call(route);
+ assert.equal(initial.status,200);
+ assert.equal(initial.data.localScopeConsistent,true,initial.data.anomalyCodes?.join(','));
+ assert.equal(initial.data.hasDisabledHeldPurchaseOrder,true);
+ assert.equal(initial.data.supplierCorporateIdentityIndependentlyVerified,false);
+ assert.equal(initial.data.actualSupplierPurchaseOrderIssued,false);
+ assert.equal(initial.data.stockPosted,false);
+ assert.equal(initial.data.productionReleaseAuthorized,false);
+ assert.equal(initial.data.releaseDecision,'HOLD');
+ const [rows]=await db.query<any[]>('SELECT id,line_subtotal FROM proc_request_items WHERE request_id=? ORDER BY position LIMIT 1',[requestId]);
+ assert.equal(rows.length,1);
+ try{
+  await db.execute('UPDATE proc_request_items SET line_subtotal=? WHERE id=?',['1.00',rows[0].id]);
+  const changed=await call(route);
+  assert.equal(changed.status,200);
+  assert.equal(changed.data.localScopeConsistent,false);
+  assert.ok(changed.data.anomalyCodes.includes('PROCUREMENT_QUOTED_COST_SNAPSHOT_CHANGED'));
+  assert.equal(changed.data.productionReleaseAuthorized,false);
+ }finally{
+  await db.execute('UPDATE proc_request_items SET line_subtotal=? WHERE id=?',[rows[0].line_subtotal,rows[0].id]);
+ }
+ assert.equal((await call(route)).data.localScopeConsistent,true);
 });
