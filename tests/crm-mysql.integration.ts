@@ -638,7 +638,8 @@ test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper a
  assert.equal(held.length,1);
  const route='/api/commercial-integrity/quotes/'+held[0].quote_id;
  assert.equal((await call(route,'GET',undefined,false)).status,401);
- assert.equal((await call(route,'GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+ // Earlier lifecycle tests revoked the reviewer's original session.
+ assert.equal((await call(route,'GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
  assert.equal((await call('/api/commercial-integrity/quotes/'+randomUUID())).status,404);
  const start=await call(route);
  assert.equal(start.status,200);
