@@ -62,51 +62,21 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
     channel: 'WHATSAPP' as WorkflowRule['channel']
   });
 
+  // No authenticated, role-scoped vector index or verified document corpus
+  // has been provisioned. Keyword templates cannot assert OEM/SLA/DOA facts.
   const handleRunRagQuery = (e: React.FormEvent) => {
     e.preventDefault();
     if (!ragQuery.trim()) return;
-
-    setIsSearchingRag(true);
-    setTimeout(() => {
-      const q = ragQuery.toLowerCase();
-      let matchedDoc = knowledgeDocs[0]?.title || 'Datasheet';
-      let answer = '';
-
-      if (q.includes('temp') || q.includes('operating') || q.includes('miltary') || q.includes('mil') || q.includes('500w') || q.includes('dc-dc')) {
-        matchedDoc = 'AadiTech Hi-REL Military Grade DC-DC Converter Technical Datasheet';
-        answer = `According to the official AadiTech technical datasheet, the Hi-REL 500W DC-DC Rugged Converter operates within an extreme temperature range of -40°C to +85°C. It is MIL-STD-810G & 461E compliant with conduction cooling, reverse polarity protection, and an MTBF of 450,000 operational hours.`;
-      } else if (q.includes('sla') || q.includes('response') || q.includes('server') || q.includes('mumbai') || q.includes('hours') || q.includes('uptime')) {
-        matchedDoc = 'Enterprise Server & SAN Storage SLA & AMC Response Matrix';
-        answer = `Under the AadiTech Enterprise Server SLA, critical Severity 1 hardware outages mandate a 4-hour on-site engineer response across Mumbai MMR, Delhi NCR, and Bengaluru. Hardware uptime guarantee is 99.95% backed by cold-spare buffer units maintained in Bhiwandi Hub.`;
-      } else if (q.includes('rma') || q.includes('return') || q.includes('doa') || q.includes('warranty') || q.includes('replace')) {
-        matchedDoc = 'AadiTech Reverse Logistics & DOA / RMA Hardware Replacement Policy';
-        answer = `Under AadiTech DOA Policy, any hardware unit exhibiting defects within 14 calendar days of delivery qualifies for instant advance replacement dispatch prior to vendor warranty reconciliation. Mandatory serial barcode scans must accompany the reverse pickup logistics.`;
-      } else {
-        matchedDoc = 'AadiTech General IT Infrastructure Knowledge Base';
-        answer = `Retrieved matching technical records: All enterprise hardware procured and integrated through AadiTech Solution comes with verified GST e-invoicing, pre-configured firmware hardening, and direct vendor-backed back-to-back warranty support.`;
-      }
-
-      setRagResult({ answer, matchedDoc });
-      setIsSearchingRag(false);
-    }, 400);
+    setIsSearchingRag(false);
+    setRagResult({
+      answer: 'NOT VERIFIED: No authenticated, access-controlled knowledge retrieval or independently verified source document is connected. This browser preview cannot certify datasheets, SLA terms, MIL standards or warranty/DOA entitlement.',
+      matchedDoc: 'No authenticated source / no citation'
+    });
   };
 
   const handleCreateRuleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const rule: WorkflowRule = {
-      id: `WF-${Date.now()}`,
-      ruleCode: `RULE_${Date.now().toString().slice(-4)}`,
-      name: newRuleForm.name,
-      triggerEvent: newRuleForm.triggerEvent,
-      condition: newRuleForm.condition,
-      aiDecision: newRuleForm.aiDecision,
-      action: newRuleForm.action,
-      channel: newRuleForm.channel,
-      status: 'ACTIVE',
-      executionsCount: 0,
-      lastTriggered: 'Just created'
-    };
-    onCreateWorkflowRule(rule);
+    // Never create an ACTIVE workflow in a browser preview.
     setIsNewRuleModalOpen(false);
   };
 
@@ -125,7 +95,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
                   Autonomous Workflows, Event Bus & Knowledge RAG
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Sections 48, 49 & 50 &bull; Automated Business Rules &bull; Real-time Event Streaming &bull; Hardware Technical Intelligence
+                  Sections 48, 49 & 50 &bull; Preview only: workflow execution, event transmission and technical-source authentication are held
                 </p>
               </div>
             </div>
@@ -133,11 +103,12 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsNewRuleModalOpen(true)}
+              disabled
+              title="Requires an authenticated server-backed workflow approval"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-sm transition-all"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Create Workflow Rule</span>
+              <span>Workflow Creation HOLD</span>
             </button>
           </div>
         </div>
@@ -145,7 +116,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
         {/* Global telemetry snapshot */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Active Automation Rules</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Browser Rule Previews (Not Running)</span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold text-cyan-400">
                 {workflowRules.filter((r) => r.status === 'ACTIVE').length} / {workflowRules.length}
@@ -205,7 +176,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
             }`}
           >
             <Activity className="w-3.5 h-3.5" />
-            <span>Live Event Bus Stream (Section 49)</span>
+            <span>Browser-Local Event Preview (Section 49)</span>
             <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-slate-300">
               {eventBusMessages.length}
             </span>
@@ -263,7 +234,8 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
 
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => onToggleWorkflowRule(rule.id)}
+                        disabled
+                        title="Workflow activation requires server approval"
                         className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
                           rule.status === 'ACTIVE'
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
@@ -312,11 +284,12 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
                     </span>
 
                     <button
-                      onClick={() => onExecuteWorkflowRule(rule.id)}
+                      disabled
+                      title="Workflow execution is disabled until separately authorized"
                       className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs transition-colors"
                     >
                       <Play className="w-3 h-3 text-emerald-400" />
-                      <span>Test Trigger Now</span>
+                      <span>Execution HOLD</span>
                     </button>
                   </div>
                 </div>
@@ -334,7 +307,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <Activity className="w-4 h-4 text-cyan-400" />
-                  <span>Real-Time Business Event Bus & Message Dispatch Stream</span>
+                  <span>Unverified Browser Event Preview — No Real Dispatch</span>
                 </h3>
                 <p className="text-xs text-slate-400">
                   Asynchronous pub/sub event layer connecting AI Agents, CRM, Inventory, Telegram and Fulfilment.
@@ -342,7 +315,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
               </div>
               <span className="text-xs text-emerald-400 font-mono flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Live Event Ingestion</span>
+                <span>NOT VERIFIED — No Durable Event Broker</span>
               </span>
             </div>
 
@@ -395,7 +368,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
                   <span>Interactive AI Knowledge Retrieval (RAG) Sandbox</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Ask technical specs, SLA response standards, or RMA replacement rules grounded in official AadiTech documentation.
+                  No verified knowledge index is connected. This form only reports that technical policies and OEM claims are not authenticated.
                 </p>
               </div>
 
@@ -447,7 +420,7 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
                     ) : (
                       <Sparkles className="w-3.5 h-3.5" />
                     )}
-                    <span>Query RAG Vector Store</span>
+                    <span>Check RAG Availability</span>
                   </button>
                 </div>
               </form>
@@ -458,9 +431,9 @@ export const WorkflowsAndRAGView: React.FC<WorkflowsAndRAGViewProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
-                      <span>RAG Grounded Response</span>
+                      <span>RAG Unavailable / No Verified Sources</span>
                     </span>
-                    <span className="text-[10px] font-mono text-slate-400">100% Fact Checked</span>
+                    <span className="text-[10px] font-mono text-slate-400">NOT VERIFIED</span>
                   </div>
                   <p className="text-slate-200 leading-relaxed">{ragResult.answer}</p>
                   <div className="pt-2 border-t border-purple-500/20 text-[11px] text-purple-300">
