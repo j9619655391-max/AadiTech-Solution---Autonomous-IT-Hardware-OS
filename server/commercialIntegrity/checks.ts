@@ -1,4 +1,5 @@
-import {calculateLine,evaluateRevision,paise,rupees} from '../quotes/money';
+import {calculateLine,paise,rupees} from '../quotes/money';
+import {evaluateRevision} from '../quotes/revisions';
 
 // Read-only internal scope checks. The records and review signers are
 // applicant-managed MySQL evidence, not actual corporate verification,
@@ -17,7 +18,6 @@ const obj=(x:unknown):Record<string,unknown>|null=>{
  catch{return null;}
 };
 const num=(x:unknown):number=>Number(x);
-const flag=(codes:Set<string>,c:string,fail:boolean)=>{if(fail)codes.add(c);};
 
 export function inspectInternalQuoteScope(args:{
  draft:Record<string,any>,lines:Record<string,any>[],
