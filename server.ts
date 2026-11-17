@@ -37,6 +37,7 @@ import providerOnboardingReviewerRouter from "./server/providerOnboarding/review
 import quoteDraftRouter from "./server/quotes/router";
 import quoteReviewRouter from "./server/quotes/reviewRouter";
 import quoteReleaseHoldRouter from "./server/quotes/releaseHoldRouter";
+import commercialIntegrityOwnerRouter from "./server/commercialIntegrity/ownerRouter";
 import securityAdminRouter from "./server/security/adminRouter";
 import mfaRouter from "./server/auth/mfaRouter";
 import {resolveDeploymentSecurity,securityTransportMiddleware} from "./server/security/deploymentGuards";
@@ -90,6 +91,7 @@ app.use("/api/provider-onboarding", providerOnboardingOwnerRouter);
 app.use("/api/quotes/drafts", quoteDraftRouter);
 app.use("/api/quotes/reviews", quoteReviewRouter);
 app.use("/api/quotes/release-preparations", quoteReleaseHoldRouter);
+app.use("/api/commercial-integrity", commercialIntegrityOwnerRouter);
 
 // Fail closed: diagnostics and AI endpoints are restricted to an authenticated
 // owner. Public health remains an intentionally minimal liveness endpoint.
