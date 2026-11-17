@@ -51,6 +51,8 @@ export async function inspectCandidateQuoteReconciliationOnConnection(
  if(!heads.length)return Object.freeze({
   candidateReconciliationExists:false,candidateReconciliationRevision:0,
   candidateReconciliationGovernanceState:'ABSENT',
+  candidateReconciliationPacketSha256:null,
+  candidateReconciliationAttemptCount:0,
   candidateReconciliationLocallyConsistent:true,
   candidateReconciliationAnomalyCodes:Object.freeze([] as string[]),...HOLD
  });
