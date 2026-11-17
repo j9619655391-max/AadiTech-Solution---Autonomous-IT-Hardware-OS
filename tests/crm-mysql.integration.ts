@@ -548,7 +548,7 @@ test('MFA enrollment revokes old sessions; password login needs challenge; recov
     // Only after TOTP AND password step-up should an unknown draft return 404.
     const accepted=await call(heldDraftUrl,'POST',{expectedRevision:0},
       true,false,{...authHeaders,'x-step-up-token':stepped.data.stepUpToken});
-    assert.equal(accepted.status,404);
+    assert.equal(accepted.status,404,JSON.stringify(accepted.data));
   }finally{
     if(oldPolicy===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
     else process.env.MFA_REQUIRE_PRIVILEGED=oldPolicy;
