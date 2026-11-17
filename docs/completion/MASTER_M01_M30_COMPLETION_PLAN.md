@@ -13,6 +13,12 @@ The machine-readable state is [REMAINING_M01_M30_ACCEPTANCE_LEDGER.json](./REMAI
 - **Crucially**, parent `src/App.tsx` business mutation callbacks now reject illegal customer-acceptance, PAID/DISPATCHED, fulfillment, warranty renewal sends, integration CONNECTED, workflow execution, disbursement and RMA/WO transitions even if a future child UI bypasses a disabled button. Denial is not a substitute for a future server-authoritative workflow.
 - New CI regression suite `tests/legacy-operational-truth.test.ts` makes these false-success regressions explicit; new master M01–M30 ledger and preflight ensure every unapproved workstream remains held.
 
+## Follow-up Phase 1BH internal hardening — 2026-11-17
+
+[Detailed Phase 1BH security acceptance notes](../phase-1/PHASE_1BH_BUSINESS_SOURCE_TRUTH_AND_EXTERNAL_HOLD.md) document the *next* deny-only fixes. The parent `App.tsx` can no longer produce an internally `APPROVED` fake commercial quote, `ISSUED` PO, serialized inward evidence, supplier RFQ broadcast or AI/KYC onboarding audit from browser-local callbacks. BOM keyword compatibility never equals OEM `PASSED` and the browser commercial quote button is disabled. Customer-facing SLA/OEM/DOA RAG answers, simulated API HTTP 200, provider status toggles, tenant context switches, successful DLQ retries, stock liquidation, agent sends and legacy procurement buttons no longer assert verified or executed effects. Regression suite: `tests/remaining-business-truth.test.ts` plus `tests/ai-business-truth.test.ts`.
+
+**This phase does not supply actual server-backed replacements, legal authority, provider keys or real executed business transactions.** All 30 acceptance workstreams remain `HOLD`.
+
 ## Workstream inventory and missing evidence
 
 ### Internal foundations (M01–M12)
