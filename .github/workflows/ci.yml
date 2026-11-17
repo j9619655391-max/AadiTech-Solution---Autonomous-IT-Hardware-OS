@@ -442,6 +442,21 @@ jobs:
             tail -n 60 "$RUNNER_TEMP/aaditech-browser-server.log"
             exit 1
           fi
+          # Phase 1BU: exercise the actual dev listener against Host/Origin
+          # rebinding and forwarded-host spoofing before the full MFA browser.
+          for header in \
+            "Host: attacker.invalid" \
+            "Origin: http://attacker.invalid" \
+            "X-Forwarded-Host: attacker.invalid" \
+            "X-Forwarded-For: 203.0.113.8" \
+            "X-Forwarded-Proto: https"; do
+            code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --header "$header" http://127.0.0.1:3000/api/health)"
+            if [ "$code" != "403" ]; then
+              echo "Phase 1BU local-only runtime listener refused to deny: $header (HTTP $code)"
+              exit 1
+            fi
+          done
           node --import tsx scripts/browser-smoke.mjs
       - name: Read-only disposable staging readiness preflight
         env:
