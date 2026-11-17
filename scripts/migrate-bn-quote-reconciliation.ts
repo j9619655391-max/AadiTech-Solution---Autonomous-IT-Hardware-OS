@@ -9,7 +9,7 @@ import {bnReconciliationWriteTarget} from '../server/commercialIntegrity/quoteRe
 async function main(){
  bnReconciliationWriteTarget(process.env);
  const id='0037_bn_quote_head_reconciliation';
- if(MIGRATIONS[36]!==id||MIGRATIONS.length!==37)
+ if(MIGRATIONS[36]!==id||MIGRATIONS.length<37)
   throw Error('Phase 1BN migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)
