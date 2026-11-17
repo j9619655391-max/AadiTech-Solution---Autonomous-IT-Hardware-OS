@@ -35,7 +35,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    [req.params.id]);
   const current=revisions[0]??null,revision=current?Number(current.revision_number):0;
   const [decisions]=await conn.query<RowDataPacket[]>(
-   'SELECT d.*,u.role AS reviewer_role FROM sales_quote_review_decisions d JOIN auth_users u ON u.id=d.owner_user_id WHERE d.quote_id=? AND d.revision_number=? LIMIT 1',
+   'SELECT d.*,u.role AS reviewer_role FROM sales_quote_review_decisions d JOIN auth_users u ON u.id=d.owner_user_id WHERE d.quote_id=? AND d.revision_number=? LIMIT 2',
    [req.params.id,revision]);
   const [preps]=await conn.query<RowDataPacket[]>(
    'SELECT p.*,o.event_type,o.dispatch_state,o.payload_sha256 FROM sales_quote_release_preparations p LEFT JOIN sales_quote_outbox_holds o ON o.release_preparation_id=p.id WHERE p.quote_id=? AND p.revision_number=? LIMIT 2',
@@ -45,9 +45,12 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    preparation:preps[0]??null
   });
   await conn.commit();
-  res.json({...result,localScopeConsistent:result.localScopeConsistent&&preps.length<=1,
-   anomalyCodes:preps.length<=1?result.anomalyCodes:
-    [...result.anomalyCodes,'DUPLICATE_HELD_PREPARATION'],
+  const anomalies=[...result.anomalyCodes,
+   ...(decisions.length>1?['DUPLICATE_QUOTE_REVIEW']:[]),
+   ...(preps.length>1?['DUPLICATE_HELD_PREPARATION']:[])];
+  res.json({...result,localScopeConsistent:result.localScopeConsistent&&
+    decisions.length<=1&&preps.length<=1,
+   anomalyCodes:anomalies.sort(),
    sourceType:'INTERNAL_MYSQL_ONLY',
    verifiedIndependentCustomerOrVendorEvidence:false,
    officialQuoteIssued:false});
@@ -63,7 +66,7 @@ router.get('/procurement/:id',requirePrivilegedMfa,async(req,res)=>{
  try{
   await conn.beginTransaction();
   const [requests]=await conn.query<RowDataPacket[]>(
-   'SELECT r.*,s.status AS supplier_status,s.reviewed_by AS supplier_reviewed_by,s.evidence_ref AS supplier_evidence_ref,u.role AS supplier_reviewer_role FROM proc_requests r JOIN proc_suppliers s ON s.id=r.supplier_id LEFT JOIN auth_users u ON u.id=s.reviewed_by WHERE r.id=? AND r.created_by=? FOR UPDATE',
+   'SELECT r.*,s.status AS supplier_status,s.reviewed_by AS supplier_reviewed_by,s.evidence_ref AS supplier_evidence_ref,s.code AS supplier_code,s.legal_name AS supplier_name,u.role AS supplier_reviewer_role FROM proc_requests r JOIN proc_suppliers s ON s.id=r.supplier_id LEFT JOIN auth_users u ON u.id=s.reviewed_by WHERE r.id=? AND r.created_by=? FOR UPDATE',
    [req.params.id,res.locals.auth.userId]);
   if(requests.length!==1){await conn.rollback();res.status(404).json({error:'Purchase request not available'});return;}
   const [lines]=await conn.query<RowDataPacket[]>(
