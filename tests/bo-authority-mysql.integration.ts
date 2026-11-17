@@ -222,7 +222,7 @@ test('BO forged local dossier head is detected, write denied, restoring local ha
    [digest,x.quote]);
  }
  assert.equal((await inspect(x.quote)).candidateAuthorityDossierLocallyConsistent,true);
- assert.equal((await inspect(x.quote)).externalAuthorityApproved,false);
+ assert.equal((await inspect(x.quote)).independentKeyEnrollmentAuthenticated,false);
 });
 test('BO BM/BN upstream head alteration is detected in SQL rollback rehearsal without persistence',async()=>{
  const x=await fixture(),d=boDossierFixture(x.expected);
