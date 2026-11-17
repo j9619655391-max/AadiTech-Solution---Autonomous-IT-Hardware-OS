@@ -27,6 +27,10 @@ The machine-readable state is [REMAINING_M01_M30_ACCEPTANCE_LEDGER.json](./REMAI
 
 [Phase 1BJ engineering controls](../phase-1/PHASE_1BJ_HELD_COMMERCIAL_SNAPSHOT_FAIL_CLOSED_HARDENING.md) close readback comparison gaps in internally held quote and supplier PO snapshots. Additional metadata including forged outbound recipient or dispatch claims is rejected. The readback reconciles all ten original/revision quote line fields, GST/HSN and quote currency/lead context; internally stored supplier code/name must match held PO snapshots. Duplicate quote reviews are flagged, and unit + disposable-MySQL mutation tests explicitly exercise these attacks. This is **internal consistency validation only**, not proof of verified price, supplier legal identity, GST accuracy, cloud WORM or true source authenticity. Production HOLD, all M01–M30 outstanding independent acceptance gates and the disabled delivery paths are unchanged.
 
+## Phase 1BK: historical quotation lineage and anti-rollback consistency (2026-11-17)
+
+[Phase 1BK implementation and acceptance boundary](../phase-1/PHASE_1BK_HISTORICAL_QUOTE_LINEAGE_AND_ANTI_ROLLBACK_HOLD.md) extends the internal Phase 1BJ scope readback from the current revision to **all bounded historical revisions and previously held snapshots**, with exact source-line tax/HSN and money checks, monotonic revision-number continuity, independent internal reviewer decision links, disabled outbox and local JSON writer-digest reconciliation. Historical orphan, review, missing outbox and tampering checks fail closed. This adds regression tests using the actual disposable MySQL database, not a production-integrity or external-authentication guarantee. A privileged data rewrite/truncation remains undetectable without an independently authenticated external monotonic head; `independentRollbackProofVerified=false`. All M01–M30 external owner, legal, provider, signed WORM, encrypted DR and production signoff gates remain unfulfilled and held.
+
 ## Workstream inventory and missing evidence
 
 ### Internal foundations (M01–M12)
