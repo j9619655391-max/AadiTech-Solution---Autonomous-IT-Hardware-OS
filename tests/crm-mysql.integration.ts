@@ -456,6 +456,11 @@ test('Phase 1BK MySQL: previous held revision remains inspected after newer draf
  assert.equal(baseline.data.inspectedRevisionCount,1);
  assert.equal(baseline.data.inspectedHeldCount,1);
  assert.equal(baseline.data.hasInternalReview,false);
+ assert.match(baseline.data.localHistoryCommitmentSha256,/^[0-9a-f]{64}$/);
+ assert.equal(baseline.data.localHistoryCommitmentExternallyPublished,false);
+ assert.equal(baseline.data.authenticatedWitnessCheckpointAvailable,false);
+ assert.equal(baseline.data.independentlyAuthenticatedRevocationAvailable,false);
+ const baselineCommitment=baseline.data.localHistoryCommitmentSha256;
  assert.equal(baseline.data.independentRollbackProofVerified,false);
  assert.equal(baseline.data.productionReleaseAuthorized,false);
  const [preps]=await db.query<any[]>(
@@ -474,6 +479,7 @@ test('Phase 1BK MySQL: previous held revision remains inspected after newer draf
   assert.equal(changed.data.historyConsistent,false);
   assert.ok(changed.data.historyAnomalyCodes.includes('HISTORY_HELD_SCOPE_INVALID'));
   assert.equal(changed.data.releaseDecision,'HOLD');
+  assert.notEqual(changed.data.localHistoryCommitmentSha256,baselineCommitment);
  }finally{
   await db.execute('UPDATE sales_quote_release_preparations SET snapshot_json=? WHERE id=?',
    [original,preps[0].id]);
@@ -492,6 +498,7 @@ test('Phase 1BK MySQL: previous held revision remains inspected after newer draf
   assert.equal(altered.data.historyConsistent,false);
   assert.ok(altered.data.historyAnomalyCodes.includes('HISTORY_REVISION_LINE_MONEY_CHANGED'));
   assert.equal(altered.data.productionReleaseAuthorized,false);
+  assert.notEqual(altered.data.localHistoryCommitmentSha256,baselineCommitment);
  }finally{
   await db.execute('UPDATE sales_quote_draft_revisions SET line_snapshot=? WHERE id=?',
    [savedRevision,revisions[0].id]);
@@ -503,6 +510,7 @@ test('Phase 1BK MySQL: previous held revision remains inspected after newer draf
   assert.equal(gap.status,200);
   assert.equal(gap.data.localScopeConsistent,false);
   assert.ok(gap.data.historyAnomalyCodes.includes('HISTORY_REVISION_SEQUENCE_GAP_OR_FORK'));
+  assert.notEqual(gap.data.localHistoryCommitmentSha256,baselineCommitment);
  }finally{
   await db.execute('UPDATE sales_quote_draft_revisions SET revision_number=1 WHERE id=?',
    [revisions[0].id]);
@@ -511,6 +519,7 @@ test('Phase 1BK MySQL: previous held revision remains inspected after newer draf
  assert.equal(restored.status,200);
  assert.equal(restored.data.localScopeConsistent,true,restored.data.anomalyCodes?.join(','));
  assert.equal(restored.data.historyConsistent,true);
+ assert.equal(restored.data.localHistoryCommitmentSha256,baselineCommitment);
  assert.equal(restored.data.releaseDecision,'HOLD');
 });
 
