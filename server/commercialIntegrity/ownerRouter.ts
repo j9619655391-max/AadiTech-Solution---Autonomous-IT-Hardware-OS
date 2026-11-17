@@ -8,6 +8,8 @@ import {inspectInternalQuoteHistory} from './quoteHistory';
 import {buildLocalQuoteHistoryCommitment} from './quoteAnchors';
 import {readCandidateAuthorityExpectedUnderLock,
  inspectCandidateExternalAuthorityDossierOnConnection} from './quoteAuthorityCustody';
+import {readCandidateIntakeExpectedUnderLock,
+ inspectCandidateEvidenceIntakeOnConnection} from './quoteEvidenceCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -67,6 +69,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    await readCandidateAuthorityExpectedUnderLock(conn,req.params.id);
   const dossier=await inspectCandidateExternalAuthorityDossierOnConnection(
    conn,req.params.id,authorityExpected);
+  const {expected:intakeExpected}=await readCandidateIntakeExpectedUnderLock(
+   conn,req.params.id);
+  const intake=await inspectCandidateEvidenceIntakeOnConnection(
+   conn,req.params.id,intakeExpected);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
@@ -75,9 +81,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    ...history.historyAnomalyCodes,
    ...checkpoint.candidateCheckpointAnomalyCodes,
    ...reconciliation.candidateReconciliationAnomalyCodes,
-   ...dossier.candidateAuthorityDossierAnomalyCodes
+   ...dossier.candidateAuthorityDossierAnomalyCodes,
+   ...intake.candidateIntakeAnomalyCodes
   ])].sort();
-  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,
+  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,...intake,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
@@ -87,6 +94,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
     checkpoint.candidateCheckpointLocallyConsistent&&
     reconciliation.candidateReconciliationLocallyConsistent&&
     dossier.candidateAuthorityDossierLocallyConsistent&&
+    intake.candidateIntakeLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
