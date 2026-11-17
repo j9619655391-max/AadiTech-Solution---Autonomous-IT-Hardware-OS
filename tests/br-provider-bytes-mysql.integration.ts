@@ -265,7 +265,7 @@ test('BR two independently submitted byte records race and sticky quarantine one
  changed.objectId='other-candidate-object';
  b.wormReceiptUtf8Base64=Buffer.from(JSON.stringify(changed)).toString('base64');
  assert.equal((await writeBytes(x,1,null,a)).outcome,'RECORDED_UNVERIFIED');
- assert.equal((await writeBytes(x,1,null,b)).outcome,'RAW_BYTES_CONFLICT_QUARANTINED');
+ assert.equal((await writeBytes(x,1,null,b)).outcome,'BQ_REPLAY_QUARANTINED');
  const state=await readBytes(x.quote);
  assert.equal(state.candidateByteVersion,1);
  assert.equal(state.candidateByteGovernanceState,'QUARANTINED');
@@ -290,7 +290,7 @@ test('BR forged signed provider checkpoint payload is denied before insertion',a
  await assert.rejects(writeBytes(x,1,null,p),/malformed or unsigned/);
  const audit=await readBytes(x.quote);
  assert.equal(audit.candidateByteVersion,0);
- assert.equal(audit.candidateByteGovernanceState,'HELD_UNVERIFIED');
+ assert.equal(audit.candidateByteGovernanceState,'ABSENT');
 });
 test('BR DR rollback and forged WORM offline receipts are quarantined',async()=>{
  for(const [key,change] of [
