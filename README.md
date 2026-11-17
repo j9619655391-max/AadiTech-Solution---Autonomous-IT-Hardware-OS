@@ -2,6 +2,9 @@
 
 **Status: DEVELOPMENT / RELEASE HOLD. Not production certified.**
 
+**Current remaining scope and acceptance authority:** See [M01–M30 master completion plan](docs/completion/MASTER_M01_M30_COMPLETION_PLAN.md) and its [machine-readable HOLD ledger](docs/completion/REMAINING_M01_M30_ACCEPTANCE_LEDGER.json). This ledger tracks **30 not-yet-production-accepted workstreams** and is verified by zero-input CI. Browser legacy dashboards cannot authorize invoices, payments, delivery, GRN, credit decisions, e-sign or external sends. A successful CI run proves code behavior, not verified external provider/legal/DR evidence.
+
+
 This repository is a modular Express + React + MySQL platform for hardware sales, CRM and internal quote review. Phase 1AA removed several fabricated business claims and unsafe browser-only actions, but legacy dashboards and workflows remain demonstration software and should never be represented as authoritative financial, warehouse or customer records.
 
 ## What is implemented in the current development branch
