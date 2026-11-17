@@ -4,6 +4,7 @@ import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inspectInternalQuoteScope,inspectInternalProcurementScope} from './checks';
+import {inspectInternalQuoteHistory} from './quoteHistory';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -30,27 +31,43 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
   if(drafts.length!==1){await conn.rollback();res.status(404).json({error:'Draft not available'});return;}
   const [lines]=await conn.query<RowDataPacket[]>(
    'SELECT * FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position',[req.params.id]);
+  // Inspect every revision including revision 0, not only the current one.
+  // 1002 rows permit detecting oversized histories without unbounded work.
   const [revisions]=await conn.query<RowDataPacket[]>(
-   'SELECT * FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number DESC LIMIT 1',
+   'SELECT * FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number ASC LIMIT 1002',
    [req.params.id]);
-  const current=revisions[0]??null,revision=current?Number(current.revision_number):0;
   const [decisions]=await conn.query<RowDataPacket[]>(
-   'SELECT d.*,u.role AS reviewer_role FROM sales_quote_review_decisions d JOIN auth_users u ON u.id=d.owner_user_id WHERE d.quote_id=? AND d.revision_number=? LIMIT 2',
-   [req.params.id,revision]);
+   'SELECT d.*,u.role AS reviewer_role FROM sales_quote_review_decisions d LEFT JOIN auth_users u ON u.id=d.owner_user_id WHERE d.quote_id=? ORDER BY d.revision_number ASC LIMIT 1002',
+   [req.params.id]);
   const [preps]=await conn.query<RowDataPacket[]>(
-   'SELECT p.*,o.event_type,o.dispatch_state,o.payload_sha256 FROM sales_quote_release_preparations p LEFT JOIN sales_quote_outbox_holds o ON o.release_preparation_id=p.id WHERE p.quote_id=? AND p.revision_number=? LIMIT 2',
-   [req.params.id,revision]);
+   `SELECT p.*,o.id AS outbox_id,o.event_type,o.dispatch_state,o.payload_sha256,
+    (SELECT COUNT(*) FROM sales_quote_outbox_holds c WHERE c.release_preparation_id=p.id) AS outbox_count
+    FROM sales_quote_release_preparations p
+    LEFT JOIN sales_quote_outbox_holds o ON o.release_preparation_id=p.id
+    WHERE p.quote_id=? ORDER BY p.revision_number ASC LIMIT 1002`,[req.params.id]);
+  const current=revisions.at(-1)??null;
+  const revision=current?Number(current.revision_number):0;
+  const currentDecisions=decisions.filter(d=>Number(d.revision_number)===revision);
+  const currentPreps=preps.filter(p=>Number(p.revision_number)===revision);
+  const truncated=revisions.length>1000||decisions.length>1001||preps.length>1001;
   const result=inspectInternalQuoteScope({
-   draft:drafts[0],lines,revision:current,decision:decisions[0]??null,
-   preparation:preps[0]??null
+   draft:drafts[0],lines,revision:current,decision:currentDecisions[0]??null,
+   preparation:currentPreps[0]??null
+  });
+  const history=inspectInternalQuoteHistory({
+   draft:drafts[0],lines,revisions,decisions,preparations:preps,truncated
   });
   await conn.commit();
-  const anomalies=[...result.anomalyCodes,
-   ...(decisions.length>1?['DUPLICATE_QUOTE_REVIEW']:[]),
-   ...(preps.length>1?['DUPLICATE_HELD_PREPARATION']:[])];
-  res.json({...result,localScopeConsistent:result.localScopeConsistent&&
-    decisions.length<=1&&preps.length<=1,
-   anomalyCodes:anomalies.sort(),
+  const anomalies=[...new Set([
+   ...result.anomalyCodes,
+   ...(currentDecisions.length>1?['DUPLICATE_QUOTE_REVIEW']:[]),
+   ...(currentPreps.length>1?['DUPLICATE_HELD_PREPARATION']:[]),
+   ...history.historyAnomalyCodes
+  ])].sort();
+  res.json({...result,...history,
+   localScopeConsistent:result.localScopeConsistent&&history.historyConsistent&&
+    currentDecisions.length<=1&&currentPreps.length<=1,
+   anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
    verifiedIndependentCustomerOrVendorEvidence:false,
    officialQuoteIssued:false});
