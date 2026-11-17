@@ -74,6 +74,28 @@ test('signed suspected-key freeze is sticky, idempotent and always internal HOLD
  assert.equal(r.productionReleaseAuthorized,false);
  assert.equal(r.productionReleaseBlocked,true);
 });
+test('emergency freeze blocks upstream AZ packet and BB nonce intake, including replay, without mutating heads',async()=>{
+ const f=beFixture(log());await prepare(f);
+ await record(f);
+ const dossier=f.bdEvidence,logRef=dossier.azPacket.archive.logRef;
+ await assert.rejects(recordPhase1AzReadiness(pool,{
+  logRef,packet:dossier.azPacket,now:f.now,env
+ }),/Phase 1BE emergency witness revocation freeze blocks AZ packet writes/);
+ await assert.rejects(recordPhase1BbEvidence(pool,{
+  azPacket:dossier.azPacket,records:dossier.bbRecords,sequence:1,
+  previousBatchSha256:null,now:f.now,env
+ }),/Phase 1BE emergency witness revocation freeze blocks BB batch writes/);
+ const [az]=await pool.execute<any[]>(
+  'SELECT last_revision,governance_state FROM inv_az_readiness_streams WHERE log_ref=?',[logRef]);
+ const [bb]=await pool.execute<any[]>(
+  'SELECT last_sequence,governance_state FROM inv_bb_evidence_streams WHERE log_ref=?',[logRef]);
+ assert.equal(Number(az[0].last_revision),1);
+ assert.equal(az[0].governance_state,'HELD_UNVERIFIED');
+ assert.equal(Number(bb[0].last_sequence),1);
+ assert.equal(bb[0].governance_state,'HELD_UNVERIFIED');
+ assert.equal((await inspect(logRef)).state,'FROZEN_UNVERIFIED');
+ assert.equal((await inspect(logRef)).locallyConsistentHistory,true);
+});
 test('frozen log blocks further witness head writes AND BD review replay/new revision',async()=>{
  const f=beFixture(log()),bc=await prepare(f);
  await record(f);
