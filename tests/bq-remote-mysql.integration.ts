@@ -282,7 +282,7 @@ test('BQ forged registrar or collector Ed25519 signatures never persist candidat
 });
 test('BQ signed split head, issuer CRL downgrade, incorrect TLS pin, WORM denial or DR rollback freeze',async()=>{
  for(const change of [
-  {remoteSequence:0},{remoteReceiptSha256:bqSha('f')},
+  {remoteSequence:2},{remoteReceiptSha256:bqSha('f')},
   {revocationEpoch:3},{crlSha256:bqSha('f')},
   {tlsSpkiSha256:bqSha('f')},{wormDeleteDenied:false},
   {drRestoredSequence:0},{drTranscriptSha256:bqSha('f')}
