@@ -31,7 +31,8 @@ export const MIGRATIONS=[
  '0038_bo_candidate_authority_dossiers',
  '0039_bp_candidate_evidence_intake',
  '0040_bq_candidate_remote_evidence',
- '0041_br_provider_byte_evidence'
+ '0041_br_provider_byte_evidence',
+ '0042_bs_signed_revocation_holds'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
