@@ -48,3 +48,16 @@ CREATE TABLE IF NOT EXISTS quote_bp_candidate_intake_attempts (
  CONSTRAINT fk_bp_attempt_stream FOREIGN KEY(quote_id)
   REFERENCES quote_bp_candidate_intake_streams(quote_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Server-issued short-lived one-use nonce hash (no public HTTP issuer).
+CREATE TABLE IF NOT EXISTS quote_bp_candidate_intake_challenges (
+ challenge_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+ quote_id CHAR(36) NOT NULL,
+ issued_at DATETIME(3) NOT NULL,
+ expires_at DATETIME(3) NOT NULL,
+ status ENUM('ISSUED','CONSUMED') NOT NULL DEFAULT 'ISSUED',
+ consumed_packet_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+ INDEX ix_bp_challenge_quote(quote_id,status),
+ CONSTRAINT fk_bp_challenge_stream FOREIGN KEY(quote_id)
+  REFERENCES quote_bp_candidate_intake_streams(quote_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
