@@ -90,7 +90,8 @@ export async function inspectCandidateQuoteCheckpointOnConnection(
  if(events.length>1000)errors.add('CHECKPOINT_ATTEMPT_BOUND_EXCEEDED');
  for(const row of events){
   attempted++;
-  const seq=Number(row.sequence_number),r=String(row.candidate_receipt_sha256),
+  const seq=Number(row.sequence_number),candidateRevision=Number(row.candidate_revision_number),
+   r=String(row.candidate_receipt_sha256),
    s=String(row.candidate_source_sha256),p=String(row.pinset_sha256);
   if(!Number.isSafeInteger(seq)||seq<1||
      !Number.isSafeInteger(candidateRevision)||candidateRevision<0||!SHA.test(r)||!SHA.test(s)||!SHA.test(p)||
