@@ -137,6 +137,9 @@ const utc=(x:unknown):number|null=>{
  const ms=Date.parse(x);
  return Number.isFinite(ms)&&new Date(ms).toISOString()===x?ms:null;
 };
+export function canonicalCandidateWitnessBody(body:CandidateWitnessBody){
+ return JSON.stringify(normalize(body));
+}
 export function candidateWitnessReceiptDigest(receipt:CandidateWitnessReceipt){
  return sha('aaditech/quote/history/receipt/v1\n'+
   JSON.stringify(normalize(receipt)));
@@ -167,7 +170,8 @@ export function verifyCandidateQuoteWitnessChain(args:{
  const safeReceipts=Array.isArray(receipts)?receipts.slice(0,32):[];
  for(let i=0;i<safeReceipts.length;i++){
   const r=safeReceipts[i],b=r?.body;
-  if(!b||typeof b!=='object'||Array.isArray(b)||
+  if(!r||typeof r!=='object'||Array.isArray(r)||
+     !b||typeof b!=='object'||Array.isArray(b)||
      !fields(r as Row,['body','signatureBase64'])||
      !fields(b as Row,witnessFields)||
      b.format!=='aaditech-quote-history-witness-v1'||
@@ -199,7 +203,7 @@ export function verifyCandidateQuoteWitnessChain(args:{
    if(!pin)throw Error('No trusted pin');
    const pub=createPublicKey(pin.publicKeySpkiPem);
    if(pub.asymmetricKeyType!=='ed25519'||
-      !verify(null,Buffer.from(JSON.stringify(normalize(b))),pub,signature))
+      !verify(null,Buffer.from(canonicalCandidateWitnessBody(b)),pub,signature))
     throw Error('Unverified signature');
   }catch{errors.add('WITNESS_SIGNATURE_INVALID');}
   try{previousReceipt=candidateWitnessReceiptDigest(r);}
