@@ -14,6 +14,8 @@ import {readCandidateRemoteExpectedUnderLock,
  inspectCandidateRemoteEvidenceOnConnection} from './quoteRemoteCustody';
 import {readCandidateByteExpectedUnderLock,
  inspectCandidateProviderBytesOnConnection} from './quoteByteCustody';
+import {readCandidateSignedRevocationExpectedUnderLock,
+ inspectCandidateSignedRevocationOnConnection} from './quoteRevocationCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -85,6 +87,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    conn,req.params.id);
   const byteEvidence=await inspectCandidateProviderBytesOnConnection(
    conn,req.params.id,byteExpected);
+  const {expected:signedRevocationExpected}=await readCandidateSignedRevocationExpectedUnderLock(
+   conn,req.params.id);
+  const signedRevocation=await inspectCandidateSignedRevocationOnConnection(
+   conn,req.params.id,signedRevocationExpected);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
@@ -96,9 +102,10 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    ...dossier.candidateAuthorityDossierAnomalyCodes,
    ...intake.candidateIntakeAnomalyCodes,
    ...remote.candidateRemoteAnomalyCodes,
-   ...byteEvidence.candidateByteAnomalyCodes
+   ...byteEvidence.candidateByteAnomalyCodes,
+   ...signedRevocation.candidateSignedRevocationAnomalyCodes
   ])].sort();
-  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,...intake,...remote,...byteEvidence,
+  res.json({...result,...history,...checkpoint,...reconciliation,...dossier,...intake,...remote,...byteEvidence,...signedRevocation,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
@@ -111,6 +118,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
     intake.candidateIntakeLocallyConsistent&&
     remote.candidateRemoteLocallyConsistent&&
     byteEvidence.candidateByteLocallyConsistent&&
+    signedRevocation.candidateSignedRevocationLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
