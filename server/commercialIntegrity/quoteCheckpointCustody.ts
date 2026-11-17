@@ -92,7 +92,8 @@ export async function inspectCandidateQuoteCheckpointOnConnection(
   attempted++;
   const seq=Number(row.sequence_number),r=String(row.candidate_receipt_sha256),
    s=String(row.candidate_source_sha256),p=String(row.pinset_sha256);
-  if(!Number.isSafeInteger(seq)||seq<1||!SHA.test(r)||!SHA.test(s)||!SHA.test(p)||
+  if(!Number.isSafeInteger(seq)||seq<1||
+     !Number.isSafeInteger(candidateRevision)||candidateRevision<0||!SHA.test(r)||!SHA.test(s)||!SHA.test(p)||
      (row.previous_receipt_sha256!==null&&
       !SHA.test(String(row.previous_receipt_sha256)))||
      (row.claimed_publication_head_sha256!==null&&
@@ -101,17 +102,15 @@ export async function inspectCandidateQuoteCheckpointOnConnection(
   if(row.outcome===ACCEPTED){
    if(incident||seq!==sequence+1||
       row.previous_receipt_sha256!==receipt||
-      (sequence>0&&p!==pinset))
+      (sequence>0&&(p!==pinset||candidateRevision<revision)))
     errors.add('CHECKPOINT_ACCEPTED_CHAIN_BROKEN');
-   sequence=seq;receipt=r;source=s;pinset=p;
+   sequence=seq;receipt=r;source=s;pinset=p;revision=candidateRevision;
   }else incident=true;
  }
  if(Number(h.last_sequence)!==sequence||
     h.last_receipt_sha256!==receipt||h.last_source_sha256!==source||
     h.last_pinset_sha256!==pinset||
-    (sequence===0&&Number(h.last_revision_number)!==0)||
-    (sequence>0&&(!Number.isSafeInteger(Number(h.last_revision_number))||
-      Number(h.last_revision_number)<0)))
+    Number(h.last_revision_number)!==revision)
   errors.add('CHECKPOINT_HEAD_HISTORY_DIVERGENCE');
  if((h.governance_state==='QUARANTINED')!==incident)
   errors.add('CHECKPOINT_QUARANTINE_STATE_MISMATCH');
@@ -216,7 +215,8 @@ export async function recordCandidateQuoteCheckpoint(pool:Pool,args:{
   else if(revoked)outcome='REVOCATION_CLAIM_QUARANTINED';
   else if(claimed!==null&&claimed!==receiptDigest)
    outcome='PUBLICATION_MISMATCH_QUARANTINED';
-  else if(!sourceValid||last.sourceCommitmentSha256!==commitment.sourceCommitmentSha256)
+  else if(!sourceValid||last.sourceCommitmentSha256!==commitment.sourceCommitmentSha256||
+     last.revisionNumber>revision)
    outcome='SOURCE_MISMATCH_QUARANTINED';
   else if(seq===0)outcome=last.sequence===1&&last.previousReceiptSha256===null?
    ACCEPTED:'GAP_QUARANTINED';
@@ -233,8 +233,8 @@ export async function recordCandidateQuoteCheckpoint(pool:Pool,args:{
    outcome='SOURCE_MISMATCH_QUARANTINED';
   else outcome=ACCEPTED;
   await conn.execute(
-   'INSERT INTO quote_bm_candidate_checkpoint_attempts (quote_id,sequence_number,candidate_receipt_sha256,candidate_source_sha256,previous_receipt_sha256,pinset_sha256,claimed_publication_head_sha256,outcome) VALUES (?,?,?,?,?,?,?,?)',
-   [quoteId,last.sequence,receiptDigest,last.sourceCommitmentSha256,
+   'INSERT INTO quote_bm_candidate_checkpoint_attempts (quote_id,sequence_number,candidate_revision_number,candidate_receipt_sha256,candidate_source_sha256,previous_receipt_sha256,pinset_sha256,claimed_publication_head_sha256,outcome) VALUES (?,?,?,?,?,?,?,?,?)',
+   [quoteId,last.sequence,last.revisionNumber,receiptDigest,last.sourceCommitmentSha256,
     last.previousReceiptSha256,pinset,claimed,outcome]);
   if(outcome===ACCEPTED){
    await conn.execute(
