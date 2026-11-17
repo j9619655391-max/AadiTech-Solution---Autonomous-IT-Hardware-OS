@@ -7,6 +7,7 @@ import {inspectInternalQuoteScope,inspectInternalProcurementScope} from './check
 import {inspectInternalQuoteHistory} from './quoteHistory';
 import {buildLocalQuoteHistoryCommitment} from './quoteAnchors';
 import {inspectCandidateQuoteCheckpointOnConnection} from './quoteCheckpointCustody';
+import {inspectCandidateQuoteReconciliationOnConnection} from './quoteReconciliationCustody';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -64,15 +65,18 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
   });
   const checkpoint=await inspectCandidateQuoteCheckpointOnConnection(
    conn,req.params.id,commitment?.sourceCommitmentSha256??null);
+  const reconciliation=await inspectCandidateQuoteReconciliationOnConnection(
+   conn,req.params.id,checkpoint);
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
    ...(currentDecisions.length>1?['DUPLICATE_QUOTE_REVIEW']:[]),
    ...(currentPreps.length>1?['DUPLICATE_HELD_PREPARATION']:[]),
    ...history.historyAnomalyCodes,
-   ...checkpoint.candidateCheckpointAnomalyCodes
+   ...checkpoint.candidateCheckpointAnomalyCodes,
+   ...reconciliation.candidateReconciliationAnomalyCodes
   ])].sort();
-  res.json({...result,...history,...checkpoint,
+  res.json({...result,...history,...checkpoint,...reconciliation,
    localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
    localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
    localHistoryCommitmentExternallyPublished:false,
@@ -80,6 +84,7 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    independentlyAuthenticatedRevocationAvailable:false,
    localScopeConsistent:result.localScopeConsistent&&history.historyConsistent&&
     checkpoint.candidateCheckpointLocallyConsistent&&
+    reconciliation.candidateReconciliationLocallyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
    sourceType:'INTERNAL_MYSQL_ONLY',
