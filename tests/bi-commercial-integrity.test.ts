@@ -163,7 +163,7 @@ test('Phase 1BJ: held revision cannot silently change tax or HSN but accepts mat
  x.preparation.snapshot_json.revision=1;
  x.preparation.snapshot_json.items=[revisionLine as any] as any;
  assert.equal(inspectInternalQuoteScope({...x,revision}).localScopeConsistent,true);
- x.preparation.snapshot_json.items[0].hsn='0000';
+ (x.preparation.snapshot_json.items[0] as any).hsn='0000';
  assert.ok(inspectInternalQuoteScope({...x,revision}).anomalyCodes.includes(
   'QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED'));
 });
