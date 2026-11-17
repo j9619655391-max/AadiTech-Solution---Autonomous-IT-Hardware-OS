@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS quote_bm_candidate_checkpoint_attempts (
  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
  quote_id CHAR(36) NOT NULL,
  sequence_number INT UNSIGNED NOT NULL,
+ candidate_revision_number INT UNSIGNED NOT NULL,
  candidate_receipt_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  candidate_source_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
  previous_receipt_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
