@@ -49,7 +49,7 @@ function sampleProcurement(){
    supplierQuoteEvidenceRef:requisition.quote_evidence_ref,subtotal:'300.00',
    reviewId:reviewer,lines:[{
     productId:product,sku:'Q-SRV-1',name:'Test Server',
-    quantity:2,unit:'150.00',line:'300.00'
+    quantity:2,quotedUnitCost:'150.00',lineSubtotal:'300.00'
    }]
   }};
  return {request:requisition,lines,decision,hold};
@@ -112,7 +112,7 @@ test('claimed supplier price manipulation, same-person review, forged hold or wr
   if(field==='reviewer')x.decision.reviewer_id=actor;
   if(field==='source')x.request.quote_evidence_ref='ALTERED-EVIDENCE-REF';
   if(field==='dispatch')x.hold.dispatch_state='ENABLED';
-  if(field==='heldLine')x.hold.snapshot_json.lines[0].unit='999.00';
+  if(field==='heldLine')x.hold.snapshot_json.lines[0].quotedUnitCost='999.00';
   const r=inspectInternalProcurementScope(x);
   assert.equal(r.localScopeConsistent,false,field);
   assert.equal(r.productionReleaseAuthorized,false);
