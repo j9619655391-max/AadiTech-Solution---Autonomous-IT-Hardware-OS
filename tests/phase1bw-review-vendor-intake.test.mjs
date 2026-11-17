@@ -98,7 +98,7 @@ test('BW PR checklist cannot silently remove independent review, provenance or H
   'productionReleaseAuthorized=false',
   'GHSA-fc5q-39xc-vjpf'
  ]){
-  const t=template.replace(old,'nothing required');
+  const t=template.replace(new RegExp(old,'i'),'nothing required');
   assert.ok(evaluate(policy,workflow,t).anomalyCodes.includes(
    'BW_PR_INDEPENDENT_REVIEW_TEMPLATE_DRIFT'));
  }
