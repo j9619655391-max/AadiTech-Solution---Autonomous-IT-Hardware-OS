@@ -23,6 +23,10 @@ The machine-readable state is [REMAINING_M01_M30_ACCEPTANCE_LEDGER.json](./REMAI
 
 [Phase 1BI engineering acceptance](../phase-1/PHASE_1BI_SERVER_COMMERCIAL_RECONCILIATION_AND_HOLD.md) strengthens **existing** transactional quote and procurement workflows instead of claiming that a new real supplier/customer interface is production ready. Owner-side quote and held-release mutations now require a recent, session-bound password step-up *in addition to* the configured privileged MFA policy. `GET /api/commercial-integrity/quotes/:id` and `GET /api/commercial-integrity/procurement/:id` provide authenticated, scoped, read-only MySQL checks for line totals, revision, reviewer separation, held prepared snapshots, and disabled dispatch. The new unit and real MySQL regression tests detect review/source substitution, inconsistent line money and unauthorized release states. This internal readback neither authenticates a supplier's source quote nor confirms legal customer identity; **M01–M30 still have unresolved completion gates**. There is no official customer-issued quote, supplier-dispatched PO, stock/financial posting, or external live action.
 
+## Phase 1BJ: held snapshot field-complete readback hardening (2026-11-17)
+
+[Phase 1BJ engineering controls](../phase-1/PHASE_1BJ_HELD_COMMERCIAL_SNAPSHOT_FAIL_CLOSED_HARDENING.md) close readback comparison gaps in internally held quote and supplier PO snapshots. Additional metadata including forged outbound recipient or dispatch claims is rejected. The readback reconciles all ten original/revision quote line fields, GST/HSN and quote currency/lead context; internally stored supplier code/name must match held PO snapshots. Duplicate quote reviews are flagged, and unit + disposable-MySQL mutation tests explicitly exercise these attacks. This is **internal consistency validation only**, not proof of verified price, supplier legal identity, GST accuracy, cloud WORM or true source authenticity. Production HOLD, all M01–M30 outstanding independent acceptance gates and the disabled delivery paths are unchanged.
+
 ## Workstream inventory and missing evidence
 
 ### Internal foundations (M01–M12)
