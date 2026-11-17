@@ -27,7 +27,8 @@ export const MIGRATIONS=[
  '0034_bf_revocation_publication_holds',
  '0035_bg_cross_source_acceptance_holds',
  '0036_bm_quote_candidate_checkpoints',
- '0037_bn_quote_head_reconciliation'
+ '0037_bn_quote_head_reconciliation',
+ '0038_bo_candidate_authority_dossiers'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
