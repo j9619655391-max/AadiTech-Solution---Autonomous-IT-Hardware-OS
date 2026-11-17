@@ -42,18 +42,13 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
 
   const activeCustomer = customers.find(c => c.id === selectedCustomerId) || customers[0];
 
-  // Credit Risk calculation formula: (Order Value + Outstanding) vs Credit Limit
-  const totalExposure = simulatedOrderValue + (activeCustomer?.currentOutstanding || 0);
-  const creditLimit = activeCustomer?.creditLimit || 1000000;
-  const isCreditExceeded = totalExposure > creditLimit;
-  const creditUsagePct = ((totalExposure / creditLimit) * 100).toFixed(1);
-
-  let creditDecision = 'APPROVE';
-  if (isCreditExceeded) {
-    creditDecision = 'REQUIRE OWNER APPROVAL & ADVANCE PAYMENT';
-  } else if (Number(creditUsagePct) > 85) {
-    creditDecision = 'REQUIRE 50% ADVANCE';
-  }
+  // This browser-local scenario is never a lender's approval or warehouse
+  // release. Default credit limits or demo banking records are not evidence.
+  const creditLimit = activeCustomer?.creditLimit ?? 0;
+  const totalExposure = simulatedOrderValue + (activeCustomer?.currentOutstanding ?? 0);
+  const isCreditExceeded = creditLimit <= 0 || totalExposure > creditLimit;
+  const creditUsagePct = creditLimit > 0 ? ((totalExposure / creditLimit) * 100).toFixed(1) : 'NOT VERIFIED';
+  const creditDecision = 'HELD — INDEPENDENT SERVER REVIEW REQUIRED';
 
   return (
     <div className="space-y-6">
@@ -65,7 +60,7 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
             <span>Finance, GST, Warranty & AMC Operations (Sections 28–38)</span>
           </h2>
           <p className="text-xs text-slate-400">
-            India GST compliance, autonomous credit exposure engine, serial warranty alerts, and SLA service ticketing
+            Unverified browser preview only; GST, credit approval, servicing and real dispatch require server-backed evidence
           </p>
         </div>
 
@@ -104,20 +99,20 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <span className="text-xs text-slate-400 block mb-1">Total Receivables Outstanding</span>
-              <div className="text-2xl font-bold text-white font-mono">₹28,40,000</div>
-              <span className="text-[11px] text-amber-400 block mt-1">₹4.20L Overdue &gt;30 Days</span>
+              <div className="text-2xl font-bold text-white font-mono">NOT VERIFIED</div>
+              <span className="text-[11px] text-amber-400 block mt-1">Authoritative receivables ledger pending</span>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <span className="text-xs text-slate-400 block mb-1">GST Input Tax Credit (ITC) Available</span>
-              <div className="text-2xl font-bold text-emerald-400 font-mono">₹6,85,200</div>
-              <span className="text-[11px] text-slate-400 block mt-1">GSTR-2B Verified vs Redington/Ingram</span>
+              <div className="text-2xl font-bold text-emerald-400 font-mono">NOT VERIFIED</div>
+              <span className="text-[11px] text-slate-400 block mt-1">GSTR-2B reconciliation not independently verified</span>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <span className="text-xs text-slate-400 block mb-1">Cash Flow Projection (30 Days)</span>
-              <div className="text-2xl font-bold text-sky-400 font-mono">+₹14.20 Lakh</div>
-              <span className="text-[11px] text-emerald-400 block mt-1">Sufficient operating liquidity</span>
+              <div className="text-2xl font-bold text-sky-400 font-mono">NOT VERIFIED</div>
+              <span className="text-[11px] text-emerald-400 block mt-1">Cash reconciliation and independent forecast pending</span>
             </div>
           </div>
 
@@ -127,10 +122,10 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Autonomous Credit Risk & Limit Engine (Section 29)</span>
+                  <span>Credit Exposure Scenario — No Auto-Approval</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Calculates total credit exposure before releasing warehouse pick lists
+                  Scenario arithmetic only; cannot release stock, override credit limits or send approvals
                 </p>
               </div>
               <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
@@ -166,9 +161,9 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
                 </div>
 
                 <div className="p-3 rounded-lg bg-slate-950 text-[11px] space-y-1 text-slate-400">
-                  <div><strong>Credit Cap:</strong> ₹{creditLimit.toLocaleString('en-IN')}</div>
-                  <div><strong>Current Outstanding:</strong> ₹{activeCustomer?.currentOutstanding.toLocaleString('en-IN')}</div>
-                  <div><strong>Total Exposure after Order:</strong> ₹{totalExposure.toLocaleString('en-IN')} ({creditUsagePct}%)</div>
+                  <div><strong>Credit Cap (browser entered):</strong> {creditLimit > 0 ? `₹${creditLimit.toLocaleString('en-IN')}` : 'NOT VERIFIED'}</div>
+                  <div><strong>Current Outstanding (browser entered):</strong> {activeCustomer ? `₹${activeCustomer.currentOutstanding.toLocaleString('en-IN')}` : 'NOT VERIFIED'}</div>
+                  <div><strong>Simulated Exposure (not verified):</strong> ₹{totalExposure.toLocaleString('en-IN')} ({creditUsagePct}{creditLimit > 0 ? '%' : ''})</div>
                 </div>
               </div>
 
@@ -181,12 +176,12 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-bold uppercase tracking-wider text-[11px]">
-                      AI Credit Assessment Decision:
+                      Simulation Result — No Credit Decision:
                     </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                       isCreditExceeded ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
                     }`}>
-                      {isCreditExceeded ? 'EXCEPTION' : 'AUTO-RELEASE'}
+                      HARD HOLD
                     </span>
                   </div>
                   <div className="text-sm font-bold text-white mt-1">
@@ -194,13 +189,13 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
                   </div>
                   <p className="text-slate-300 text-xs mt-2 leading-relaxed">
                     {isCreditExceeded
-                      ? `Proposed order increases total exposure to ₹${totalExposure.toLocaleString('en-IN')}, breaching authorized credit line of ₹${creditLimit.toLocaleString('en-IN')}. Autonomous hold active. Dispatched to Telegram Owner Hub for exception review.`
-                      : `Total exposure of ₹${totalExposure.toLocaleString('en-IN')} is within the ${creditUsagePct}% safety threshold. Sales order released autonomously for warehouse allocation.`}
+                      ? 'The local scenario exceeds or lacks a verified credit limit. Server review and independent credit approval required. No message was sent or stock released.'
+                      : 'The browser-only arithmetic is within the entered limit, but no authoritative credit check, order release, warehouse allocation or dispatch occurred.'}
                   </p>
                 </div>
 
                 <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-800">
-                  Rule Check: Section 29 Multi-factor credit validation &bull; Reconciled with {companyProfile?.bankName || 'HDFC Bank'} Current A/c ({companyProfile?.accountNumber || '50200088921102'})
+                  NOT VERIFIED: no accounting or bank reconciliation; no authorized release. Bank details require independent validation.
                 </div>
               </div>
             </div>
@@ -215,11 +210,11 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
                   <span>{companyProfile?.name || 'AadiTech Solution'} &bull; Master Tax & Bank Settlement</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Official India GST e-Invoice, RTGS/NEFT settlement rails, and merchant bank credentials
+                  Owner-entered profile preview only; tax registration and bank ownership are unverified
                 </p>
               </div>
               <span className="text-[10px] font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded border border-emerald-500/30">
-                Active Master
+                UNVERIFIED PROFILE
               </span>
             </div>
 
@@ -232,19 +227,19 @@ export const FinanceAndServiceView: React.FC<FinanceAndServiceViewProps> = ({
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                 <span className="text-slate-400 block text-[10px]">GSTIN & PAN</span>
-                <span className="font-semibold text-white text-xs block mt-0.5 font-mono">{companyProfile?.gstin || '27AADCS8129F1Z3'}</span>
-                <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">PAN: {companyProfile?.pan || 'AADCS8129F'}</span>
+                <span className="font-semibold text-white text-xs block mt-0.5 font-mono">{companyProfile?.gstin || 'NOT VERIFIED'}</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">PAN: {companyProfile?.pan || 'NOT VERIFIED'}</span>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                 <span className="text-slate-400 block text-[10px]">Bank & Account Number</span>
-                <span className="font-semibold text-white text-xs block mt-0.5">{companyProfile?.bankName || 'HDFC Bank Ltd'}</span>
-                <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">A/C: {companyProfile?.accountNumber || '50200088921102'}</span>
+                <span className="font-semibold text-white text-xs block mt-0.5">{companyProfile?.bankName || 'NOT VERIFIED'}</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5 font-mono">A/C: {companyProfile?.accountNumber || 'NOT VERIFIED'}</span>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                 <span className="text-slate-400 block text-[10px]">IFSC & Autonomous Guardrail</span>
-                <span className="font-semibold text-white text-xs block mt-0.5 font-mono">{companyProfile?.ifscCode || 'HDFC0000128'}</span>
+                <span className="font-semibold text-white text-xs block mt-0.5 font-mono">{companyProfile?.ifscCode || 'NOT VERIFIED'}</span>
                 <span className="text-[10px] text-emerald-400 block mt-0.5">Floor Margin: {companyProfile?.defaultMarginThreshold || 15}%</span>
               </div>
             </div>
