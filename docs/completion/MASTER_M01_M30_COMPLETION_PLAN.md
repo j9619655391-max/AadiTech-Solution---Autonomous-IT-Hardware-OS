@@ -19,6 +19,10 @@ The machine-readable state is [REMAINING_M01_M30_ACCEPTANCE_LEDGER.json](./REMAI
 
 **This phase does not supply actual server-backed replacements, legal authority, provider keys or real executed business transactions.** All 30 acceptance workstreams remain `HOLD`.
 
+## Phase 1BI: server-issued internal held quote/procurement readback (2026-11-17)
+
+[Phase 1BI engineering acceptance](../phase-1/PHASE_1BI_SERVER_COMMERCIAL_RECONCILIATION_AND_HOLD.md) strengthens **existing** transactional quote and procurement workflows instead of claiming that a new real supplier/customer interface is production ready. Owner-side quote and held-release mutations now require a recent, session-bound password step-up *in addition to* the configured privileged MFA policy. `GET /api/commercial-integrity/quotes/:id` and `GET /api/commercial-integrity/procurement/:id` provide authenticated, scoped, read-only MySQL checks for line totals, revision, reviewer separation, held prepared snapshots, and disabled dispatch. The new unit and real MySQL regression tests detect review/source substitution, inconsistent line money and unauthorized release states. This internal readback neither authenticates a supplier's source quote nor confirms legal customer identity; **M01–M30 still have unresolved completion gates**. There is no official customer-issued quote, supplier-dispatched PO, stock/financial posting, or external live action.
+
 ## Workstream inventory and missing evidence
 
 ### Internal foundations (M01–M12)
