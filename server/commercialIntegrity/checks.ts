@@ -226,9 +226,10 @@ export function inspectInternalProcurementScope(args:{
      const original=lines[i],held=snapshot.lines[i] as Record<string,unknown>|undefined;
      if(!held||str(held.productId)!==str(original.product_id)||
       str(held.sku)!==str(original.sku_snapshot)||
+      str(held.name)!==str(original.name_snapshot)||
       num(held.quantity)!==num(original.quantity)||
-      str(held.unit)!==str(original.quoted_unit_cost)||
-      str(held.line)!==str(original.line_subtotal))
+      str(held.quotedUnitCost)!==str(original.quoted_unit_cost)||
+      str(held.lineSubtotal)!==str(original.line_subtotal))
       problems.add('PROCUREMENT_HELD_LINE_SCOPE_CHANGED');
     }
    }
