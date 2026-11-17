@@ -81,8 +81,8 @@ export async function inspectCandidateEvidenceIntakeOnConnection(
       (e.predecessor_packet_sha256!==null&&
        !SHA.test(String(e.predecessor_packet_sha256))))
    errors.add('BP_EVENT_MALFORMED');
-  if(e.nonce_status!=='CONSUMED'||
-     e.nonce_packet_sha256!==e.packet_sha256)
+  if(e.outcome===GOOD&&(e.nonce_status!=='CONSUMED'||
+     e.nonce_packet_sha256!==e.packet_sha256))
    errors.add('BP_CHALLENGE_NOT_CONSUMED_OR_MISMATCHED');
   if(e.outcome===GOOD){
    if(incident||n!==version+1||
@@ -146,8 +146,9 @@ export async function issueCandidateIntakeChallenge(pool:Pool,args:{
  if(!UUID.test(args.quoteId))throw Error('Phase 1BP invalid quote ID');
  const at=args.now??new Date(),time=at.getTime();
  if(!Number.isFinite(time))throw Error('Phase 1BP invalid challenge clock');
- const nonce=sha('aaditech/quote/evidence-intake/server-nonce/v1',
-  randomBytes(32).toString('hex'));
+ const nonce=createHash('sha256').update(
+  'aaditech/quote/evidence-intake/server-nonce/v1\n'+
+  randomBytes(32).toString('hex')).digest('hex');
  const conn=await pool.getConnection();
  try{
   await conn.beginTransaction();
