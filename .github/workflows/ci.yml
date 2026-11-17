@@ -49,6 +49,8 @@ jobs:
         run: node scripts/phase1bf-publication-preflight.mjs --ci-hold
       - name: Phase 1BG independently claimed CRL/OCSP, WORM and recovery auditor HARD HOLD
         run: node scripts/phase1bg-cross-source-preflight.mjs --ci-hold
+      - name: All remaining M01-M30 acceptance coverage and no false production GO
+        run: node scripts/project-completion-preflight.mjs --ci-hold
       - name: Phase 1BC Merkle witness key-custody and append-only HEAD HARD HOLD
         run: node scripts/phase1bc-witness-custody-preflight.mjs --ci-hold
       - name: Baseline tests
