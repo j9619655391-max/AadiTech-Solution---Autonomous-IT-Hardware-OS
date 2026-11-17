@@ -87,7 +87,9 @@
     "db:migrate:bn-quote-reconciliation": "tsx scripts/migrate-bn-quote-reconciliation.ts",
     "test:bn-quote-reconciliation-mysql": "tsx --test tests/bn-quote-reconciliation-mysql.integration.ts",
     "db:migrate:bo-authority-dossiers": "tsx scripts/migrate-bo-authority-dossiers.ts",
-    "test:bo-authority-mysql": "tsx --test tests/bo-authority-mysql.integration.ts"
+    "test:bo-authority-mysql": "tsx --test tests/bo-authority-mysql.integration.ts",
+    "db:migrate:bp-evidence-intake": "tsx scripts/migrate-bp-evidence-intake.ts",
+    "test:bp-evidence-intake-mysql": "tsx --test tests/bp-evidence-intake-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
