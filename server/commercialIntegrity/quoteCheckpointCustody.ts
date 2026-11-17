@@ -43,7 +43,7 @@ function digestPins(keys:CandidatePinnedKey[]){
  return createHash('sha256').update('aaditech/quote/pinset/v1\n'+
   JSON.stringify(sorted)).digest('hex');
 }
-async function sourceUnderLock(conn:PoolConnection,quoteId:string){
+export async function readCandidateQuoteSourceUnderLock(conn:PoolConnection,quoteId:string){
  const [drafts]=await conn.execute<RowDataPacket[]>(
   'SELECT q.*,c.deleted_at AS customer_deleted_at FROM sales_quote_drafts q JOIN crm_customers c ON c.id=q.customer_id WHERE q.id=? FOR UPDATE',[quoteId]);
  if(drafts.length!==1)throw Error('Phase 1BM quote source unavailable');
@@ -138,7 +138,7 @@ export async function inspectCandidateQuoteCheckpoint(pool:Pool,quoteId:string,
  const conn=await pool.getConnection();
  try{
   await conn.beginTransaction();
-  const {commitment}=await sourceUnderLock(conn,quoteId);
+  const {commitment}=await readCandidateQuoteSourceUnderLock(conn,quoteId);
   const result=await inspectCandidateQuoteCheckpointOnConnection(
    conn,quoteId,commitment.sourceCommitmentSha256);
   await conn.commit();return result;
@@ -180,7 +180,7 @@ export async function recordCandidateQuoteCheckpoint(pool:Pool,args:{
  const conn=await pool.getConnection();
  try{
   await conn.beginTransaction();
-  const {commitment,sourceValid,revision}=await sourceUnderLock(conn,quoteId);
+  const {commitment,sourceValid,revision}=await readCandidateQuoteSourceUnderLock(conn,quoteId);
   await conn.execute(
    'INSERT INTO quote_bm_candidate_checkpoint_streams (quote_id) VALUES (?) ON DUPLICATE KEY UPDATE quote_id=quote_id',
    [quoteId]);
