@@ -312,6 +312,12 @@ jobs:
         run: bun run db:migrate:bg-cross-source
       - name: Phase 1BG real MySQL auditor signoff, CRL/OCSP lineage, issuer/role substitution and rollback suite
         run: bun run test:bg-cross-source-mysql
+      - name: Apply Phase 1BM quotation candidate witness checkpoint custody (disposable MySQL only)
+        run: bun run db:migrate:bm-quote-checkpoints
+      - name: Verify Phase 1BM checksum-locked migration idempotent rerun
+        run: bun run db:migrate:bm-quote-checkpoints
+      - name: Phase 1BM real MySQL candidate witness concurrency, rollback, incident and key revocation HOLD tests
+        run: bun run test:bm-quote-checkpoint-mysql
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
