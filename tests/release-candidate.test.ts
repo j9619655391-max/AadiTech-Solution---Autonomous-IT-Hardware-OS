@@ -60,6 +60,7 @@ test('candidate hashes compiled assets, lock and every migration, but never auth
   assert.ok(a.files.some(f=>f.path==='database/migrations/0035_bg_cross_source_acceptance_holds.sql'));
   assert.ok(a.files.some(f=>f.path==='database/migrations/0036_bm_quote_candidate_checkpoints.sql'));
   assert.ok(a.files.some(f=>f.path==='database/migrations/0037_bn_quote_head_reconciliation.sql'));
+  assert.ok(a.files.some(f=>f.path==='database/migrations/0038_bo_candidate_authority_dossiers.sql'));
  }finally{rmSync(root,{recursive:true,force:true});}
 });
 test('tampered compiled code changes artifact digest while source SHA alone remains unchanged',()=>{
