@@ -328,6 +328,10 @@ jobs:
         run: bun run db:migrate:bp-evidence-intake
       - name: Verify Phase 1BP immutable-checksum migration idempotent rerun
         run: bun run db:migrate:bp-evidence-intake
+      - name: Apply Phase 1BQ isolated registrar and offline remote candidate schema 0040
+        run: bun run db:migrate:bq-remote-evidence
+      - name: Verify Phase 1BQ immutable checksum and idempotent migration rerun
+        run: bun run db:migrate:bq-remote-evidence
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -370,6 +374,8 @@ jobs:
         run: bun run test:bo-authority-mysql
       - name: Phase 1BP disposable MySQL one-use challenge replay, pin substitution, issuer/head/DR fork and quarantine tests
         run: bun run test:bp-evidence-intake-mysql
+      - name: Phase 1BQ real MySQL registrar spoof, dual-source remote fork, revocation and recovery HOLD
+        run: bun run test:bq-remote-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
