@@ -79,6 +79,7 @@ export async function inspectCandidateQuoteCheckpointOnConnection(
  const [heads]=await conn.execute<RowDataPacket[]>(
   'SELECT * FROM quote_bm_candidate_checkpoint_streams WHERE quote_id=? FOR UPDATE',[quoteId]);
  if(!heads.length)return Object.freeze({candidateCheckpointExists:false,
+  candidateCheckpointReceiptSha256:null,candidateCheckpointSourceSha256:null,
   candidateCheckpointGovernanceState:'ABSENT',candidateCheckpointSequence:0,
   candidateCheckpointLocallyConsistent:true,candidateCheckpointAnomalyCodes:[],
   ...HOLD});
