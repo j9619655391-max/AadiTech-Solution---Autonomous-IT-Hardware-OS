@@ -29,7 +29,7 @@ function sampleQuote(){
   snapshot_json:{
    format:'aaditech-internal-release-hold-v1',quoteId:quote,revision:0,
    customerId:customer,leadId:null,currency:'INR',reviewId:reviewer,subtotal:'200.00',
-   taxEstimate:'36.00',totalEstimate:'236.00',items:lines.map(x=>({...x}))
+   taxEstimate:'36.00',totalEstimate:'236.00',items:lines.map(({position,...x})=>({...x}))
   }};
  return {draft,lines,decision,preparation};
 }
@@ -161,7 +161,7 @@ test('Phase 1BJ: held revision cannot silently change tax or HSN but accepts mat
  x.decision.revision_number=1;
  x.preparation.revision_number=1;
  x.preparation.snapshot_json.revision=1;
- x.preparation.snapshot_json.items=[revisionLine as any] as any;
+ x.preparation.snapshot_json.items=[{...revisionLine} as any] as any;
  assert.equal(inspectInternalQuoteScope({...x,revision}).localScopeConsistent,true);
  (x.preparation.snapshot_json.items[0] as any).hsn='0000';
  assert.ok(inspectInternalQuoteScope({...x,revision}).anomalyCodes.includes(
