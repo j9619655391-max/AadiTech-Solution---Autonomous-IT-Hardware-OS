@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
+// Phase 1BT: Vite is development-only. Never load build tooling on the production path.
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
@@ -262,6 +262,8 @@ app.use('/api',(_req,res)=>{
 // Vite middleware / static files setup
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    // No Vite/picomatch import executes in the production serving process.
+    const {createServer: createViteServer} = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
