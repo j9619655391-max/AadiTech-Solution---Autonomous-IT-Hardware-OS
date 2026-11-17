@@ -5,6 +5,7 @@ import {requireOwner} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inspectInternalQuoteScope,inspectInternalProcurementScope} from './checks';
 import {inspectInternalQuoteHistory} from './quoteHistory';
+import {buildLocalQuoteHistoryCommitment} from './quoteAnchors';
 
 // READ ONLY: quote/PO creation and dispatch stay held in server workflows.
 // Never accept client prices, audit keys, signatures, recipients, private
@@ -57,6 +58,9 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
   const history=inspectInternalQuoteHistory({
    draft:drafts[0],lines,revisions,decisions,preparations:preps,truncated
   });
+  const commitment=truncated?null:buildLocalQuoteHistoryCommitment({
+   draft:drafts[0],lines,revisions,decisions,preparations:preps
+  });
   await conn.commit();
   const anomalies=[...new Set([
    ...result.anomalyCodes,
@@ -65,6 +69,11 @@ router.get('/quotes/:id',requirePrivilegedMfa,async(req,res)=>{
    ...history.historyAnomalyCodes
   ])].sort();
   res.json({...result,...history,
+   localHistoryCommitmentFormat:commitment?.commitmentFormat??null,
+   localHistoryCommitmentSha256:commitment?.sourceCommitmentSha256??null,
+   localHistoryCommitmentExternallyPublished:false,
+   authenticatedWitnessCheckpointAvailable:false,
+   independentlyAuthenticatedRevocationAvailable:false,
    localScopeConsistent:result.localScopeConsistent&&history.historyConsistent&&
     currentDecisions.length<=1&&currentPreps.length<=1,
    anomalyCodes:anomalies,
