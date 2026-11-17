@@ -34,6 +34,7 @@ run('x509','-req','-in','leaf.csr','-CA','root.crt','-CAkey','root.key',
 export const brRootPem=readFileSync(join(folder,'root.crt'),'utf8');
 export const brLeafPem=readFileSync(join(folder,'leaf.crt'),'utf8');
 const brLeafKey=readFileSync(join(folder,'leaf.key'),'utf8');
+export const brRootKeyPem=readFileSync(join(folder,'root.key'),'utf8');
 export const brRootSha=candidateRootCertificateDigest(brRootPem);
 export const brOrigin='https://provider-fixture.invalid/';
 export const brNow=new Date(Date.now()+3000);
@@ -45,7 +46,11 @@ const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 export const brCrlSha=sha(brCrlDer),brOcspSha=sha(brOcspDer);
 export function brFixture(
  bqExpected:CandidateRemoteExpected=bqExpectedFixture(),
- challengeSha256=brHex('e'),now=brNow){
+ challengeSha256=brHex('e'),now=brNow,
+ revocation?:{crlDer:Buffer,ocspDer:Buffer}){
+ const signedCrlDer=revocation?.crlDer??brCrlDer;
+ const signedOcspDer=revocation?.ocspDer??brOcspDer;
+ const signedCrlSha=sha(signedCrlDer),signedOcspSha=sha(signedOcspDer);
  const worm:CandidateWormBytes={
   format:'aaditech-quote-worm-candidate-v1',quoteId:bqExpected.quoteId,
   objectId:'br-synthetic-locked-object',
@@ -65,7 +70,7 @@ export function brFixture(
  let bq=bqPacketFixture(bqExpected,challengeSha256);
  for(const role of ['PRIMARY','SECONDARY'] as const)
   bq=bqResignCapture(bq,role,{
-   crlSha256:brCrlSha,ocspSha256:brOcspSha,
+   crlSha256:signedCrlSha,ocspSha256:signedOcspSha,
    drTranscriptSha256:sha(drBytes),
    wormRetentionUntil:worm.retentionUntil
   });
@@ -86,7 +91,7 @@ export function brFixture(
   revocationEpoch:expected.revocationEpoch,
   issuedAt:new Date(now.getTime()-60000).toISOString(),
   expiresAt:new Date(now.getTime()+10*60000).toISOString(),
-  crlSha256:brCrlSha,ocspSha256:brOcspSha,
+  crlSha256:signedCrlSha,ocspSha256:signedOcspSha,
   wormReceiptSha256:sha(wormBytes),drTranscriptSha256:sha(drBytes),
   evidenceState:'OFFLINE_CANDIDATE_ONLY'
  };
@@ -100,8 +105,8 @@ export function brFixture(
   quoteId:expected.quoteId,bqPacketSha256:bqSha,challengeSha256,
   checkpointUtf8Base64:raw.toString('base64'),
   checkpointSignatureBase64:signature.toString('base64'),
-  leafCertificatePem:brLeafPem,crlDerBase64:brCrlDer.toString('base64'),
-  ocspDerBase64:brOcspDer.toString('base64'),
+  leafCertificatePem:brLeafPem,crlDerBase64:signedCrlDer.toString('base64'),
+  ocspDerBase64:signedOcspDer.toString('base64'),
   wormReceiptUtf8Base64:wormBytes.toString('base64'),
   drTranscriptUtf8Base64:drBytes.toString('base64')
  };
