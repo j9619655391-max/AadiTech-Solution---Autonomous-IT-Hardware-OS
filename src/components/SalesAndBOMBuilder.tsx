@@ -133,7 +133,7 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
   const grossProfit = totalSell - totalCost;
   const marginPct = totalSell > 0 ? Number(((grossProfit / totalSell) * 100).toFixed(2)) : 0;
   const gstAmount = Math.round(totalSell * 0.18);
-  const finalInvoiceAmount = totalSell + gstAmount;
+  const finalInvoiceAmount = totalSell + gstAmount; // scenario estimate, NOT an issued invoice
 
   // Compatibility checker rule simulation
   const checkCompatibilityRule = () => {
@@ -149,8 +149,8 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
       setCompatibilityStatus('WARNING');
       setCompatibilityReport('⚠️ Server Configuration Warning: Enterprise 2U server detected without ECC Registered memory specified. Auto-recommending Kingston/Hynix DDR5 ECC RDIMMs.');
     } else {
-      setCompatibilityStatus('PASSED');
-      setCompatibilityReport('✅ Compatibility Matrix Cleared: Socket LGA1700, DDR5 bus rates, 802.3at PoE+ switch power budgets, and online UPS kVA ratings verified.');
+      setCompatibilityStatus('WARNING');
+      setCompatibilityReport('NOT VERIFIED: Keyword screening is not a vendor hardware validation. Verify every CPU/memory/bus/PoE/UPS/OEM combination independently.');
     }
   };
 
@@ -165,13 +165,13 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
               <span>AI Solution & BOM Builder (Sections 11, 12, 13 & 14)</span>
             </h2>
             <p className="text-xs text-slate-400">
-              Converts raw corporate customer requirements into fully verified Bill of Materials with hardware compatibility validation
+              Creates unverified requirement drafts only; price, GST/HSN, stock and OEM compatibility need independent approval
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">Autonomous BOM Engine:</span>
             <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold">
-              Active v4.2
+              DRAFT ONLY
             </span>
           </div>
         </div>
@@ -410,11 +410,11 @@ export const SalesAndBOMBuilder: React.FC<SalesAndBOMBuilderProps> = ({
             <button
               id="btn-bom-convert-quote"
               onClick={() => onGenerateQuote(currentBOM, marginPct)}
-              disabled={!currentBOM.length || currentBOM.some(i => !(i.unitCost > 0 && i.unitSell > 0 && i.gstRate > 0 && !!i.hsn.trim()))}
-              title="Add verified prices, GST and HSN before generating a quotation"
+              disabled
+              title="No issued quotation or price approval without authenticated server review"
               className="w-full mt-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
             >
-              <span>Create Browser-Only Quote Preview</span>
+              <span>Commercial Quote Issuance HOLD</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
