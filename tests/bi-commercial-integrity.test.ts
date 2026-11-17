@@ -29,7 +29,7 @@ function sampleQuote(){
   snapshot_json:{
    format:'aaditech-internal-release-hold-v1',quoteId:quote,revision:0,
    customerId:customer,reviewId:reviewer,subtotal:'200.00',
-   taxEstimate:'36.00',totalEstimate:'236.00',items:lines
+   taxEstimate:'36.00',totalEstimate:'236.00',items:lines.map(x=>({...x}))
   }};
  return {draft,lines,decision,preparation};
 }
