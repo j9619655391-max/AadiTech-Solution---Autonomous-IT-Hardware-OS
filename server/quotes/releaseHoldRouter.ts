@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import type { RowDataPacket } from 'mysql2/promise';
 import { requireOwner } from '../auth/router';
+import {requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import { getPool } from '../db';
 
@@ -35,7 +36,7 @@ router.get('/:id',async(req,res)=>{
   }catch(e){fail(res,e);}
 });
 
-router.post('/:id',requirePrivilegedMfa,async(req,res)=>{
+router.post('/:id',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
   if(!uuid.test(req.params.id)){res.status(400).json({error:'Invalid draft ID'});return;}
   const input=req.body;
   if(!input||typeof input!=='object'||Array.isArray(input)||
