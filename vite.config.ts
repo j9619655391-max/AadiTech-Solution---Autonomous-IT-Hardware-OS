@@ -11,12 +11,22 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    // Phase 1BU: Vite is not a public dev/staging server. Unpatched
+    // picomatch remains in the dev-only lock; limiting exposure is NOT a patch.
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
+      host: '127.0.0.1',
+      allowedHosts: ['localhost','127.0.0.1'],
+      strictPort: true,
+      cors: false,
+      hmr: false,
+      fs: {strict: true},
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    preview: {
+      host: '127.0.0.1',
+      allowedHosts: ['localhost','127.0.0.1'],
+      strictPort: true,
+      cors: false,
     },
   };
 });
