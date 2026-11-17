@@ -25,7 +25,9 @@ test('AI BOM and campaign screens never backfill unverified prices or forecasts'
  const bom=readFileSync('src/components/SalesAndBOMBuilder.tsx','utf8');
  assert.equal(bom.includes('it.unitCost || 10000'),false);
  assert.equal(bom.includes('Autonomous Auto-Approve Allowed'),false);
- assert.match(bom,/disabled=\{!currentBOM.length/);
+ assert.match(bom,/id="btn-bom-convert-quote"[\s\S]*?disabled/);
+ assert.match(bom,/Commercial Quote Issuance HOLD/);
+ assert.equal(bom.includes("setCompatibilityStatus('PASSED')"),false);
  const market=readFileSync('src/components/MarketingAndAgentView.tsx','utf8');
  assert.equal(market.includes("projectedConversion: '18.4%'"),false);
  assert.match(market,/Dispatch disabled — approval and consent required/);
