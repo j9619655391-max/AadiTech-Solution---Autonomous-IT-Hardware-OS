@@ -324,6 +324,10 @@ jobs:
         run: bun run db:migrate:bo-authority-dossiers
       - name: Verify Phase 1BO migration checksum and idempotent rerun
         run: bun run db:migrate:bo-authority-dossiers
+      - name: Apply Phase 1BP strictly held four-role evidence intake and challenge schema 0039
+        run: bun run db:migrate:bp-evidence-intake
+      - name: Verify Phase 1BP immutable-checksum migration idempotent rerun
+        run: bun run db:migrate:bp-evidence-intake
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
@@ -364,6 +368,8 @@ jobs:
         run: bun run test:bn-quote-reconciliation-mysql
       - name: Phase 1BO real MySQL candidate authority dossier, upstream tamper and quorum segregation HOLD tests
         run: bun run test:bo-authority-mysql
+      - name: Phase 1BP disposable MySQL one-use challenge replay, pin substitution, issuer/head/DR fork and quarantine tests
+        run: bun run test:bp-evidence-intake-mysql
       - name: Chromium browser MFA / role smoke (isolated CI only)
         env:
           BROWSER_E2E_CI: '1'
