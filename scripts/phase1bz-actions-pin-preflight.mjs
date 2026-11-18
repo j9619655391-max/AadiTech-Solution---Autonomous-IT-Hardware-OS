@@ -146,6 +146,13 @@ function phase1caWorkflowShapeAnomalies(input) {
  if(cnIndex<0||lines.slice(cnIndex,cnIndex+cnExpected.length).join('|')!==
     cnExpected.join('|')||lines.filter(x=>x===cnHeader).length!==1)
   errors.add('CA_UNREVIEWED_PHASE1CN_READONLY_RULESET_STEP_OR_SOURCE_BINDING');
+ const coHeader='      - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)';
+ const coIndex=lines.indexOf(coHeader);
+ const coExpected=[coHeader,
+  '        run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold'];
+ if(coIndex<0||lines.slice(coIndex,coIndex+coExpected.length).join('|')!==
+    coExpected.join('|')||lines.filter(x=>x===coHeader).length!==1)
+  errors.add('CA_UNREVIEWED_PHASE1CO_EXACT_READONLY_OPERATOR_STEP');
  if(lines.some(x=>/^\s*(?:<<\s*:|[a-z][a-z-]*:\s*[&*!][^\s])/.test(x)))
   errors.add('CA_UNREVIEWED_YAML_MERGE_OR_TAG');
  return [...errors].sort();
