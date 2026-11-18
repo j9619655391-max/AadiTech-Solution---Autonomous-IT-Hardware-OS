@@ -136,6 +136,7 @@ const proposalMatches=(detail,proposal)=>{
     checks?.do_not_enforce_on_create!==false||
     !Array.isArray(checks?.required_status_checks))return false;
  const contexts=checks.required_status_checks.map(c=>c?.context);
+ if(checks.required_status_checks.some(c=>c?.integration_id!==15368))return false;
  return contexts.length===EXPECTED_CONTEXTS.size&&
   contexts.every(c=>EXPECTED_CONTEXTS.has(c))&&
   new Set(contexts).size===EXPECTED_CONTEXTS.size;
