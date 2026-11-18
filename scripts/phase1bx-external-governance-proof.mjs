@@ -1,5 +1,5 @@
 import {createHash,createPublicKey,verify} from 'node:crypto';
-import {lstatSync,readFileSync,writeFileSync} from 'node:fs';
+import {writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -56,7 +56,7 @@ function parseRfc3339(value){
 function expectedTarget(target){
  return object(target)&&target.repository===EXPECTED_REPO&&
   target.baseBranch===EXPECTED_BASE&&target.prNumber===EXPECTED_PR&&
-  typeof target.prAuthor==='string'&&target.prAuthor.length>0&&
+  target.prAuthor==='j9619655391-max'&&
   shaPattern.test(target.developmentHead??'')&&shaPattern.test(target.baseSha??'')&&
   shaPattern.test(target.prMergeCheckoutSha??'')&&
   noncePattern.test(target.challengeNonce??'')&&
@@ -89,7 +89,7 @@ export function assessExternalGovernanceEvidence({
    anomalies.add('BX_REPLAY_OR_DUPLICATE_EVIDENCE_TYPE_'+s.type);continue;
   }
   if(!expectedTarget(target)||
-     s.schemaVersion!==1||s.type!==s.type||
+     s.schemaVersion!==1||
      s.repository!==target.repository||s.baseBranch!==target.baseBranch||
      s.prNumber!==target.prNumber||s.developmentHead!==target.developmentHead||
      s.baseSha!==target.baseSha||
