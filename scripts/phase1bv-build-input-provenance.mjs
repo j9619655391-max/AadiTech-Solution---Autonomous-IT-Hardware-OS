@@ -19,6 +19,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1cc-ci-evidence-envelope.mjs',
  'scripts/phase1cd-external-custody-preflight.mjs',
  'scripts/phase1ce-cross-witness-retrieval-preflight.mjs',
+ 'scripts/phase1cf-checkpoint-publication-review-preflight.mjs',
  'scripts/verify-patched-dependencies.mjs',
  'server.ts',
  'server/security/deploymentGuards.ts',
@@ -30,6 +31,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'tests/phase1cc-ci-evidence-envelope.test.mjs',
  'tests/phase1cd-external-custody-preflight.test.mjs',
  'tests/phase1ce-cross-witness-retrieval-preflight.test.mjs',
+ 'tests/phase1cf-checkpoint-publication-review-preflight.test.mjs',
  'vite.config.ts'
 ]);
 const EXACT_SCRIPTS=Object.freeze({
