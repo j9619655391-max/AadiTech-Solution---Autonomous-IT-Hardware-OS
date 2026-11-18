@@ -198,3 +198,16 @@ test('CJ: repo, PR ref, job and runner SHA spoofing denied, Node env null-protot
   assert.equal(r.productionReleaseAuthorized,false);
  }
 });
+
+test('CJ: GitHub API unavailable while OSV withdrawal schema invalid is quarantined as UNKNOWN',()=>{
+ const x=fixture({github:null,osv:{...os,withdrawn:'not-valid'}});
+ const r=verdict(x);
+ assert.equal(r.observedGithubLifecycle,'unavailable');
+ assert.equal(r.observedOsvLifecycle,'invalid');
+ assert.equal(r.incompleteOrInvalidPublicLifecycleQuarantined,true);
+ assert.equal(r.independentCveGhsaOsvTechnicalAdjudicationRequired,true);
+ assert.equal(r.publiclyWithdrawnAdvisoryObserved,false);
+ assert.equal(r.withdrawalQuarantinedForIndependentAdjudication,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.releaseDecision,'HOLD');
+});
