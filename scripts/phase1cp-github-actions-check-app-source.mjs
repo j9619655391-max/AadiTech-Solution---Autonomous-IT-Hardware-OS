@@ -35,7 +35,8 @@ export function checksRoute(sha){
  return '/commits/'+sha+'/check-runs?per_page=100';
 }
 export async function readOfficialCheckSource(route,token,fetchImpl=fetch){
- if(!/^\/actions\/runs\/[1-9]\d{0,15}$/.test(route)&&
+ if(route!=='/pulls/1'&&
+    !/^\/actions\/runs\/[1-9]\d{0,15}$/.test(route)&&
     !/^\/commits\/[a-f0-9]{40}\/check-runs\?per_page=100$/.test(route))
   throw Error('CP_UNREVIEWED_GITHUB_CHECK_SOURCE_ROUTE');
  if(typeof token!=='string'||token.length<1||token.length>4096)
