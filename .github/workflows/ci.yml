@@ -214,29 +214,39 @@ jobs:
       checks: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1CS exact current push ref, PR head and workflow identity HARD HOLD
+        if: github.event_name == 'push'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1cs-push-head-governance.mjs --ci-hold
       - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
           GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GITHUB_EXPECTED_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
       - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
           GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs --ci-hold
       - name: Phase 1CN actual GitHub main ruleset inventory and hidden bypass actor visibility (HARD HOLD)
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
         run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold
       - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)
+        if: github.event_name == 'pull_request'
         run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold
       - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)
+        if: github.event_name == 'pull_request'
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
         run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold
       - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
-        if: always()
+        if: always() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1by-readonly-github-governance-hold
@@ -247,6 +257,14 @@ jobs:
             phase1co-live-exact-head-independent-reviewer-hold.json
             phase1cp-github-actions-app-check-source-hold.json
           if-no-files-found: warn
+
+      - name: Upload UNSIGNED exact push-source governance receipt (never release approval)
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1cs-push-ref-pr-head-held-unsigned
+          path: phase1cs-push-governance-hold.json
+          if-no-files-found: error
 
   source-merge-lineage-hold:
     if: github.event_name == 'pull_request'

@@ -374,3 +374,12 @@ Internal CI proves only that the current tested implementation and safeguards ex
 - [ ] Third-party signed workload provenance, main branch ruleset and CODEOWNERS, nonauthor Security/Business signed authority, official MCA/eMudhra/CCA, independent encrypted WORM/DR and approved staging remain pending. No live production/business actions.
 
 **Release:** PR #1 Draft/unmerged, Issue #2 open, main unchanged, productionReleaseAuthorized=false, productionReleaseBlocked=true, releaseDecision=HOLD.
+
+## Phase 1CS — Real push vs PR GitHub source-governance event-scope reconciliation (19 November 2026 IST)
+
+- [x] Implemented a push-only, official REST GET verifier enforcing exact development ref/HEAD, stable Draft PR #1, current Actions push run/workflow/attempt and zero-unverified permissions. PR-specific BY/CL/CN/CO/CP stages now run only on `pull_request`, while CS runs only on `push` **inside the same mandatory governance job**. This fixes a context mismatch; no check is waived, job skipped, merged or given production authority.
+- [x] Phase 1CP fixed-route reader admits exactly the literal dev-ref GET. Phase 1BZ/CA pins event step guards, new receipt artifact and exact token expression. Phase 1BV/BW source custody includes CS script and adversarial tests. Detailed threat, run instructions, constraints and independent evidence blockers: `docs/phase-1/PHASE_1CS_PUSH_PR_EVENT_SCOPE_RECONCILIATION_HOLD.md`.
+- [ ] Verify exact final pushed HEAD using **both** independent hosted GitHub event runs, including source-bound push CS receipt, PR BY/CL/CN/CO/CP receipt, original eight jobs, security advisory baseline, real MySQL integration and Chromium role/MFA smoke. Do not infer green from passing subset or another suite.
+- [ ] Real independent Security and Business reviewer mandates, enforceable main CODEOWNERS/rulesets/no bypass, externally signed CI attestations and immutable WORM Object Lock/DR, legally verified eMudhra/CCA/RCAI/MCA and independent approved staging remain mandatory, and Issue #2 remains open.
+
+**Release policy:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. PR #1 Draft/unmerged, `main` unchanged. No customer/supplier/provider real-world operations.

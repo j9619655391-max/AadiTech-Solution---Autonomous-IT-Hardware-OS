@@ -106,6 +106,8 @@ function phase1caWorkflowShapeAnomalies(input) {
  const expressionToken=String.fromCharCode(36)+'{{';
  const expressions=lines.filter(x=>x.includes(expressionToken)).map(x=>x.trim());
  const allowed=[
+  // Dedicated Phase 1CS push-only official ref and current-run GET.
+  'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
   'GITHUB_EXPECTED_PR_BASE_SHA: '+expressionToken+' github.event.pull_request.base.sha }}',
@@ -126,10 +128,58 @@ function phase1caWorkflowShapeAnomalies(input) {
   errors.add('CA_UNREVIEWED_GITHUB_EXPRESSION');
  // The second two expressions are permissible ONLY in this fixed read-only
  // GitHub observer step, with a literal program and no extra shell input.
+ const csHeader='      - name: Phase 1CS exact current push ref, PR head and workflow identity HARD HOLD';
+ const byHeader='      - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)';
+ const csExpected=[csHeader,
+  "        if: github.event_name == 'push'",
+  '        env:',
+  '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  '        run: node scripts/phase1cs-push-head-governance.mjs --ci-hold'];
+ const byExpected=[byHeader,
+  "        if: github.event_name == 'pull_request'",
+  '        env:',
+  '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  '          GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
+  '          GITHUB_EXPECTED_PR_BASE_SHA: '+expressionToken+' github.event.pull_request.base.sha }}',
+  '        run: node scripts/phase1by-github-governance-observer.mjs --ci-hold'];
+ for(const [header,expected] of [[csHeader,csExpected],[byHeader,byExpected]]){
+  const at=lines.indexOf(header);
+  if(at<0||lines.slice(at,at+expected.length).join('|')!==expected.join('|')||
+     lines.filter(line=>line===header).length!==1)
+   errors.add('CA_UNREVIEWED_CS_PUSH_OR_BY_PR_EVENT_GUARD');
+ }
+ const startLive=lines.indexOf('  live-github-governance-hold:');
+ const endLive=lines.indexOf('  source-merge-lineage-hold:');
+ const actualStepIfs=lines.slice(startLive,endLive).filter(x=>/^        if:/.test(x));
+ const expectedStepIfs=[
+  "        if: github.event_name == 'push'",
+  ...Array(5).fill("        if: github.event_name == 'pull_request'"),
+  "        if: always() && github.event_name == 'pull_request'",
+  "        if: always() && github.event_name == 'push'"
+ ];
+ if(actualStepIfs.join('|')!==expectedStepIfs.join('|'))
+  errors.add('CA_UNREVIEWED_GOVERNANCE_EVENT_STEP_GUARD');
+ const csUploadHeader='      - name: Upload UNSIGNED exact push-source governance receipt (never release approval)';
+ const csUpload=[csUploadHeader,
+  "        if: always() && github.event_name == 'push'",
+  '        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+  '        with:',
+  '          name: phase1cs-push-ref-pr-head-held-unsigned',
+  '          path: phase1cs-push-governance-hold.json',
+  '          if-no-files-found: error'];
+ const uploadIndex=lines.indexOf(csUploadHeader);
+ if(uploadIndex<0||lines.slice(uploadIndex,uploadIndex+csUpload.length).join('|')!==csUpload.join('|')||
+    lines.filter(x=>x===csUploadHeader).length!==1)
+  errors.add('CA_UNREVIEWED_CS_PUSH_ARTIFACT');
+ const prUpload='      - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval';
+ if(lines.indexOf(prUpload)<0||lines[lines.indexOf(prUpload)+1]!==
+    "        if: always() && github.event_name == 'pull_request'")
+  errors.add('CA_UNREVIEWED_PR_GOVERNANCE_ARTIFACT_GUARD');
  const clHeader='      - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)';
  const clIndex=lines.indexOf(clHeader);
  const clExpected=[
   clHeader,
+  "        if: github.event_name == 'pull_request'",
   '        env:',
   '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   '          GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
@@ -142,6 +192,7 @@ function phase1caWorkflowShapeAnomalies(input) {
  const cnIndex=lines.indexOf(cnHeader);
  const cnExpected=[
   cnHeader,
+  "        if: github.event_name == 'pull_request'",
   '        env:',
   '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   '        run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold'
@@ -152,6 +203,7 @@ function phase1caWorkflowShapeAnomalies(input) {
  const coHeader='      - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)';
  const coIndex=lines.indexOf(coHeader);
  const coExpected=[coHeader,
+  "        if: github.event_name == 'pull_request'",
   '        run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold'];
  if(coIndex<0||lines.slice(coIndex,coIndex+coExpected.length).join('|')!==
     coExpected.join('|')||lines.filter(x=>x===coHeader).length!==1)
@@ -159,6 +211,7 @@ function phase1caWorkflowShapeAnomalies(input) {
  const cpHeader='      - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)';
  const cpIndex=lines.indexOf(cpHeader);
  const cpExpected=[cpHeader,
+  "        if: github.event_name == 'pull_request'",
   '        env:',
   '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   '        run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold'];

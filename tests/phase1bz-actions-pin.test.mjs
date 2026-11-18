@@ -261,3 +261,32 @@ test('CP: required Actions/checks READ scopes cannot be widened to writes, OIDC 
   assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
  }
 });
+
+test('CS: PR-only and push-only governance step selectors are immutable',()=>{
+ for(const [from,to] of [
+  ["        if: github.event_name == 'push'","        if: always()"],
+  ["        if: github.event_name == 'pull_request'","        if: always()"],
+  ["        if: always() && github.event_name == 'push'","        if: always()"],
+  ["        if: always() && github.event_name == 'pull_request'","        if: always()"]
+ ]){
+  const changed=workflow.replace(from,to);
+  assert.notEqual(changed,workflow);
+  const r=evaluate({workflow:changed});
+  assert.equal(r.phase1caBoundedJobScopeConsistent,false);
+  assert.ok(r.phase1caAnomalyCodes.some(x=>x.includes('GUARD')));
+ }
+});
+test('CS: push-only verifier command, receipt, event and token scope cannot drift',()=>{
+ for(const alter of [
+  s=>s.replace('scripts/phase1cs-push-head-governance.mjs --ci-hold',
+   'scripts/phase1cs-push-head-governance.mjs --grant'),
+  s=>s.replace('phase1cs-push-governance-hold.json','approved-go.json'),
+  s=>s.replace('Phase 1CS exact current push ref','Phase 1CS fake current push ref'),
+  s=>s.replace('      checks: read','      checks: write'),
+  s=>s.replace("        if: github.event_name == 'push'",
+   "        if: github.event_name == 'pull_request'")
+ ]){
+  const r=evaluate({workflow:alter(workflow)});
+  assert.equal(r.immutableSelectedActionRefsCorroborated,false);
+ }
+});

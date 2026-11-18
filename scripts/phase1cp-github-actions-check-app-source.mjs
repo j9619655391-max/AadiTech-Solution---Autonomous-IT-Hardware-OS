@@ -38,7 +38,7 @@ export function checksRoute(sha){
  return '/commits/'+sha+'/check-runs?per_page=100';
 }
 export async function readOfficialCheckSource(route,token,fetchImpl=fetch){
- if(route!=='/pulls/1'&&
+ if(route!=='/pulls/1'&&route!=='/git/ref/heads/chore/phase0-foundation-20261106'&&
     !/^\/actions\/runs\/[1-9]\d{0,15}$/.test(route)&&
     !/^\/actions\/runs\/[1-9]\d{0,15}\/jobs\?per_page=100&filter=latest$/.test(route)&&
     !/^\/commits\/[a-f0-9]{40}\/check-runs\?per_page=100$/.test(route))
