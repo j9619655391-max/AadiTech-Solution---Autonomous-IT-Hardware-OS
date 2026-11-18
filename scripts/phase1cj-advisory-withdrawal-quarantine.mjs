@@ -134,7 +134,8 @@ export function assessAdvisoryWithdrawalQuarantine({
     entry?.packageName!=='picomatch'||entry?.severity!=='high'||
     entry?.independentSecurityApproval!=='PENDING')
   errors.add('CJ_RISK_BASELINE_SEVERITY_OR_AUTHORIZATION_WEAKENED');
- if(!obj(environment)||environment.GITHUB_ACTIONS!=='true'||
+ if(environment===null||typeof environment!=='object'||Array.isArray(environment)||
+    environment.GITHUB_ACTIONS!=='true'||
     environment.GITHUB_JOB!=='review-vendor-intake-hold'||
     environment.GITHUB_REPOSITORY!==REPO||
     !SHA.test(environment.GITHUB_SHA??'')||
