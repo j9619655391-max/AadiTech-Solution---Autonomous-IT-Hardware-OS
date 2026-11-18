@@ -22,13 +22,13 @@ export function assessActionsPinCustody({workflow,workflowFiles}={}){
     workflowFiles[0]!==EXPECTED_WORKFLOWS[0])
   errors.add('BZ_UNREVIEWED_WORKFLOW_FILE');
  const input=typeof workflow==='string'?workflow:'';
- const actionLines=input.split(/\r?\n/).filter(line=>/^\s*-\s+uses\s*:/.test(line));
+ const actionLines=input.split(/\r?\n/).filter(line=>/^\s*(?:-\s+)?uses\s*:/.test(line));
  const allUsesCount=(input.match(/\buses\s*:/g)||[]).length;
  if(!actionLines.length||allUsesCount!==actionLines.length)
   errors.add('BZ_UNREVIEWED_YAML_ACTION_REFERENCE_SYNTAX');
  const observed={};
  for(const line of actionLines){
-  const m=/^\s*-\s+uses\s*:\s*([^\s#]+)\s*(?:#.*)?$/.exec(line);
+  const m=/^\s*(?:-\s+)?uses\s*:\s*([^\s#]+)\s*(?:#.*)?$/.exec(line);
   if(!m){
    errors.add('BZ_DYNAMIC_OR_MULTILINE_ACTION_REFERENCE');
    continue;
