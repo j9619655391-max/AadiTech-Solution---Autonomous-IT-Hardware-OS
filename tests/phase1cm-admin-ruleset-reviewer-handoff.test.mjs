@@ -93,6 +93,19 @@ test('CM: required-hosted-context list cannot be reduced, renamed, widened or du
   has(review(r),'CM_EIGHT_EXACT_HOSTED_CHECKS_OR_STRICT_POLICY_WEAKENED');
  }
 });
+test('CP: every required CI check is pinned to the live-observed GitHub Actions App integration id 15368',()=>{
+ const statuses=recipe.rules[3].parameters.required_status_checks;
+ assert.equal(statuses.length,8);
+ assert.ok(statuses.every(x=>x.integration_id===15368));
+ for(const mutation of [
+  x=>delete x.rules[3].parameters.required_status_checks[0].integration_id,
+  x=>x.rules[3].parameters.required_status_checks[0].integration_id=12,
+  x=>x.rules[3].parameters.required_status_checks[0].app_id=15368
+ ]){
+  const altered=clone(recipe);mutation(altered);
+  has(review(altered),'CM_EIGHT_EXACT_HOSTED_CHECKS_OR_STRICT_POLICY_WEAKENED');
+ }
+});
 test('CM: required status checks must be strict and cannot be disabled during branch creation',()=>{
  for(const mutate of [
   x=>x.rules[3].parameters.strict_required_status_checks_policy=false,
