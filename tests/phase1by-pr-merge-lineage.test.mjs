@@ -66,7 +66,6 @@ test('BY changed checkout, event SHA and synthetic PR merge SHA cannot be launde
  for(const mutation of [
   f=>f.checkedOutSha='e'.repeat(40),
   f=>f.environment.GITHUB_SHA='e'.repeat(40),
-  f=>f.event.pull_request.merge_commit_sha='e'.repeat(40),
   f=>f.event.pull_request.head.sha='e'.repeat(40),
   f=>f.event.pull_request.base.sha='e'.repeat(40)
  ]){
@@ -75,6 +74,19 @@ test('BY changed checkout, event SHA and synthetic PR merge SHA cannot be launde
   assert.equal(r.productionReleaseAuthorized,false);
  }
 });
+test('BY GitHub webhook merge_commit_sha may be stale: record mismatch, require actual checkout and two exact Git parents',()=>{
+ for(const webhookSha of ['e'.repeat(40),'bad',null]){
+  const r=check(f=>{f.event.pull_request.merge_commit_sha=webhookSha});
+  assert.equal(r.localSourceGraphCorroborated,true,r.anomalyCodes.join(','));
+  assert.equal(r.githubEventMergeShaMatchesCheckout,false);
+  assert.equal(r.eventMergeShaMetadataStaleOrMissing,true);
+  assert.deepEqual(r.observedMergeParents,[BASE,HEAD]);
+  assert.equal(r.observedCheckoutSha,MERGE);
+  assert.equal(r.productionReleaseAuthorized,false);
+  assert.equal(r.releaseDecision,'HOLD');
+ }
+});
+
 test('BY source repo, branch, event, PR number, author, draft or merged changes refuse',()=>{
  for(const mutation of [
   f=>f.environment.GITHUB_REPOSITORY='attacker/repo',
@@ -126,7 +138,6 @@ test('BY invalid target SHA rejects even syntactically valid parent source',()=>
   f=>f.checkedOutSha='bad',
   f=>f.event.pull_request.head.sha='bad',
   f=>f.event.pull_request.base.sha='bad',
-  f=>f.event.pull_request.merge_commit_sha='bad'
  ]){
   const r=check(change);
   assert.ok(r.anomalyCodes.includes('BY_INVALID_SOURCE_BASE_OR_MERGE_SHA'));
