@@ -91,7 +91,8 @@ test('BY read-only payload observation never authorizes reviewer roles, CI signa
  assert.equal(result.ciMergeMatchesPrApi,true);
  assert.equal(result.reviews.distinctLatestHeadApprovalCount,2);
  assert.equal(result.observableRequiredBranchRulesPresent,true);
- assert.equal(result.currentBranchProtectionReadProven,true);
+ assert.equal(result.branchRulesOrLegacyApiReadSucceeded,true);
+ assert.equal(result.effectiveProtectedBranchPolicyIndependentlyAuthenticated,false);
  assert.equal(result.independentReviewerSecurityAndBusinessRolesVerified,false);
  assert.equal(result.externallyEnrolledReviewerKeysVerified,false);
  assert.equal(result.signedCIProvenanceVerified,false);
@@ -232,6 +233,6 @@ test('BY zero credential CI emits missing token observations without network cal
  });
  assert.equal(snapshot.endpoints.rules.status,'missing_token');
  const r=assessObservedGithubGovernance(snapshot);
- assert.equal(r.currentBranchProtectionReadProven,false);
+ assert.equal(r.branchRulesOrLegacyApiReadSucceeded,false);
  assert.equal(r.productionReleaseAuthorized,false);
 });
