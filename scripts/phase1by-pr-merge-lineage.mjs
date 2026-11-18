@@ -50,12 +50,16 @@ export function assessGithubPrTestMergeLineage({
     pr?.head?.repo?.full_name!==REPO||pr?.base?.repo?.full_name!==REPO)
   anomalyCodes.add('BY_UNEXPECTED_PR_REPOSITORY_EVENT_OR_AUTHOR');
  if(!SHA.test(checkedOutSha??'')||!SHA.test(environment.GITHUB_SHA??'')||
-    !SHA.test(sourceSha??'')||!SHA.test(baseSha??'')||
-    !SHA.test(mergeSha??''))
+    !SHA.test(sourceSha??'')||!SHA.test(baseSha??''))
   anomalyCodes.add('BY_INVALID_SOURCE_BASE_OR_MERGE_SHA');
- if(!exact(checkedOutSha,environment.GITHUB_SHA)||
-    !exact(checkedOutSha,mergeSha))
+ if(!exact(checkedOutSha,environment.GITHUB_SHA))
   anomalyCodes.add('BY_CI_CHECKOUT_NOT_PR_TEST_MERGE');
+ // A PR webhook merge_commit_sha may predate GitHub's later synthetic
+ // test-merge checkout. Actual checked-out Git object parents + GITHUB_SHA
+ // take precedence over this potentially stale webhook metadata. Never hide
+ // a mismatch: record it, but do not reject correct object ancestry.
+ const eventMergeShaMatchesCheckout=SHA.test(mergeSha??'')&&
+  exact(checkedOutSha,mergeSha);
  let parents=null,treeSha=null;
  try{
   const parsed=parseGitCommitParents(commitObject);
@@ -74,6 +78,8 @@ export function assessGithubPrTestMergeLineage({
   localSourceGraphCorroborated:anomalyCodes.size===0,
   anomalyCodes:Object.freeze([...anomalyCodes].sort()),
   githubRunEvent:push,
+  githubEventMergeShaMatchesCheckout:eventMergeShaMatchesCheckout,
+  eventMergeShaMetadataStaleOrMissing:!eventMergeShaMatchesCheckout,
   observedCheckoutSha:SHA.test(checkedOutSha??'')?checkedOutSha:null,
   observedSourceHeadSha:SHA.test(sourceSha??'')?sourceSha:null,
   observedBaseSha:SHA.test(baseSha??'')?baseSha:null,
