@@ -15,6 +15,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1bt-production-scope.mjs',
  'scripts/phase1bv-build-input-provenance.mjs',
  'scripts/phase1bz-actions-pin-preflight.mjs',
+ 'scripts/phase1cb-public-advisory-observer.mjs',
  'scripts/verify-patched-dependencies.mjs',
  'server.ts',
  'server/security/deploymentGuards.ts',
@@ -22,6 +23,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'tsconfig.json',
  'tests/phase1bv-build-input-provenance.test.mjs',
  'tests/phase1bz-actions-pin.test.mjs',
+ 'tests/phase1cb-public-advisory-observer.test.mjs',
  'vite.config.ts'
 ]);
 const EXACT_SCRIPTS=Object.freeze({
