@@ -167,6 +167,8 @@ jobs:
         run: node scripts/phase1bw-review-vendor-intake.mjs --ci-hold
       - name: Phase 1CB observe public GHSA and OSV advisory disagreement (deny release, no credentials)
         run: node scripts/phase1cb-public-advisory-observer.mjs --ci-hold
+      - name: Phase 1CH compare official npm published package and Github vendor release against GHSA OSV unpatched HOLD
+        run: node scripts/phase1ch-upstream-patch-publication-preflight.mjs --ci-hold
       - name: Archive unsigned blocked review and vendor patch intake (NOT approval)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -175,6 +177,7 @@ jobs:
           path: |
             phase1bw-held-review-vendor-report.json
             phase1cb-public-advisory-hold.json
+            phase1ch-publisher-remediation-hold.json
           if-no-files-found: warn
 
   independent-evidence-hold:
