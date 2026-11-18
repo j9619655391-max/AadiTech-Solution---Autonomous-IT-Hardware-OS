@@ -180,6 +180,8 @@ jobs:
       - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
+          GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_EXPECTED_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
       - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
         if: always()
