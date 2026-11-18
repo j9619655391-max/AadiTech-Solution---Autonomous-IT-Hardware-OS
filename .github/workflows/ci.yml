@@ -191,6 +191,24 @@ jobs:
           path: phase1by-github-readonly-governance-hold.json
           if-no-files-found: warn
 
+  source-merge-lineage-hold:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 1BY corroborate actual Git test-merge parent objects with PR source/base SHA
+        run: node scripts/phase1by-pr-merge-lineage.mjs --ci-hold
+      - name: Archive source graph parent verification HOLD (not Security/production approval)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1by-pr-merge-parent-lineage-hold
+          path: phase1by-pr-merge-lineage-hold.json
+          if-no-files-found: warn
+
   production-runtime-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
