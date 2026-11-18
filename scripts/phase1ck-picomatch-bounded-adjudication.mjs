@@ -22,6 +22,9 @@ const INTEGRITY=/^sha512-[A-Za-z0-9+/]{86}==$/;
 const MAX_FILE=1024*1024;
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const bounded=x=>Number.isFinite(x)&&x>=0&&x<=WORKER_TIMEOUT_MS+400;
+const equalRecord=(a,b)=>object(a)&&object(b)&&
+ JSON.stringify(Object.entries(a).sort(([x],[y])=>x.localeCompare(y)))===
+ JSON.stringify(Object.entries(b).sort(([x],[y])=>x.localeCompare(y)));
 export async function runBoundedPicomatchSample(id){
  if(!CASE_IDS.includes(id))throw Error('CK_UNAPPROVED_SAMPLE_ID');
  return new Promise(resolveResult=>{
@@ -106,10 +109,8 @@ export function assessBoundedTechnicalAdjudication({
     ver!=='picomatch@4.0.7'||!INTEGRITY.test(integrity??''))
   errors.add('CK_REAL_FROZEN_LOCK_VERSION_OR_INTEGRITY_INVALID');
  if(object(pkg)&&object(lock?.workspaces?.[''])&&
-    (JSON.stringify(pkg.dependencies??{})!==
-      JSON.stringify(lock.workspaces[''].dependencies??{})||
-     JSON.stringify(pkg.devDependencies??{})!==
-      JSON.stringify(lock.workspaces[''].devDependencies??{})))
+    (!equalRecord(pkg.dependencies,lock.workspaces[''].dependencies)||
+     !equalRecord(pkg.devDependencies,lock.workspaces[''].devDependencies)))
   errors.add('CK_FROZEN_ROOT_WORKSPACE_MISMATCH');
  let report=null,verifier=null;
  try{
