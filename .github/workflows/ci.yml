@@ -141,6 +141,8 @@ jobs:
         run: node scripts/phase1ce-cross-witness-retrieval-preflight.mjs --ci-hold
       - name: Phase 1CF two-epoch published checkpoint/reviewer signature zero-input HARD HOLD
         run: node scripts/phase1cf-checkpoint-publication-review-preflight.mjs --ci-hold
+      - name: Phase 1CG signed cross-source CAS and exact-head GitHub reviewer evidence zero-input HARD HOLD
+        run: node scripts/phase1cg-external-source-reconciliation-preflight.mjs --ci-hold
       - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -153,6 +155,7 @@ jobs:
             phase1cd-zero-input-external-custody-hold.json
             phase1ce-zero-input-cross-witness-hold.json
             phase1cf-zero-input-review-history-hold.json
+            phase1cg-zero-input-external-reconciliation-hold.json
           if-no-files-found: warn
 
   review-vendor-intake-hold:
