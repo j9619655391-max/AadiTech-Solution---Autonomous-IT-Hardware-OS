@@ -181,7 +181,7 @@ export function assessActualRulesetReconciliation({
   Array.isArray(observations.listed)?observations.listed:null;
  if(!listed)anomalies.add('CN_OFFICIAL_RULESET_LIST_UNAVAILABLE_OR_INCOMPLETE');
  if(listed&&listed.length===0)anomalies.add('CN_NO_REPOSITORY_RULESETS_OBSERVED');
- let fullyVisible=listed!==null,hidden=0,configuredBypasses=0,
+ let fullyVisible=listed!==null&&listed.length>0,hidden=0,configuredBypasses=0,
   matching=0,drifted=0,activeCount=0;
  const details=[];
  for(const item of listed??[]){
