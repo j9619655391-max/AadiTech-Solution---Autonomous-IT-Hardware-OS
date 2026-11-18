@@ -60,7 +60,7 @@ export function assessLockedPicomatchExposure({
    !obj(pkg.dependencies)||!obj(pkg.devDependencies)||
    typeof serverSource!=='string'||typeof viteConfigSource!=='string'){
   problems.add('CI_INPUTS_OR_LOCK_GRAPH_MALFORMED');
-  return createResult(problems,null,[],[],[],null);
+  return createResult(problems,null,[],[],[],null,0);
  }
  const baseline=assessProductionDependencyClosure(pkg,lock,serverSource);
  if(!baseline.productionDependencyClosureLocallyConsistent||
@@ -87,8 +87,13 @@ export function assessLockedPicomatchExposure({
  if(keys.length>1500)problems.add('CI_LOCK_GRAPH_EXCESS_PACKAGE_COUNT');
  for(const name of keys.slice(0,1501)){
   const tuple=packages[name];
-  if(!NAME.test(name)||!Array.isArray(tuple)||tuple.length!==4||
-    typeof tuple[0]!=='string'||!tuple[0].startsWith(name+'@')||
+  const declared=Array.isArray(tuple)&&typeof tuple[0]==='string'?
+   tuple[0].slice(0,tuple[0].lastIndexOf('@')):'';
+  if(typeof name!=='string'||name.length>160||
+    !/^[@a-z0-9._/-]+$/.test(name)||
+    !Array.isArray(tuple)||tuple.length!==4||
+    !NAME.test(declared)||
+    !(name===declared||name.endsWith('/'+declared))||
     !obj(tuple[2])){
    problems.add('CI_UNBOUNDED_OR_MALFORMED_LOCK_NODE');
    continue;
@@ -151,13 +156,13 @@ export function assessLockedPicomatchExposure({
    problems.add('CI_UNTRUSTED_RUN_CONTEXT');
  }
  return createResult(problems,baseline,parents,prod.route??[],
-   devRoots, {via,representative:directDev.route,overflow:prod.overflow||directDev.overflow});
+   devRoots, {via,representative:directDev.route,overflow:prod.overflow||directDev.overflow},keys.length);
 }
-function createResult(problems,baseline,parents,productionPath,devRoots,dev){
+function createResult(problems,baseline,parents,productionPath,devRoots,dev,packageCount){
  const anomalies=sorted(problems);
  return Object.freeze({
   phase:'1CI',schemaVersion:1,kind:'REAL_LOCKED_BUILD_MATCHER_EXPOSURE_HARD_HOLD',
-  inspectedPackageCount:baseline?null:0,
+  inspectedPackageCount:packageCount,
   picomatchAdvisory:ADVISORY,picomatchLockedVersion:EXPECTED_LOCK.picomatch,
   directLockedIntroducers:parents,
   representativeProductionRootRoute:productionPath.length?productionPath:null,
