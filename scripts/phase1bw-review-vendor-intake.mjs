@@ -28,7 +28,8 @@ const CONTROLS=Object.freeze([
 ]);
 const REQUIRED_JOBS=Object.freeze([
  'baseline','mysql-integration','production-runtime-scope',
- 'build-input-provenance','review-vendor-intake-hold'
+ 'build-input-provenance','review-vendor-intake-hold',
+ 'independent-evidence-hold','live-github-governance-hold'
 ]);
 const sha256=s=>createHash('sha256').update(s).digest('hex');
 const LOCAL_DOMAIN='aaditech/phase1bw/untrusted-local-governance-inputs/v1\n';
