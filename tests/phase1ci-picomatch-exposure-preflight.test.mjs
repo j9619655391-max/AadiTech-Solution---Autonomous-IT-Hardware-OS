@@ -115,6 +115,7 @@ test('CI: Vite config matcher import outside normal plugin chain is blocked',()=
 test('CI: remote Vite exposure or permissive HMR/watch configuration fails closed',()=>{
  for(const replacement of [
   viteConfigSource.replace("host: '127.0.0.1'","host: '0.0.0.0'"),
+  viteConfigSource.replace("preview: {\n      host: '127.0.0.1'","preview: {\n      host: '0.0.0.0'"),
   viteConfigSource.replace("allowedHosts: ['localhost','127.0.0.1']","allowedHosts: true"),
   viteConfigSource.replace("hmr: false","hmr: true"),
   viteConfigSource.replace("fs: {strict: true}","fs: {strict: false}")
