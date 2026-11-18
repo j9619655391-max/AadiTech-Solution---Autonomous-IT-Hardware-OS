@@ -64,6 +64,30 @@ export function assessUpstreamAdvisory({github,osv,lock,environment={}}={}){
    anomalies.add('CB_UNREVIEWED_CI_SOURCE_CONTEXT');
  }
  const g=readAffectedFromGithub(github),o=readAffectedFromOsv(osv);
+ // Phase 1CJ: a publicly withdrawn security advisory is NOT a released
+ // upstream patch and MUST be independently adjudicated against other feeds.
+ // Distinguish absent lifecycle metadata (active) from malformed or missing
+ // source records (unknown). Never infer that withdrawal fixes the lock.
+ const ghWithdrawn=github?.withdrawn_at;
+ const osWithdrawn=osv?.withdrawn;
+ const githubLifecycleState=github==null?'unavailable':
+  !g.valid?'invalid':ghWithdrawn==null?'active':
+  exactDate(ghWithdrawn)?'withdrawn':'invalid';
+ const osvLifecycleState=osv==null?'unavailable':
+  !o.valid?'invalid':osWithdrawn==null?'active':
+  exactDate(osWithdrawn)?'withdrawn':'invalid';
+ if(githubLifecycleState==='withdrawn')
+  anomalies.add('CB_GITHUB_WITHDRAWN_NEEDS_INDEPENDENT_SECURITY_ADJUDICATION');
+ if(osvLifecycleState==='withdrawn')
+  anomalies.add('CB_OSV_WITHDRAWN_NEEDS_INDEPENDENT_SECURITY_ADJUDICATION');
+ if(github!=null&&ghWithdrawn!=null&&githubLifecycleState==='invalid')
+  anomalies.add('CB_GITHUB_WITHDRAWAL_DATE_INVALID');
+ if(osv!=null&&osWithdrawn!=null&&osvLifecycleState==='invalid')
+  anomalies.add('CB_OSV_WITHDRAWAL_DATE_INVALID');
+ if(githubLifecycleState!=='unavailable'&&osvLifecycleState!=='unavailable'&&
+    githubLifecycleState!=='invalid'&&osvLifecycleState!=='invalid'&&
+    githubLifecycleState!==osvLifecycleState)
+  anomalies.add('CB_PUBLIC_ADVISORY_LIFECYCLE_DISAGREEMENT');
  if(!g.valid)anomalies.add(github==null?
   'CB_GITHUB_ADVISORY_UNAVAILABLE':'CB_GITHUB_ADVISORY_ID_RANGE_OR_PATCH_DRIFT');
  if(!o.valid)anomalies.add(osv==null?
@@ -78,6 +102,10 @@ export function assessUpstreamAdvisory({github,osv,lock,environment={}}={}){
   checkedRunnerCommit:/^[a-f0-9]{40}$/.test(environment.GITHUB_SHA??'')?
    environment.GITHUB_SHA:null,
   lockedPicomatchVersion:version,
+  githubLifecycleState,osvLifecycleState,
+  githubWithdrawnAt:githubLifecycleState==='withdrawn'?ghWithdrawn:null,
+  osvWithdrawnAt:osvLifecycleState==='withdrawn'?osWithdrawn:null,
+  withdrawnAdvisoryNotEquivalentToFixedVersion:true,
   twoPublicFeedsDescribeCurrentUnpatchedRange:anomalies.size===0,
   publishedPatchCandidateObserved:g.patchClaim||o.patchClaim,
   anomalyCodes:Object.freeze([...anomalies].sort()),
