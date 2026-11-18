@@ -22,12 +22,12 @@ export const EXPECTED_TYPES=Object.freeze([
 ]);
 const GH_LOGIN=/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const PERMISSIONS=new Set(['write','maintain','admin']);
+const KNOWN_PERMISSIONS=new Set(['read','triage','write','maintain','admin']);
 const REPO_API='https://api.github.com/repos/'+REPO;
 const obj=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const exactly=(x,keys)=>obj(x)&&same(Object.keys(x).sort(),[...keys].sort());
 const sha256=x=>createHash('sha256').update(x).digest('hex');
-function record(errors={}){return errors;}
 export function assessProposedMainRuleset(payload){
  const problems=new Set();
  if(!obj(payload)){
@@ -214,7 +214,7 @@ export async function readActualGithubPermission(login,token,fetchImpl=fetch){
   const raw=JSON.parse(Buffer.concat(chunks).toString('utf8'));
   if(!obj(raw)||!obj(raw.user)||
      raw.user.login?.toLowerCase()!==login.toLowerCase()||
-     typeof raw.permission!=='string')
+     typeof raw.permission!=='string'||!KNOWN_PERMISSIONS.has(raw.permission))
    return {status:'invalid',data:null};
   return {status:'read',data:{
    user:{login:raw.user.login},permission:raw.permission
