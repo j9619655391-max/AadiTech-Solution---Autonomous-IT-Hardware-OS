@@ -76,3 +76,72 @@ test('BZ: source digest changes even when syntax remains valid; not release atte
  assert.equal(changed.externalWormRetentionVerified,false);
  assert.equal(changed.productionReleaseBlocked,true);
 });
+
+test('1CA: exact eight hosted CI jobs, read-only scopes and bounded conditions are required',()=>{
+ const r=evaluate();
+ assert.equal(r.phase1caBoundedJobScopeConsistent,true,r.phase1caAnomalyCodes.join(','));
+ assert.equal(r.independentCiWorkflowSemanticsAttested,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('1CA: duplicate root keys or YAML inline root variants are refused',()=>{
+ const variants=[
+  workflow.replace('jobs:\n','permissions:\n  contents: write\njobs:\n'),
+  workflow.replace('jobs:\n','on:\n  workflow_dispatch:\njobs:\n'),
+  workflow.replace('jobs:\n','jobs: {}\n'),
+  workflow.replace('name: Phase 0 baseline','name: Rogue workflow')
+ ];
+ for(const changed of variants)
+  assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
+});
+test('1CA: job-scoped write, id-token and hidden authorization overrides fail',()=>{
+ const variants=[
+  workflow.replace('      pull-requests: read','      pull-requests: write'),
+  workflow.replace('      pull-requests: read','      pull-requests: read\n      id-token: write'),
+  workflow.replace('  baseline:\n','  baseline:\n    permissions:\n      contents: write\n'),
+  workflow.replace('  baseline:\n','  baseline:\n    permissions: {contents: write}\n'),
+  workflow.replace('  baseline:\n','  baseline:\n    environment: production\n')
+ ];
+ for(const changed of variants)
+  assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
+});
+test('1CA: any new job, skipped job, runner replacement or unbounded job is denied',()=>{
+ const variants=[
+  workflow.replace('  baseline:\n','  attacker-job:\n    runs-on: ubuntu-24.04\n  baseline:\n'),
+  workflow.replace('  baseline:\n','  baseline-disabled:\n'),
+  workflow.replace('    runs-on: ubuntu-24.04','    runs-on: self-hosted'),
+  workflow.replace('    timeout-minutes: 20','    timeout-minutes: 999'),
+  workflow.replace('  baseline:\n','  baseline:\n    continue-on-error: true\n'),
+  workflow.replace('  baseline:\n','  baseline:\n    container: attacker/image:latest\n')
+ ];
+ for(const changed of variants)
+  assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
+});
+test('1CA: fixed PR merge-lineage condition may not be bypassed',()=>{
+ const variants=[
+  workflow.replace("    if: github.event_name == 'pull_request'","    if: always()"),
+  workflow.replace("    if: github.event_name == 'pull_request'",''),
+  workflow.replace('  baseline:\n','  baseline:\n    if: false\n')
+ ];
+ for(const changed of variants)
+  assert.ok(evaluate({workflow:changed}).phase1caAnomalyCodes.some(x=>
+   x==='CA_MERGE_LINEAGE_EVENT_GUARD_DRIFT'||x==='CA_UNREVIEWED_JOB_SKIP_CONDITION'));
+});
+test('1CA: reject unreviewed GitHub expression injection while preserving exact observed values',()=>{
+ const orig="GITHUB_EXPECTED_PR_HEAD_SHA: "+'$'+"{{ github.event.pull_request.head.sha }}";
+ const changed=workflow.replace(orig,"GITHUB_EXPECTED_PR_HEAD_SHA: "+'$'+"{{ github.event.pull_request.title }}");
+ assert.notEqual(changed,workflow);
+ assert.ok(evaluate({workflow:changed}).phase1caAnomalyCodes.includes('CA_UNREVIEWED_GITHUB_EXPRESSION'));
+ const rogue=workflow.replace('      - name: Baseline tests',
+  '      - name: Probe\n        run: echo '+ '$'+'{{ github.event.pull_request.body }}'+'\n      - name: Baseline tests');
+ assert.equal(evaluate({workflow:rogue}).phase1caBoundedJobScopeConsistent,false);
+});
+test('1CA: YAML tabs, duplicate job permissions and aliases cannot be treated as reviewed',()=>{
+ for(const changed of [
+  workflow.replace('    runs-on: ubuntu-24.04','    runs-on:\tubuntu-24.04'),
+  workflow.replace('      pull-requests: read','      pull-requests: read\n    permissions:\n      contents: read'),
+  workflow.replace('    runs-on: ubuntu-24.04','    runs-on: &runner ubuntu-24.04'),
+  workflow.replace('jobs:\n','jobs:\n  <<: *evil\n')
+ ]){
+  assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
+ }
+});
