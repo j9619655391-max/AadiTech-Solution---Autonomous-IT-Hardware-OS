@@ -168,7 +168,7 @@ test('1CL: exact second Github token expression must remain in named read-only C
 test('1CL: duplicate, unreviewed GitHub expression or token escalation denied globally',()=>{
  const expression='$'+'{{ github.token }}';
  const anchor='          GITHUB_READ_TOKEN: '+expression;
- assert.equal(workflow.split(anchor).length-1,3);
+ assert.equal(workflow.split(anchor).length-1,4);
  const bad=[
   workflow.replace('          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.head.sha }}',
    '          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.title }}'),
@@ -228,5 +228,36 @@ test('1CO: exact live reviewer step is immutable and cannot fetch admin secrets'
   assert.notEqual(modified,workflow);
   assert.ok(evaluate({workflow:modified}).phase1caAnomalyCodes.includes(
    'CA_UNREVIEWED_PHASE1CO_EXACT_READONLY_OPERATOR_STEP'));
+ }
+});
+
+test('CP: immutable observed GitHub Actions check-source step cannot be replaced by release approval or arbitrary shell',()=>{
+ const h='      - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)';
+ const run='        run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold';
+ assert.ok(workflow.includes(h));
+ assert.ok(workflow.includes(run));
+ assert.equal(evaluate().phase1caBoundedJobScopeConsistent,true,
+  evaluate().phase1caAnomalyCodes.join(','));
+ for(const [from,to] of [
+  [h,h.replace('exact current run','some prior run')],
+  [run,run.replace('--ci-hold','--grant-prod')],
+  [run,run.replace('node scripts/','curl https://evil.example && node scripts/')]
+ ]){
+  const changed=workflow.replace(from,to);
+  assert.notEqual(changed,workflow);
+  assert.ok(evaluate({workflow:changed}).phase1caAnomalyCodes.includes(
+   'CA_UNREVIEWED_PHASE1CP_EXACT_RUN_CHECK_APP_READONLY_STEP'));
+ }
+});
+test('CP: required Actions/checks READ scopes cannot be widened to writes, OIDC or unreviewed CI script',()=>{
+ for(const edit of [
+  s=>s.replace('      actions: read','      actions: write'),
+  s=>s.replace('      checks: read','      checks: write'),
+  s=>s.replace('      checks: read','      checks: read\n      id-token: write'),
+  s=>s.replace('      checks: read',''),
+  s=>s.replace('  live-github-governance-hold:', '  LIVE-github-governance-hold:')
+ ]){
+  const changed=edit(workflow);
+  assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
  }
 });
