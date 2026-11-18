@@ -108,11 +108,30 @@ function phase1caWorkflowShapeAnomalies(input) {
  const allowed=[
   'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
   'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
-  'GITHUB_EXPECTED_PR_BASE_SHA: '+expressionToken+' github.event.pull_request.base.sha }}'
+  'GITHUB_EXPECTED_PR_BASE_SHA: '+expressionToken+' github.event.pull_request.base.sha }}',
+  // Phase 1CL reuses the SAME read-only Github Actions token and exact
+  // pull_request.head.sha (no arbitrary event body, PR author text or
+  // additional privilege). These must occur only inside the named CL step.
+  'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}'
  ];
  if(expressions.length!==allowed.length||
     expressions.some((value,index)=>value!==allowed[index]))
   errors.add('CA_UNREVIEWED_GITHUB_EXPRESSION');
+ // The second two expressions are permissible ONLY in this fixed read-only
+ // GitHub observer step, with a literal program and no extra shell input.
+ const clHeader='      - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)';
+ const clIndex=lines.indexOf(clHeader);
+ const clExpected=[
+  clHeader,
+  '        env:',
+  '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  '          GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
+  '        run: node scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs --ci-hold'
+ ];
+ if(clIndex<0||lines.slice(clIndex,clIndex+clExpected.length).join('|')!==
+    clExpected.join('|')||lines.filter(x=>x===clHeader).length!==1)
+  errors.add('CA_UNREVIEWED_PHASE1CL_READONLY_STEP_OR_SOURCE_BINDING');
  if(lines.some(x=>/^\s*(?:<<\s*:|[a-z][a-z-]*:\s*[&*!][^\s])/.test(x)))
   errors.add('CA_UNREVIEWED_YAML_MERGE_OR_TAG');
  return [...errors].sort();
