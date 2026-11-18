@@ -20,9 +20,11 @@ const osv={
   ranges:[{type:'SEMVER',events:[{introduced:'0'},{last_affected:'4.0.7'}]}]}]
 };
 const evaluate=changes=>assessUpstreamAdvisory({github,osv,lock,...changes});
-const fakeResponse=(obj,url,more={})=>new Response(JSON.stringify(obj),{
- status:more.status??200,headers:{'Content-Type':more.contentType??'application/json',...(more.headers??{})}
-});
+const responseAt=(url,body,init)=>{
+ const response=new Response(body,init);
+ Object.defineProperty(response,'url',{value:url});
+ return response;
+};
 test('1CB: checked-in picomatch 4.0.7 and two matching public advisory shapes remain HOLD',()=>{
  const r=evaluate();
  assert.equal(r.twoPublicFeedsDescribeCurrentUnpatchedRange,true,r.anomalyCodes.join(','));
@@ -92,17 +94,17 @@ test('1CB: endpoint allowlist, bounded authentic URL and content-type enforced',
  await assert.rejects(()=>fetchBoundedPublicJson('https://attacker.invalid/secret'),
   /UNREVIEWED_PUBLIC_ADVISORY_ENDPOINT/);
  const ok=await fetchBoundedPublicJson(SOURCES.osv,async url=>
-  new Response(JSON.stringify(osv),{headers:{'Content-Type':'application/json'}}));
+  responseAt(url,JSON.stringify(osv),{headers:{'Content-Type':'application/json'}}));
  assert.equal(ok.id,osv.id);
  await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.github,async url=>
-  new Response('{}',{status:403,headers:{'Content-Type':'application/json'}})),/NOT_TRUSTED/);
+  responseAt(url,'{}',{status:403,headers:{'Content-Type':'application/json'}})),/NOT_TRUSTED/);
  await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.github,async url=>
-  new Response('{}',{headers:{'Content-Type':'text/html'}})),/NOT_TRUSTED/);
+  responseAt(url,'{}',{headers:{'Content-Type':'text/html'}})),/NOT_TRUSTED/);
 });
 test('1CB: reject oversized streamed remote response and invalid JSON',async()=>{
- await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.osv,async()=>new Response(
+ await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.osv,async url=>responseAt(url,
   ' '.repeat(131073),{headers:{'Content-Type':'application/json'}})),/OVERSIZED/);
- await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.osv,async()=>new Response(
+ await assert.rejects(()=>fetchBoundedPublicJson(SOURCES.osv,async url=>responseAt(url,
   '{not json}',{headers:{'Content-Type':'application/json'}})),SyntaxError);
 });
 test('1CB: unverified public sources never imply CI/WORM or live production permissions',()=>{
