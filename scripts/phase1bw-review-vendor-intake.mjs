@@ -14,7 +14,9 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/phase1bw-review-vendor-intake.mjs',
  'tests/phase1bw-review-vendor-intake.test.mjs',
  'scripts/phase1cb-public-advisory-observer.mjs',
- 'tests/phase1cb-public-advisory-observer.test.mjs'
+ 'tests/phase1cb-public-advisory-observer.test.mjs',
+ 'scripts/phase1cc-ci-evidence-envelope.mjs',
+ 'tests/phase1cc-ci-evidence-envelope.test.mjs'
 ]);
 const REPO='j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS';
 const DEV='chore/phase0-foundation-20261106';
