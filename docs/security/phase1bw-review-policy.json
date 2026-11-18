@@ -21,7 +21,9 @@
       "mysql-integration",
       "production-runtime-scope",
       "build-input-provenance",
-      "review-vendor-intake-hold"
+      "review-vendor-intake-hold",
+      "independent-evidence-hold",
+      "live-github-governance-hold"
     ],
     "requireExactHeadRevalidation": true,
     "requireSeparateSecurityReviewer": true,
