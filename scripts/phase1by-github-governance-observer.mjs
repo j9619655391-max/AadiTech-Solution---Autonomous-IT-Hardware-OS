@@ -251,8 +251,9 @@ export function assessObservedGithubGovernance(snapshot,{expectedRepository=REPO
   observedPrMergeSha:mergeMatches?snapshot.githubSha:null,
   ciMergeMatchesPrApi:mergeMatches,
   reviews,rules,legacy,
-  currentBranchProtectionReadProven:
+  branchRulesOrLegacyApiReadSucceeded:
    endpoints.rules?.status==='read'||endpoints.protection?.status==='read',
+  effectiveProtectedBranchPolicyIndependentlyAuthenticated:false,
   observableRequiredBranchRulesPresent:
    observableRulesHaveMinimum||observableLegacyMinimum,
   independentReviewerSecurityAndBusinessRolesVerified:false,
