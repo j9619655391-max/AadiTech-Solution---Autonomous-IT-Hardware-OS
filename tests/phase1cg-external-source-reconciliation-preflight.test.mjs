@@ -196,8 +196,10 @@ test('CG: two observations from same organization, admin, key or login are not i
  for(const k of ['organization','administrator','login','spkiSha256']){
   const x=fixture();
   x.sourceKeys[SOURCE_ROLES[1]][k]=x.sourceKeys[SOURCE_ROLES[0]][k];
-  x.sourceRecords[1].statement[k]=x.sourceRecords[0].statement[k]??x.sourceRecords[1].statement[k];
-  reSign(x,1);
+  if(k==='organization'||k==='administrator'){
+   x.sourceRecords[1].statement[k]=x.sourceRecords[0].statement[k];
+   reSign(x,1);
+  }
   assert.equal(assess(x).candidateSourceAndReviewerObservationsConsistent,false,k);
  }
  const x=fixture();x.sourceRecords[1]=x.sourceRecords[0];
