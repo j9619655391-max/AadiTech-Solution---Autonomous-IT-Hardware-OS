@@ -11,6 +11,7 @@ const HEAD='a'.repeat(40),BASE='b'.repeat(40),MERGE='c'.repeat(40);
 const ENV=Object.freeze({
  GITHUB_REPOSITORY:REPO,GITHUB_REF:'refs/pull/1/merge',
  GITHUB_SHA:MERGE,GITHUB_HEAD_REF:DEV,GITHUB_BASE_REF:'main',
+ GITHUB_EXPECTED_PR_HEAD_SHA:HEAD,GITHUB_EXPECTED_PR_BASE_SHA:BASE,
  GITHUB_EVENT_NAME:'pull_request'
 });
 const ROOT='/repos/'+REPO;
@@ -54,8 +55,10 @@ const clone=x=>structuredClone(x);
 function fixture(){
  return {observedAt:'2026-11-18T09:00:00.000Z',
   repository:ENV.GITHUB_REPOSITORY,githubRef:ENV.GITHUB_REF,
-  githubSha:ENV.GITHUB_SHA,githubHeadRef:ENV.GITHUB_HEAD_REF,
-  githubBaseRef:ENV.GITHUB_BASE_REF,eventName:ENV.GITHUB_EVENT_NAME,
+  githubSha:ENV.GITHUB_SHA,eventHeadSha:ENV.GITHUB_EXPECTED_PR_HEAD_SHA,
+  eventBaseSha:ENV.GITHUB_EXPECTED_PR_BASE_SHA,
+  githubHeadRef:ENV.GITHUB_HEAD_REF,githubBaseRef:ENV.GITHUB_BASE_REF,
+  eventName:ENV.GITHUB_EVENT_NAME,
   endpoints:{
    pr:{status:'read',data:clone(examplePR)},
    reviews:{status:'read',data:clone(exampleReviews)},
@@ -114,6 +117,7 @@ test('BY source branch, PR identity, merge SHA, base, author and repo substituti
  for(const change of changes){
   const r=assess(change);
   assert.ok(r.anomalyCodes.some(x=>x==='BY_PR_REPO_OR_DRAFT_IDENTITY_MISMATCH'||
+   x==='BY_PR_SOURCE_HEAD_OR_BASE_DRIFT_FROM_EVENT'||
    x==='BY_CI_REF_OR_MERGE_SHA_INVALID'||
    x==='BY_PR_TEST_MERGE_SHA_UNCORRELATED'),r.anomalyCodes.join(','));
   assert.equal(r.productionReleaseAuthorized,false);
