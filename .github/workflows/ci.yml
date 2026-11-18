@@ -154,6 +154,21 @@ jobs:
           path: phase1bw-held-review-vendor-report.json
           if-no-files-found: warn
 
+  independent-evidence-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 1BX exact-head detached Ed25519 reviewer, ruleset and WORM/CI prerequisites HARD HOLD
+        run: node scripts/phase1bx-external-governance-proof.mjs --ci-hold
+      - name: Upload only ZERO-INPUT held independent-evidence prerequisites (not signed acceptance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1bx-zero-input-independent-evidence-hold
+          path: phase1bx-zero-input-independent-hold-report.json
+          if-no-files-found: warn
+
   production-runtime-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
