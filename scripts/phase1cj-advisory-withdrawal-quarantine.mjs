@@ -32,6 +32,8 @@ function denial(errors,data={}){
   conflictingPublicLifecycleObserved:data.conflict??false,
   publiclyWithdrawnAdvisoryObserved:data.withdrawn??false,
   withdrawalQuarantinedForIndependentAdjudication:data.withdrawn??false,
+  incompleteOrInvalidPublicLifecycleQuarantined:data.unknownOrInvalid??true,
+  independentCveGhsaOsvTechnicalAdjudicationRequired:true,
   officialNpmStillSameUnpatchedLockedVersion:data.npmSame??false,
   localObserverReportsStructurallyConsistent:errors.size===0,
   anomalyCodes:Object.freeze([...errors].sort()),
@@ -148,6 +150,7 @@ export function assessAdvisoryWithdrawalQuarantine({
    fetched?.github==='SUCCESS'&&fetched?.osv==='SUCCESS',
   conflict:lifecycleConflict,
   withdrawn,
+  unknownOrInvalid:[github,osv].some(x=>x==='unavailable'||x==='invalid'),
   npmSame:ch?.latestNpmVersion==='4.0.7'&&
     ch?.lockedArtifactIntegrityAgreesWithRegistry===true
  });
