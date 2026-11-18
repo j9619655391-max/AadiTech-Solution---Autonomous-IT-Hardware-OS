@@ -169,6 +169,26 @@ jobs:
           path: phase1bx-zero-input-independent-hold-report.json
           if-no-files-found: warn
 
+  live-github-governance-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
+      - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1by-readonly-github-governance-hold
+          path: phase1by-github-readonly-governance-hold.json
+          if-no-files-found: warn
+
   production-runtime-scope:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
