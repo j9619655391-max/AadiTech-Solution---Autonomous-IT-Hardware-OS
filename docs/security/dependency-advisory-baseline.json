@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "kind": "known-unresolved-development-only",
-  "source": "Phase 1BS exact-HEAD Bun audit and 2026-11-17 GitHub security advisory / prior Phase 1T CI",
-  "reviewedAt": "2026-11-17",
+  "source": "Phase 1CJ: live official GitHub advisory withdrawn 2026-11-18; OSV/NVD still reference CVE; real frozen Bun audit mandatory",
+  "reviewedAt": "2026-11-18",
   "advisories": [
     {
       "id": "GHSA-jqcg-44mw-7w3h",
@@ -63,9 +63,11 @@
       "id": "GHSA-fc5q-39xc-vjpf",
       "packageName": "picomatch",
       "severity": "high",
-      "status": "UNRESOLVED_DEVELOPMENT_ONLY",
+      "status": "GITHUB_WITHDRAWN_2026_11_18_DISPUTED_UNADJUDICATED",
       "independentSecurityApproval": "PENDING",
-      "remediation": "No patched picomatch listed in GitHub advisory as of 2026-11-17; track vendor and migrate/retest when fixed"
+      "remediation": "Github GHSA withdrawn Nov 18, but NVD/OSV record and prior CI High persist. Do not infer patched package, safe behavior or waived audit. Independently verify signed vendor explanation/technical evidence, latest entire lock Bun audit, and nonauthor Security/Business approvals; maintain HOLD.",
+      "advisoryWithdrawalIsNotVendorPatch": true,
+      "automaticAuditWaiverPermitted": false
     }
   ]
 }
