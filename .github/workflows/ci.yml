@@ -168,6 +168,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BW independent reviewer/ruleset and genuine vendor patch intake HARD HOLD
         run: node scripts/phase1bw-review-vendor-intake.mjs --ci-hold
+      - name: Phase 1CM validate UNINSTALLED main two-reviewer ruleset API handoff, no admin write (HARD HOLD)
+        run: node scripts/phase1cm-admin-ruleset-reviewer-handoff.mjs --ci-hold
       - name: Phase 1CB observe public GHSA and OSV advisory disagreement (deny release, no credentials)
         run: node scripts/phase1cb-public-advisory-observer.mjs --ci-hold
       - name: Phase 1CH compare official npm published package and Github vendor release against GHSA OSV unpatched HOLD
@@ -184,6 +186,7 @@ jobs:
             phase1cb-public-advisory-hold.json
             phase1ch-publisher-remediation-hold.json
             phase1cj-withdrawn-advisory-quarantine-hold.json
+            phase1cm-uninstalled-main-ruleset-admin-handoff-hold.json
           if-no-files-found: warn
 
   independent-evidence-hold:
