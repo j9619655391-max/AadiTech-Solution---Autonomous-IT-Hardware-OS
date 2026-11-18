@@ -18,9 +18,11 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/phase1cc-ci-evidence-envelope.mjs',
  'scripts/phase1cd-external-custody-preflight.mjs',
  'scripts/phase1ce-cross-witness-retrieval-preflight.mjs',
+ 'scripts/phase1cf-checkpoint-publication-review-preflight.mjs',
  'tests/phase1cc-ci-evidence-envelope.test.mjs',
  'tests/phase1cd-external-custody-preflight.test.mjs',
- 'tests/phase1ce-cross-witness-retrieval-preflight.test.mjs'
+ 'tests/phase1ce-cross-witness-retrieval-preflight.test.mjs',
+ 'tests/phase1cf-checkpoint-publication-review-preflight.test.mjs'
 ]);
 const REPO='j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS';
 const DEV='chore/phase0-foundation-20261106';
