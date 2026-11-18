@@ -16,7 +16,8 @@ const SHA=/^[0-9a-f]{40}$/;
 const REQUIRED_CHECKS=Object.freeze([
  'baseline','mysql-integration','production-runtime-scope',
  'build-input-provenance','review-vendor-intake-hold',
- 'independent-evidence-hold','live-github-governance-hold'
+ 'independent-evidence-hold','live-github-governance-hold',
+ 'source-merge-lineage-hold'
 ]);
 const ENDPOINTS=Object.freeze({
  pr:ROOT+'/pulls/1',
