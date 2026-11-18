@@ -9,6 +9,13 @@
 - [ ] Independently signed CI provenance, cryptographic identity/subject verification, retention in separate immutable/WORM store and witnessed DR check obtained; local SHA-256 inventory is **unsigned**.
 - [ ] Approved credentials and signed RCAI/CCA/eMudhra legal/cryptographic evidence plus OWNER/SECURITY/LEGAL/OPERATIONS signoffs have been independently authenticated.
 
+## Phase 1BX signed exact-head governance verification (still pending)
+- [ ] Required sixth CI job `independent-evidence-hold` completed with truthful ZERO-INPUT/HARD HOLD; do not confuse this with independently signed approval.
+- [ ] External administrator, Security reviewer, business owner, CI attestor and off-GitHub WORM auditor independently enrolled and authenticated with separate approved revocable keys; private signing keys never committed.
+- [ ] Independently observed branch protection and two actual GitHub non-author approvals bind source HEAD, immutable base SHA, PR test-merge checkout SHA, and fresh external challenge nonce.
+- [ ] Five distinct detached Ed25519 signed records bind source, challenge, CI input bundle digest and WORM receipt, verified by independently trusted keyring and external authority; **no in-memory CI fixture qualifies**.
+- [ ] Signed CI identity, replay prevention, monotonic external WORM retention and witnessed DR independently checked, and every applicable job including `baseline` is green.
+
 ## Dependency CVE-2026-112366 / GHSA-fc5q-39xc-vjpf
 - [ ] Vendor-origin package release fixed for **all** affected extglob patterns, official npm publication, SHA-512 integrity, patched version advisory and real signed Security acceptance independently verified. Do not substitute an arbitrary fork/override or draft GitHub PR.
 - [ ] Frozen `bun.lock` regenerated and exact-head zero-Critical/High global audit green, all real MySQL/Chromium/build tests green. Do not waive or change this gate.
