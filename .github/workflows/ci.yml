@@ -215,12 +215,19 @@ jobs:
           GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GITHUB_EXPECTED_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
+      - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+          GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs --ci-hold
       - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1by-readonly-github-governance-hold
-          path: phase1by-github-readonly-governance-hold.json
+          path: |
+            phase1by-github-readonly-governance-hold.json
+            phase1cl-live-codeowners-reviewer-onboarding-hold.json
           if-no-files-found: warn
 
   source-merge-lineage-hold:
