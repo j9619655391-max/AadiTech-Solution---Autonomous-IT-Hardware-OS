@@ -133,6 +133,8 @@ jobs:
         run: node scripts/phase1bv-build-input-provenance.mjs
       - name: Phase 1BZ verify immutable action SHA refs and exact workflow inventory (HARD HOLD)
         run: node scripts/phase1bz-actions-pin-preflight.mjs --ci-hold
+      - name: Phase 1CC bind unsigned build/action reports to actual CI checkout and Git parent graph (HARD HOLD)
+        run: node scripts/phase1cc-ci-evidence-envelope.mjs --ci-hold
       - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -141,6 +143,7 @@ jobs:
           path: |
             phase1bv-held-build-input-report.json
             phase1bz-actions-pin-hold.json
+            phase1cc-unsigned-source-receipt-hold.json
           if-no-files-found: warn
 
   review-vendor-intake-hold:
