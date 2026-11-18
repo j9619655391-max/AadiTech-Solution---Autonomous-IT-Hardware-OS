@@ -24,7 +24,8 @@ const paths={
 const requiredChecks=[
  'baseline','mysql-integration','production-runtime-scope',
  'build-input-provenance','review-vendor-intake-hold',
- 'independent-evidence-hold','live-github-governance-hold'
+ 'independent-evidence-hold','live-github-governance-hold',
+ 'source-merge-lineage-hold'
 ];
 const examplePR={
  number:1,state:'open',draft:true,merged:false,merge_commit_sha:MERGE,
