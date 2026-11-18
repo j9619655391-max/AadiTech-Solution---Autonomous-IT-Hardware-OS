@@ -5,7 +5,7 @@
 ## Independent governance requirements (pending, not self-attested)
 - [ ] GitHub `main` ruleset/branch protection independently inspected by a different authorized reviewer: no direct/force pushes/deletion, PR-only, stale-review dismissal, most-recent-push review, CODEOWNER approval, no admin bypass, no unresolved threads.
 - [ ] Real independently authenticated Security and business-owner reviewers assigned in GitHub; at least two distinct, non-author approvals on the exact HEAD after latest push. A checkbox is **not evidence** of approval.
-- [ ] Required CI jobs `baseline`, `mysql-integration`, `production-runtime-scope`, `build-input-provenance`, `review-vendor-intake-hold`, `independent-evidence-hold`, `live-github-governance-hold` independently verified for the exact approved source.
+- [ ] Required CI jobs `baseline`, `mysql-integration`, `production-runtime-scope`, `build-input-provenance`, `review-vendor-intake-hold`, `independent-evidence-hold`, `live-github-governance-hold`, `source-merge-lineage-hold` independently verified for the exact approved source.
 - [ ] Independently signed CI provenance, cryptographic identity/subject verification, retention in separate immutable/WORM store and witnessed DR check obtained; local SHA-256 inventory is **unsigned**.
 - [ ] Approved credentials and signed RCAI/CCA/eMudhra legal/cryptographic evidence plus OWNER/SECURITY/LEGAL/OPERATIONS signoffs have been independently authenticated.
 
