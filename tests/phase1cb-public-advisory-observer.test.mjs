@@ -114,3 +114,44 @@ test('1CB: unverified public sources never imply CI/WORM or live production perm
  assert.equal(r.independentSecurityApprovalVerified,false);
  assert.equal(r.productionReleaseBlocked,true);
 });
+
+test('1CJ: withdrawn GitHub GHSA while OSV remains active forces explicit source-disagreement HOLD',()=>{
+ const gh={...github,updated_at:'2026-11-18T10:30:00.000Z',
+  withdrawn_at:'2026-11-18T10:00:00.000Z'};
+ const r=evaluate({github:gh});
+ assert.equal(r.githubLifecycleState,'withdrawn');
+ assert.equal(r.osvLifecycleState,'active');
+ assert.equal(r.githubWithdrawnAt,gh.withdrawn_at);
+ assert.equal(r.osvWithdrawnAt,null);
+ assert.equal(r.twoPublicFeedsDescribeCurrentUnpatchedRange,false);
+ assert.ok(r.anomalyCodes.includes('CB_GITHUB_WITHDRAWN_NEEDS_INDEPENDENT_SECURITY_ADJUDICATION'));
+ assert.ok(r.anomalyCodes.includes('CB_PUBLIC_ADVISORY_LIFECYCLE_DISAGREEMENT'));
+ assert.equal(r.withdrawnAdvisoryNotEquivalentToFixedVersion,true);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.releaseDecision,'HOLD');
+});
+test('1CJ: matching withdrawn GitHub and OSV feeds cannot be interpreted as patched vendor release',()=>{
+ const withdrawn='2026-11-18T10:00:00.000Z';
+ const r=evaluate({github:{...github,withdrawn_at:withdrawn},
+  osv:{...osv,withdrawn}});
+ assert.equal(r.githubLifecycleState,'withdrawn');
+ assert.equal(r.osvLifecycleState,'withdrawn');
+ assert.equal(r.twoPublicFeedsDescribeCurrentUnpatchedRange,false);
+ assert.ok(!r.anomalyCodes.includes('CB_PUBLIC_ADVISORY_LIFECYCLE_DISAGREEMENT'));
+ assert.ok(r.anomalyCodes.includes('CB_OSV_WITHDRAWN_NEEDS_INDEPENDENT_SECURITY_ADJUDICATION'));
+ assert.equal(r.independentlyAuthenticatedUpstreamPatchVerified,false);
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('1CJ: malformed withdrawal timestamps and unavailable feeds never turn unknown into safe',()=>{
+ for(const change of [
+  {github:{...github,withdrawn_at:'NOT_A_TIME'}},
+  {osv:{...osv,withdrawn:'2028-01-01T00:00:00Z'}},
+  {github:null,osv:{...osv,withdrawn:'2026-11-18T10:00:00Z'}}
+ ]){
+  const r=evaluate(change);
+  assert.equal(r.productionReleaseAuthorized,false);
+  assert.equal(r.twoPublicFeedsDescribeCurrentUnpatchedRange,false);
+  assert.ok(r.anomalyCodes.some(x=>x.includes('WITHDRAWAL_DATE_INVALID')||
+    x.endsWith('ADVISORY_UNAVAILABLE')));
+ }
+});
