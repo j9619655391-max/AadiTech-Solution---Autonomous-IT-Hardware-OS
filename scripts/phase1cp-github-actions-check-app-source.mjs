@@ -30,6 +30,9 @@ export function runRoute(id){
   throw Error('CP_UNREVIEWED_GITHUB_RUN_ID');
  return '/actions/runs/'+String(id);
 }
+export function jobsRoute(id){
+ return runRoute(id)+'/jobs?per_page=100&filter=latest';
+}
 export function checksRoute(sha){
  if(!SHA.test(sha??''))throw Error('CP_UNREVIEWED_GITHUB_SOURCE_SHA');
  return '/commits/'+sha+'/check-runs?per_page=100';
@@ -37,6 +40,7 @@ export function checksRoute(sha){
 export async function readOfficialCheckSource(route,token,fetchImpl=fetch){
  if(route!=='/pulls/1'&&
     !/^\/actions\/runs\/[1-9]\d{0,15}$/.test(route)&&
+    !/^\/actions\/runs\/[1-9]\d{0,15}\/jobs\?per_page=100&filter=latest$/.test(route)&&
     !/^\/commits\/[a-f0-9]{40}\/check-runs\?per_page=100$/.test(route))
   throw Error('CP_UNREVIEWED_GITHUB_CHECK_SOURCE_ROUTE');
  if(typeof token!=='string'||token.length<1||token.length>4096)

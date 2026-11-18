@@ -363,3 +363,14 @@ Internal CI proves only that the current tested implementation and safeguards ex
 - [ ] Authoritative separate nonauthor Security+Business corporate reviewer mandates and actual latest-head reviews, real admin-installed base-main CODEOWNERS, app-bound bypass-free applied main rules and privileged bypass verification; independent authorized eMudhra/CCA/RCAI sandbox/live signed CRL/OCSP, verified MCA/GST signatory, signed OIDC CI workload, offsite immutable WORM Object Lock/denied delete/DR and Owner/Security/Legal/Ops staging signoff remain real external blockers. A post-run green check never constitutes release GO.
 
 **HARD HOLD:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`; `main` unchanged, PR #1 DRAFT/OPEN/UNMERGED, Issue #2 OPEN, no production deployment or live suppliers/customers/provider, quote/PO/GRN/stock/finance/tax effects.
+
+
+## Phase 1CR completed GitHub Checks / Actions Jobs dual-API identity HOLD (19 November 2026 IST)
+
+- [x] Implemented a new **operator-invoked, GET-only, UNSIGNED** completed-run verifier in scripts/phase1cr-actions-jobs-reconciliation.mjs. Reuses CQ's exact current app-bound selected check-suite and unchanged Draft PR, and additionally demands exact identity for all eight Actions Jobs: same job IDs/names, source HEAD, current run attempt, numeric workflow ID, official URL family and completed success conclusion. No results may be borrowed from a different suite or retry.
+- [x] Phase 1CP strict client accepts only one additional fixed numeric GET route for latest Actions Jobs; the 512-KiB/6.5-second response bounds, workflow jobs, permissions and release flags remain unchanged.
+- [x] Added 13 local adversarial Node tests in tests/phase1cr-actions-jobs-reconciliation.test.mjs and exact source-custody entries for the script and test in Phase 1BV/BW. Security/operational runbook: docs/phase-1/PHASE_1CR_ACTIONS_JOBS_CROSS_API_RECONCILIATION_HOLD.md.
+- [ ] Independently verify **both** hosted push and PR CI on final pushed development HEAD, including new tests and frozen-lock advisory; do not mark any CI green before observed outcome.
+- [ ] Third-party signed workload provenance, main branch ruleset and CODEOWNERS, nonauthor Security/Business signed authority, official MCA/eMudhra/CCA, independent encrypted WORM/DR and approved staging remain pending. No live production/business actions.
+
+**Release:** PR #1 Draft/unmerged, Issue #2 open, main unchanged, productionReleaseAuthorized=false, productionReleaseBlocked=true, releaseDecision=HOLD.
