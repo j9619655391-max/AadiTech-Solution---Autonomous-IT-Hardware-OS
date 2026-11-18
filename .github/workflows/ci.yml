@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Typecheck
@@ -98,14 +98,14 @@ jobs:
         run: bun run release:candidate
       - name: Upload held release candidate hash inventory
         if: github.event_name == 'push' && github.ref == 'refs/heads/chore/phase0-foundation-20261106'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: held-phase1z-release-candidate
           path: release-candidate-manifest.json
           if-no-files-found: error
       - name: Upload dependency audit for human triage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: dependency-audit
           path: |
@@ -118,7 +118,7 @@ jobs:
         run: node scripts/audit-baseline.mjs
       - name: Upload baseline audit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase0-audit
           path: phase0-audit-report.json
@@ -128,27 +128,31 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BV verify frozen build command, local glob inputs, CI runner and token boundary
         run: node scripts/phase1bv-build-input-provenance.mjs
+      - name: Phase 1BZ verify immutable action SHA refs and exact workflow inventory (HARD HOLD)
+        run: node scripts/phase1bz-actions-pin-preflight.mjs --ci-hold
       - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bv-held-unsigned-build-input-inventory
-          path: phase1bv-held-build-input-report.json
+          path: |
+            phase1bv-held-build-input-report.json
+            phase1bz-actions-pin-hold.json
           if-no-files-found: warn
 
   review-vendor-intake-hold:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BW independent reviewer/ruleset and genuine vendor patch intake HARD HOLD
         run: node scripts/phase1bw-review-vendor-intake.mjs --ci-hold
       - name: Archive unsigned blocked review and vendor patch intake (NOT approval)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bw-blocked-review-vendor-intake
           path: phase1bw-held-review-vendor-report.json
@@ -158,12 +162,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BX exact-head detached Ed25519 reviewer, ruleset and WORM/CI prerequisites HARD HOLD
         run: node scripts/phase1bx-external-governance-proof.mjs --ci-hold
       - name: Upload only ZERO-INPUT held independent-evidence prerequisites (not signed acceptance)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bx-zero-input-independent-evidence-hold
           path: phase1bx-zero-input-independent-hold-report.json
@@ -176,7 +180,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
         env:
           GITHUB_READ_TOKEN: ${{ github.token }}
@@ -185,7 +189,7 @@ jobs:
         run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
       - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1by-readonly-github-governance-hold
           path: phase1by-github-readonly-governance-hold.json
@@ -198,12 +202,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BY corroborate actual Git test-merge parent objects with PR source/base SHA
         run: node scripts/phase1by-pr-merge-lineage.mjs --ci-hold
       - name: Archive source graph parent verification HOLD (not Security/production approval)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1by-pr-merge-parent-lineage-hold
           path: phase1by-pr-merge-lineage-hold.json
@@ -213,8 +217,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - name: Install exact frozen production-only dependency closure
         run: bun install --frozen-lockfile --production
       - name: Verify locked production graph and dev-only Vite server import
@@ -230,7 +234,7 @@ jobs:
           echo "Only the production dependency scope is isolated; global advisory GHSA-fc5q-39xc-vjpf remains unresolved."
       - name: Upload held production dependency closure (not a release approval)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bt-held-production-dependency-closure
           path: phase1bt-production-closure-report.json
@@ -263,8 +267,8 @@ jobs:
       MFA_ENCRYPTION_KEY: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
       NODE_ENV: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - run: bun install --frozen-lockfile
       - name: Apply non-destructive authentication migration
         run: bun run db:migrate:auth
