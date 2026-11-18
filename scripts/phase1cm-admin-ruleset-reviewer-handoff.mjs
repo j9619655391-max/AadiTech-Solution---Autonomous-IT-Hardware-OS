@@ -17,6 +17,7 @@ export const REQUIRED_JOBS=Object.freeze([
  'independent-evidence-hold','live-github-governance-hold',
  'source-merge-lineage-hold'
 ]);
+export const GITHUB_ACTIONS_INTEGRATION_ID=15368;
 export const EXPECTED_TYPES=Object.freeze([
  'deletion','non_fast_forward','pull_request','required_status_checks'
 ]);
@@ -76,7 +77,9 @@ export function assessProposedMainRuleset(payload){
     !Array.isArray(c?.required_status_checks)||
     c.required_status_checks.length!==REQUIRED_JOBS.length||
     c.required_status_checks.some((row,i)=>
-      !exactly(row,['context'])||row?.context!==REQUIRED_JOBS[i]))
+      !exactly(row,['context','integration_id'])||
+      row?.context!==REQUIRED_JOBS[i]||
+      row?.integration_id!==GITHUB_ACTIONS_INTEGRATION_ID))
   problems.add('CM_EIGHT_EXACT_HOSTED_CHECKS_OR_STRICT_POLICY_WEAKENED');
  return finish(problems,payload);
 }
