@@ -171,3 +171,13 @@ Owners, reviewer identities, legal agreements, secrets, current CRL/OCSP chains,
 `productionReleaseAuthorized = false` · `productionReleaseBlocked = true` · `releaseDecision = HOLD`.
 
 Internal CI proves only that the current tested implementation and safeguards execute; it is not a third-party security audit or independent WORM/DR certificate. **Do not describe completion of all modules or full production readiness as achieved.**
+
+## Phase 1CA CI job/YAML shadowing HOLD (18 November 2026)
+
+- [x] Extended existing Phase 1BZ deny-only source verification to reject duplicate or shadowed YAML root keys, changed job order/count, unbounded or non-24.04 runner jobs, job-level token escalation, bypassed PR-only lineage condition, extra GitHub expression injection and selected YAML ambiguity. The eight expected jobs and only two restricted read-only job-level permissions maps are explicitly checked. New 1CA adversarial test cases live in `tests/phase1bz-actions-pin.test.mjs`; see `docs/phase-1/PHASE_1CA_CI_JOB_SCOPE_AND_YAML_DRIFT_HOLD.md`.
+- [x] Corrected a first intermediate source-replacement defect; fixed validator was re-evaluated against actual checked-in workflow (0 1CA shape anomalies) and 16 modified workflow examples (16 rejected). This local check is not hosted CI or independent authority. Source files pushed **only to `chore/phase0-foundation-20261106`**; PR #1 remains Draft and Issue #2 OPEN.
+- [ ] Confirm the exact final development HEAD's complete hosted push and PR CI jobs and reviewer status. A queued, in-progress or partially successful workflow is never full-green release evidence.
+- [ ] Global zero Critical/High advisory still blocks release: `picomatch@4.0.7` `GHSA-fc5q-39xc-vjpf` / `CVE-2026-112366`; do not accept unverified fabricated patched versions, dev-only graph exclusions or waived baseline findings.
+- [ ] Independently verify `main` branch protections, actual non-author Security/business reviews, signed CI provenance, independently witnessed off-platform WORM/DR, externally approved CCA/RCAI/eMudhra and live CRL/OCSP, MCA/GST company/signatory authenticity, real staging and distinct Security/Owner/Legal/Ops release signatures. No local workflow validator constitutes this authority.
+
+**Phase 1CA decision:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. No `main` merge, live provider API operation, customer dispatch/quote issuance, supplier PO/GRN/stock or finance/tax posting, production deployment or autonomous customer messaging.
