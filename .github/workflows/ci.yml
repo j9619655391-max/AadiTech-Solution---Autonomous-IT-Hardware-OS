@@ -87,6 +87,8 @@ jobs:
           exit 0
       - name: Generate machine-readable dependency risk triage
         run: node scripts/triage-dependencies.mjs dependency-audit.json dependency-triage.json
+      - name: Phase 1CK isolate real Picomatch tiny advisory patterns and corroborate entire frozen-lock audit (HARD HOLD)
+        run: node scripts/phase1ck-picomatch-bounded-adjudication.mjs --ci-hold
       - name: Block unreviewed new or escalated dependency advisories
         run: node scripts/check-dependency-baseline.mjs dependency-audit.json dependency-triage.json docs/security/dependency-advisory-baseline.json
       - name: Verify patched dependency versions and zero critical/high advisory matches
@@ -112,6 +114,7 @@ jobs:
             dependency-audit.json
             dependency-triage.json
             dependency-baseline-status.json
+            phase1ck-real-picomatch-bounded-worker-hold.json
           if-no-files-found: warn
       - name: Record architecture blockers (non-gating)
         if: always()
