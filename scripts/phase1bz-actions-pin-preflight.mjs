@@ -113,7 +113,10 @@ function phase1caWorkflowShapeAnomalies(input) {
   // pull_request.head.sha (no arbitrary event body, PR author text or
   // additional privilege). These must occur only inside the named CL step.
   'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
-  'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}'
+  'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
+  // Phase 1CN reuses the existing GitHub read-only token in the exact
+  // named source-bound ruleset inventory observer step, never a PAT/secret.
+  'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}'
  ];
  if(expressions.length!==allowed.length||
     expressions.some((value,index)=>value!==allowed[index]))
@@ -132,6 +135,17 @@ function phase1caWorkflowShapeAnomalies(input) {
  if(clIndex<0||lines.slice(clIndex,clIndex+clExpected.length).join('|')!==
     clExpected.join('|')||lines.filter(x=>x===clHeader).length!==1)
   errors.add('CA_UNREVIEWED_PHASE1CL_READONLY_STEP_OR_SOURCE_BINDING');
+ const cnHeader='      - name: Phase 1CN actual GitHub main ruleset inventory and hidden bypass actor visibility (HARD HOLD)';
+ const cnIndex=lines.indexOf(cnHeader);
+ const cnExpected=[
+  cnHeader,
+  '        env:',
+  '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  '        run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold'
+ ];
+ if(cnIndex<0||lines.slice(cnIndex,cnIndex+cnExpected.length).join('|')!==
+    cnExpected.join('|')||lines.filter(x=>x===cnHeader).length!==1)
+  errors.add('CA_UNREVIEWED_PHASE1CN_READONLY_RULESET_STEP_OR_SOURCE_BINDING');
  if(lines.some(x=>/^\s*(?:<<\s*:|[a-z][a-z-]*:\s*[&*!][^\s])/.test(x)))
   errors.add('CA_UNREVIEWED_YAML_MERGE_OR_TAG');
  return [...errors].sort();
