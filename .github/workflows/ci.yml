@@ -137,6 +137,8 @@ jobs:
         run: node scripts/phase1cc-ci-evidence-envelope.mjs --ci-hold
       - name: Phase 1CD detached independent signer WORM/DR anti-rollback prerequisites zero-input HARD HOLD
         run: node scripts/phase1cd-external-custody-preflight.mjs --ci-hold
+      - name: Phase 1CE two-witness RFC6962 fork and retrieved archive byte verification zero-input HARD HOLD
+        run: node scripts/phase1ce-cross-witness-retrieval-preflight.mjs --ci-hold
       - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -147,6 +149,7 @@ jobs:
             phase1bz-actions-pin-hold.json
             phase1cc-unsigned-source-receipt-hold.json
             phase1cd-zero-input-external-custody-hold.json
+            phase1ce-zero-input-cross-witness-hold.json
           if-no-files-found: warn
 
   review-vendor-intake-hold:
