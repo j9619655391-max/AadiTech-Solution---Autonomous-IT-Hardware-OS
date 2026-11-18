@@ -59,6 +59,8 @@ function signatureBytes(value){
  return b.length===64&&b.toString('base64')===value?b:null;
 }
 function checkStatement({s,role,context,envelope,anchor,now,accepted}){
+ if(!object(s)||!object(envelope?.body))
+  return ['CD_CLAIM_CONTEXT_OR_SCHEMA_'+role];
  const issues=[];
  if(!strictKeys(s,[...baseKeys,...extraKeys[role]])||
     s.schemaVersion!==1||s.type!==role||
