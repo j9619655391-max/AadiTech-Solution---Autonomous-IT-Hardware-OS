@@ -245,6 +245,8 @@ jobs:
         run: bun install --frozen-lockfile --production
       - name: Verify locked production graph and dev-only Vite server import
         run: node scripts/phase1bt-production-scope.mjs
+      - name: Phase 1CI enumerate actual Picomatch inbound Bun lock edges and unsafe dev exposure (HARD HOLD)
+        run: node scripts/phase1ci-picomatch-exposure-preflight.mjs --ci-hold
       - name: Prove unpatched picomatch and Vite were not installed in production-only tree
         run: |
           for directory in node_modules/picomatch node_modules/vite node_modules/@vitejs/plugin-react node_modules/@tailwindcss/vite; do
@@ -259,7 +261,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bt-held-production-dependency-closure
-          path: phase1bt-production-closure-report.json
+          path: |
+            phase1bt-production-closure-report.json
+            phase1ci-locked-matchers-exposure-hold.json
           if-no-files-found: warn
 
   mysql-integration:
