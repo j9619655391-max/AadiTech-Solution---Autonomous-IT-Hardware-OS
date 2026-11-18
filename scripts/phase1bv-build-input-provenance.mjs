@@ -10,6 +10,7 @@ import {readBunLock} from './phase1bt-production-scope.mjs';
 export const BUILD_INPUT_PATHS=Object.freeze([
  '.github/workflows/ci.yml',
  'bun.lock',
+ 'docs/security/phase1cm-main-ruleset-PROPOSAL-UNAPPLIED.json',
  'index.html',
  'package.json',
  'scripts/phase1bt-production-scope.mjs',
@@ -20,6 +21,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1cj-advisory-withdrawal-quarantine.mjs',
  'scripts/phase1ck-picomatch-bounded-adjudication.mjs',
  'scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs',
+ 'scripts/phase1cm-admin-ruleset-reviewer-handoff.mjs',
  'scripts/phase1ck-picomatch-worker.cjs',
  'scripts/phase1ci-picomatch-exposure-preflight.mjs',
  'scripts/phase1cc-ci-evidence-envelope.mjs',
@@ -39,6 +41,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'tests/phase1cj-advisory-withdrawal-quarantine.test.mjs',
  'tests/phase1ck-picomatch-bounded-adjudication.test.mjs',
  'tests/phase1cl-live-codeowners-reviewer-onboarding.test.mjs',
+ 'tests/phase1cm-admin-ruleset-reviewer-handoff.test.mjs',
  'tests/phase1ci-picomatch-exposure-preflight.test.mjs',
  'tests/phase1cc-ci-evidence-envelope.test.mjs',
  'tests/phase1cd-external-custody-preflight.test.mjs',
