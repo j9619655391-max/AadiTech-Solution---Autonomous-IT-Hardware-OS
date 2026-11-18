@@ -210,6 +210,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
+      checks: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
@@ -229,6 +231,10 @@ jobs:
         run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold
       - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)
         run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold
+      - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold
       - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -239,6 +245,7 @@ jobs:
             phase1cl-live-codeowners-reviewer-onboarding-hold.json
             phase1cn-official-ruleset-bypass-reconciliation-hold.json
             phase1co-live-exact-head-independent-reviewer-hold.json
+            phase1cp-github-actions-app-check-source-hold.json
           if-no-files-found: warn
 
   source-merge-lineage-hold:
