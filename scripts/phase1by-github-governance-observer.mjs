@@ -105,6 +105,8 @@ export async function collectReadonlyGithubSnapshot({
   repository:environment.GITHUB_REPOSITORY??null,
   githubRef:environment.GITHUB_REF??null,
   githubSha:environment.GITHUB_SHA??null,
+  eventHeadSha:environment.GITHUB_EXPECTED_PR_HEAD_SHA??null,
+  eventBaseSha:environment.GITHUB_EXPECTED_PR_BASE_SHA??null,
   githubHeadRef:environment.GITHUB_HEAD_REF??null,
   githubBaseRef:environment.GITHUB_BASE_REF??null,
   eventName:environment.GITHUB_EVENT_NAME??null,
@@ -197,6 +199,12 @@ export function assessObservedGithubGovernance(snapshot,{expectedRepository=REPO
   pr?.base?.repo?.full_name===REPO&&
   pr?.head?.repo?.full_name===REPO&&
   SHA.test(pr?.head?.sha??'')&&SHA.test(pr?.base?.sha??'');
+ const exactGitHubEventSource=SHA.test(snapshot.eventHeadSha??'')&&
+  SHA.test(snapshot.eventBaseSha??'')&&
+  snapshot.eventHeadSha===pr?.head?.sha&&
+  snapshot.eventBaseSha===pr?.base?.sha;
+ if(!exactGitHubEventSource)
+  anomalies.add('BY_PR_SOURCE_HEAD_OR_BASE_DRIFT_FROM_EVENT');
  if(!correctRepo||!correctPR)anomalies.add('BY_PR_REPO_OR_DRAFT_IDENTITY_MISMATCH');
  const ciRefGood=snapshot.eventName==='pull_request'&&
   snapshot.githubRef==='refs/pull/1/merge'&&
@@ -237,6 +245,7 @@ export function assessObservedGithubGovernance(snapshot,{expectedRepository=REPO
   endpointStatuses,
   githubRepoContextMatched:correctRepo,
   observedPrDraftAndUnmerged:correctPR,
+  eventSourceHeadAndBaseMatch:exactGitHubEventSource,
   observedDevHeadSha:correctPR?pr.head.sha:null,
   observedBaseSha:correctPR?pr.base.sha:null,
   observedPrMergeSha:mergeMatches?snapshot.githubSha:null,
