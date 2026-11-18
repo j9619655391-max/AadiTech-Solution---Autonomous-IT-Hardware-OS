@@ -127,19 +127,22 @@ export function assessIndependentCustody({
  now='2026-11-18T12:00:00.000Z'
 }={}){
  const errors=new Set();
+ if(!object(context)){errors.add('CD_MALFORMED_RUN_CONTEXT');context={};}
+ if(!object(enrollments)){errors.add('CD_MALFORMED_ENROLLMENT_REGISTRY');enrollments={};}
+ if(!object(checkpoints)){errors.add('CD_MALFORMED_CHECKPOINT_REGISTRY');checkpoints={};}
  const nowMs=date(now);
  if(!Number.isFinite(nowMs))errors.add('CD_INVALID_VERIFICATION_CLOCK');
  if(!object(envelope)||!verifyUnsignedEnvelopeDigest(envelope)||
    envelope.localSourceAndArtifactsConsistent!==true||
-   envelope.body?.phase!=='1CC'||
-   envelope.body?.kind!=='UNSIGNED_SOURCE_BOUND_CI_RECEIPT'||
-   envelope.body?.repository!==REPO||
-   envelope.body?.sourceAndReceiptAnomalyCodes?.length!==0||
-   !SHA.test(envelope.body?.sourceHeadSha??'')||
-   !SHA.test(envelope.body?.checkedOutSha??'')||
-   !DIGEST.test(envelope.body?.selectedInputBundleSha256??'')||
-   envelope.body?.unsignedGithubArtifactOnly!==true||
-   envelope.body?.globalZeroCriticalHighAuditPassed!==false)
+   envelope?.body?.phase!=='1CC'||
+   envelope?.body?.kind!=='UNSIGNED_SOURCE_BOUND_CI_RECEIPT'||
+   envelope?.body?.repository!==REPO||
+   envelope?.body?.sourceAndReceiptAnomalyCodes?.length!==0||
+   !SHA.test(envelope?.body?.sourceHeadSha??'')||
+   !SHA.test(envelope?.body?.checkedOutSha??'')||
+   !DIGEST.test(envelope?.body?.selectedInputBundleSha256??'')||
+   envelope?.body?.unsignedGithubArtifactOnly!==true||
+   envelope?.body?.globalZeroCriticalHighAuditPassed!==false)
   errors.add('CD_CI_SOURCE_ENVELOPE_UNTRUSTED_OR_TAMPERED');
  if(!object(context)||!Number.isSafeInteger(context.ciRunId)||
    context.ciRunId<1||context.ciJobId!=='build-input-provenance'||
@@ -251,9 +254,9 @@ function main(){
  if(env.CI!=='true'||env.GITHUB_ACTIONS!=='true'||
     env.GITHUB_REPOSITORY!==REPO||
     env.GITHUB_JOB!=='build-input-provenance'||
-    env.GITHUB_SHA!==envelope.body?.checkedOutSha||
-    env.GITHUB_EVENT_NAME!==envelope.body?.githubEventName||
-    env.GITHUB_REF!==envelope.body?.githubRef)
+    env.GITHUB_SHA!==envelope?.body?.checkedOutSha||
+    env.GITHUB_EVENT_NAME!==envelope?.body?.githubEventName||
+    env.GITHUB_REF!==envelope?.body?.githubRef)
   throw Error('CD observed GitHub CI job/source context mismatch');
  const run=Number(env.GITHUB_RUN_ID),attempt=Number(env.GITHUB_RUN_ATTEMPT);
  if(!Number.isSafeInteger(run)||run<1||
