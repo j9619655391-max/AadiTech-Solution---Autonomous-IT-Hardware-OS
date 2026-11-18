@@ -40,28 +40,36 @@
         "strict_required_status_checks_policy": true,
         "required_status_checks": [
           {
-            "context": "baseline"
+            "context": "baseline",
+            "integration_id": 15368
           },
           {
-            "context": "mysql-integration"
+            "context": "mysql-integration",
+            "integration_id": 15368
           },
           {
-            "context": "production-runtime-scope"
+            "context": "production-runtime-scope",
+            "integration_id": 15368
           },
           {
-            "context": "build-input-provenance"
+            "context": "build-input-provenance",
+            "integration_id": 15368
           },
           {
-            "context": "review-vendor-intake-hold"
+            "context": "review-vendor-intake-hold",
+            "integration_id": 15368
           },
           {
-            "context": "independent-evidence-hold"
+            "context": "independent-evidence-hold",
+            "integration_id": 15368
           },
           {
-            "context": "live-github-governance-hold"
+            "context": "live-github-governance-hold",
+            "integration_id": 15368
           },
           {
-            "context": "source-merge-lineage-hold"
+            "context": "source-merge-lineage-hold",
+            "integration_id": 15368
           }
         ]
       }
