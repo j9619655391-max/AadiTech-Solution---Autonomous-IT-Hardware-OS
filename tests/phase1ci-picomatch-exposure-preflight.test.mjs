@@ -138,6 +138,8 @@ test('CI: external CI ref and repository spoofing denied; commit identity must b
   GITHUB_REPOSITORY:'j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS',
   GITHUB_REF:'refs/pull/1/merge',GITHUB_SHA:'a'.repeat(40)};
  assert.equal(evaluate({environment:env}).localRealLockSelectedEntrypointsConsistent,true);
+ const nodeLikeEnv=Object.assign(Object.create(null),env);
+ assert.equal(evaluate({environment:nodeLikeEnv}).localRealLockSelectedEntrypointsConsistent,true);
  for(const variation of [
   {...env,GITHUB_REPOSITORY:'attacker/fork'},
   {...env,GITHUB_REF:'refs/heads/main'},
