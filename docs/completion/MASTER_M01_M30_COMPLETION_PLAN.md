@@ -383,3 +383,13 @@ Internal CI proves only that the current tested implementation and safeguards ex
 - [ ] Real independent Security and Business reviewer mandates, enforceable main CODEOWNERS/rulesets/no bypass, externally signed CI attestations and immutable WORM Object Lock/DR, legally verified eMudhra/CCA/RCAI/MCA and independent approved staging remain mandatory, and Issue #2 remains open.
 
 **Release policy:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. PR #1 Draft/unmerged, `main` unchanged. No customer/supplier/provider real-world operations.
+
+
+## Phase 1CT — completed push/PR dual-event check/job reconciliation and independent governance handoff (19 November 2026 IST)
+
+- [x] Added `scripts/phase1ct-dual-event-postrun-governance.mjs`, an **operator-invoked only**, official GitHub REST GET-only verifier for the same current PR HEAD and both separately completed push and PR suites. It demands exact source/development ref, PR head/base/merge SHA/updated-at race stability; eight app-bound, current-attempt same-ID Checks/Actions Jobs in each independent suite; PR must have **8/8 success**, push **7 successes + precisely the PR-only merge-lineage job skipped**. An extra/ambiguous/duplicate result, cross-suite borrowing, old SHA, missing endpoint or different workflow fails closed. It emits only an unsigned technical checksum and permanently-held production flags.
+- [x] Added **16** targeted adversarial test groups at `tests/phase1ct-dual-event-postrun-governance.test.mjs`; exact Phase 1BV/BW selected-source custody now includes Phase 1CT code and tests. There is **no new Actions workflow/job, changed action SHA, permission escalation, write API, OIDC token, merge or staging call**. See `docs/phase-1/PHASE_1CT_DUAL_EVENT_COMPLETED_RUNS_INDEPENDENT_REVIEWER_HANDOFF_HOLD.md`.
+- [ ] Verify the exact final pushed Phase 1CT commit on new GitHub-hosted push and PR runs; inspect all eight job records per suite and actual frozen audit/MySQL/browser test evidence. Update Draft PR #1 and Issue #2 with observed results only.
+- [ ] Independent Security + Business mandates, genuine latest-head nonauthor approvals, securely verified reviewer keys and legally authenticated signatories, enforceable installed main CODEOWNERS/rulesets with no admin/app bypass, independently signed CI/SLSA/OIDC, genuine eMudhra/CCA/RCAI and MCA authority, immutable external WORM/DR and authorized staging remain unresolved.
+
+**Release HARD HOLD:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`; PR #1 Draft/unmerged, `main` unchanged, Issue #2 open, no live customer/supplier/provider actions.
