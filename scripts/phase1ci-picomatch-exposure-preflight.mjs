@@ -151,7 +151,11 @@ export function assessLockedPicomatchExposure({
   problems.add('CI_DEV_SERVER_LOOPBACK_AND_RESTRICTED_MATCHER_BOUNDARY_DRIFT');
  if(!/process\.env\.DISABLE_HMR\s*===\s*['"]true['"]\s*\?\s*null\s*:\s*\{\s*\}/.test(serverBlock??''))
   problems.add('CI_DEV_WATCHER_ISOLATION_OPTION_MISSING');
- if(!obj(environment))problems.add('CI_UNTRUSTED_RUN_CONTEXT');
+ // Node's real process.env has a special prototype; require a non-array
+ // object and validate each native GitHub identity field instead of requiring
+ // the prototype to be Object.prototype.
+ if(environment===null||typeof environment!=='object'||Array.isArray(environment))
+  problems.add('CI_UNTRUSTED_RUN_CONTEXT');
  else if(environment.CI==='true'||environment.GITHUB_ACTIONS==='true'){
   // GitHub Actions supplies GITHUB_ACTIONS; the optional generic CI variable
   // is not a workload-identity guarantee. Never allow an unrecognized
