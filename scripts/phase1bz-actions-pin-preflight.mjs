@@ -63,7 +63,7 @@ function phase1caWorkflowShapeAnomalies(input) {
  if(starts.map(x=>x.name).join('|')!==expectedNames.join('|'))
   errors.add('CA_UNREVIEWED_OR_MISSING_CI_JOB');
  const expectedPermissions={
-  'live-github-governance-hold':['    permissions:','      contents: read','      pull-requests: read'],
+  'live-github-governance-hold':['    permissions:','      contents: read','      pull-requests: read','      actions: read','      checks: read'],
   'source-merge-lineage-hold':['    permissions:','      contents: read']
  };
  for(let i=0;i<starts.length;i++){
@@ -116,6 +116,9 @@ function phase1caWorkflowShapeAnomalies(input) {
   'GITHUB_EXPECTED_PR_HEAD_SHA: '+expressionToken+' github.event.pull_request.head.sha }}',
   // Phase 1CN reuses the existing GitHub read-only token in the exact
   // named source-bound ruleset inventory observer step, never a PAT/secret.
+  'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  // Phase 1CP reuses the same read-only Github token to fetch the current
+  // exact run and real check-runs. Only actions:read/checks:read, no writes.
   'GITHUB_READ_TOKEN: '+expressionToken+' github.token }}'
  ];
  if(expressions.length!==allowed.length||
@@ -153,6 +156,15 @@ function phase1caWorkflowShapeAnomalies(input) {
  if(coIndex<0||lines.slice(coIndex,coIndex+coExpected.length).join('|')!==
     coExpected.join('|')||lines.filter(x=>x===coHeader).length!==1)
   errors.add('CA_UNREVIEWED_PHASE1CO_EXACT_READONLY_OPERATOR_STEP');
+ const cpHeader='      - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)';
+ const cpIndex=lines.indexOf(cpHeader);
+ const cpExpected=[cpHeader,
+  '        env:',
+  '          GITHUB_READ_TOKEN: '+expressionToken+' github.token }}',
+  '        run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold'];
+ if(cpIndex<0||lines.slice(cpIndex,cpIndex+cpExpected.length).join('|')!==
+    cpExpected.join('|')||lines.filter(x=>x===cpHeader).length!==1)
+  errors.add('CA_UNREVIEWED_PHASE1CP_EXACT_RUN_CHECK_APP_READONLY_STEP');
  if(lines.some(x=>/^\s*(?:<<\s*:|[a-z][a-z-]*:\s*[&*!][^\s])/.test(x)))
   errors.add('CA_UNREVIEWED_YAML_MERGE_OR_TAG');
  return [...errors].sort();
