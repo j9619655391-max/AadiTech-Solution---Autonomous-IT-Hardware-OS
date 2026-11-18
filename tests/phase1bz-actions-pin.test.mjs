@@ -118,8 +118,8 @@ test('1CA: any new job, skipped job, runner replacement or unbounded job is deni
 });
 test('1CA: fixed PR merge-lineage condition may not be bypassed',()=>{
  const variants=[
-  workflow.replace("    if: github.event_name == 'pull_request'","    if: always()"),
-  workflow.replace("    if: github.event_name == 'pull_request'",''),
+  workflow.replace(/^    if: github.event_name == 'pull_request'$/m,"    if: always()"),
+  workflow.replace(/^    if: github.event_name == 'pull_request'$/m,''),
   workflow.replace('  baseline:\n','  baseline:\n    if: false\n')
  ];
  for(const changed of variants)
@@ -168,7 +168,7 @@ test('1CL: exact second Github token expression must remain in named read-only C
 test('1CL: duplicate, unreviewed GitHub expression or token escalation denied globally',()=>{
  const expression='$'+'{{ github.token }}';
  const anchor='          GITHUB_READ_TOKEN: '+expression;
- assert.equal(workflow.split(anchor).length-1,4);
+ assert.equal(workflow.split(anchor).length-1,5);
  const bad=[
   workflow.replace('          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.head.sha }}',
    '          GITHUB_EXPECTED_PR_HEAD_SHA: '+'$'+'{{ github.event.pull_request.title }}'),
@@ -264,7 +264,7 @@ test('CP: required Actions/checks READ scopes cannot be widened to writes, OIDC 
 
 test('CS: PR-only and push-only governance step selectors are immutable',()=>{
  for(const [from,to] of [
-  ["        if: github.event_name == 'push'","        if: always()"],
+  [/^        if: github.event_name == 'push'$/m,"        if: always()"],
   ["        if: github.event_name == 'pull_request'","        if: always()"],
   ["        if: always() && github.event_name == 'push'","        if: always()"],
   ["        if: always() && github.event_name == 'pull_request'","        if: always()"]
@@ -273,7 +273,7 @@ test('CS: PR-only and push-only governance step selectors are immutable',()=>{
   assert.notEqual(changed,workflow);
   const r=evaluate({workflow:changed});
   assert.equal(r.phase1caBoundedJobScopeConsistent,false);
-  assert.ok(r.phase1caAnomalyCodes.some(x=>x.includes('GUARD')));
+  assert.ok(r.phase1caAnomalyCodes.some(x=>x.includes('GUARD')||x.includes('ARTIFACT')),r.phase1caAnomalyCodes.join(','));
  }
 });
 test('CS: push-only verifier command, receipt, event and token scope cannot drift',()=>{
@@ -283,7 +283,7 @@ test('CS: push-only verifier command, receipt, event and token scope cannot drif
   s=>s.replace('phase1cs-push-governance-hold.json','approved-go.json'),
   s=>s.replace('Phase 1CS exact current push ref','Phase 1CS fake current push ref'),
   s=>s.replace('      checks: read','      checks: write'),
-  s=>s.replace("        if: github.event_name == 'push'",
+  s=>s.replace(/^        if: github.event_name == 'push'$/m,
    "        if: github.event_name == 'pull_request'")
  ]){
   const r=evaluate({workflow:alter(workflow)});

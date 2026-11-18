@@ -80,7 +80,7 @@ export function assessCiSourceReceipt({
     bz.publisherIdentityIndependentlyVerified!==false||
     bz.actionExecutionAndRunnerIndependentlyAttested!==false||
     bz.externalWormRetentionVerified!==false||
-    bz.selectedActionUses!==20||
+    bz.selectedActionUses!==21||
     bz.selectedWorkflowSha256!==sha256(sources['.github/workflows/ci.yml']??'')||
     JSON.stringify(bz.selectedWorkflowFiles)!==JSON.stringify(['ci.yml'])||
     JSON.stringify(bz.expectedPinnedActionCommitIds)!==JSON.stringify(REVIEWED_ACTIONS))
