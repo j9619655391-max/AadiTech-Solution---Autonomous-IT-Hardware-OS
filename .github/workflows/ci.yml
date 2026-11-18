@@ -150,12 +150,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Phase 1BW independent reviewer/ruleset and genuine vendor patch intake HARD HOLD
         run: node scripts/phase1bw-review-vendor-intake.mjs --ci-hold
+      - name: Phase 1CB observe public GHSA and OSV advisory disagreement (deny release, no credentials)
+        run: node scripts/phase1cb-public-advisory-observer.mjs --ci-hold
       - name: Archive unsigned blocked review and vendor patch intake (NOT approval)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: phase1bw-blocked-review-vendor-intake
-          path: phase1bw-held-review-vendor-report.json
+          path: |
+            phase1bw-held-review-vendor-report.json
+            phase1cb-public-advisory-hold.json
           if-no-files-found: warn
 
   independent-evidence-hold:
