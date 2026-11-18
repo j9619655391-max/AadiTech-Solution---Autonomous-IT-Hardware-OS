@@ -138,22 +138,40 @@ export function assessLockedPicomatchExposure({
   problems.add('CI_SERVER_ENTRYPOINT_IMPORTS_VULNERABLE_BUILD_MATCHER');
  if(importRx.test(viteConfigSource))
   problems.add('CI_UNREVIEWED_VITE_CONFIG_MATCHER_IMPORT');
- if(!/host:\s*['"]127\.0\.0\.1['"]/.test(viteConfigSource)||
-    !/allowedHosts:\s*\[\s*['"]localhost['"]\s*,\s*['"]127\.0\.0\.1['"]\s*\]/.test(viteConfigSource)||
-    !/strictPort:\s*true/.test(viteConfigSource)||
-    !/cors:\s*false/.test(viteConfigSource)||
-    !/hmr:\s*false/.test(viteConfigSource)||
-    !/fs:\s*\{\s*strict:\s*true\s*\}/.test(viteConfigSource))
+ const serverBlock=viteConfigSource.match(/\bserver:\s*\{([\s\S]{0,2600}?)\n\s{4}\},\s*preview:\s*\{/)?.[1];
+ const previewBlock=viteConfigSource.match(/\bpreview:\s*\{([\s\S]{0,1500}?)\n\s{4}\},/)?.[1];
+ const isLocalOnly=block=>typeof block==='string'&&
+   /host:\s*['"]127\.0\.0\.1['"]/.test(block)&&
+   /allowedHosts:\s*\[\s*['"]localhost['"]\s*,\s*['"]127\.0\.0\.1['"]\s*\]/.test(block)&&
+   /strictPort:\s*true/.test(block)&&
+   /cors:\s*false/.test(block);
+ if(!isLocalOnly(serverBlock)||!isLocalOnly(previewBlock)||
+    !/hmr:\s*false/.test(serverBlock??'')||
+    !/fs:\s*\{\s*strict:\s*true\s*\}/.test(serverBlock??''))
   problems.add('CI_DEV_SERVER_LOOPBACK_AND_RESTRICTED_MATCHER_BOUNDARY_DRIFT');
- if(!/process\.env\.DISABLE_HMR\s*===\s*['"]true['"]\s*\?\s*null\s*:\s*\{\s*\}/.test(viteConfigSource))
+ if(!/process\.env\.DISABLE_HMR\s*===\s*['"]true['"]\s*\?\s*null\s*:\s*\{\s*\}/.test(serverBlock??''))
   problems.add('CI_DEV_WATCHER_ISOLATION_OPTION_MISSING');
  if(!obj(environment))problems.add('CI_UNTRUSTED_RUN_CONTEXT');
  else if(environment.CI==='true'||environment.GITHUB_ACTIONS==='true'){
-  if(environment.CI!=='true'||environment.GITHUB_ACTIONS!=='true'||
-    environment.GITHUB_REPOSITORY!==REPO||
-    !SHA.test(environment.GITHUB_SHA??'')||
-    !/^(?:refs\/pull\/1\/merge|refs\/heads\/chore\/phase0-foundation-20261106)$/.test(environment.GITHUB_REF??''))
+  // GitHub Actions supplies GITHUB_ACTIONS; the optional generic CI variable
+  // is not a workload-identity guarantee. Never allow an unrecognized
+  // repository/ref/SHA even when that generic CI marker is absent.
+  if(environment.GITHUB_ACTIONS!=='true'){
+   problems.add('CI_GITHUB_ACTIONS_RUN_MARKER_MISSING');
    problems.add('CI_UNTRUSTED_RUN_CONTEXT');
+  }
+  if(environment.GITHUB_REPOSITORY!==REPO){
+   problems.add('CI_GITHUB_REPOSITORY_INVALID');
+   problems.add('CI_UNTRUSTED_RUN_CONTEXT');
+  }
+  if(!SHA.test(environment.GITHUB_SHA??'')){
+   problems.add('CI_GITHUB_SHA_INVALID');
+   problems.add('CI_UNTRUSTED_RUN_CONTEXT');
+  }
+  if(!/^(?:refs\/pull\/1\/merge|refs\/heads\/chore\/phase0-foundation-20261106)$/.test(environment.GITHUB_REF??'')){
+   problems.add('CI_GITHUB_REF_INVALID');
+   problems.add('CI_UNTRUSTED_RUN_CONTEXT');
+  }
  }
  return createResult(problems,baseline,parents,prod.route??[],
    devRoots, {via,representative:directDev.route,overflow:prod.overflow||directDev.overflow},keys.length);
