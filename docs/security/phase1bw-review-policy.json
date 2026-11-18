@@ -23,7 +23,8 @@
       "build-input-provenance",
       "review-vendor-intake-hold",
       "independent-evidence-hold",
-      "live-github-governance-hold"
+      "live-github-governance-hold",
+    "source-merge-lineage-hold"
     ],
     "requireExactHeadRevalidation": true,
     "requireSeparateSecurityReviewer": true,
