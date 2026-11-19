@@ -183,7 +183,7 @@ test('CW: missing operator pin, unpinned substitution or expired key is refused'
   assert.equal(r.productionReleaseAuthorized,false);
  }
 });
-test('CW: CV signer's pinned public key cannot be substituted midstream',()=>{
+test('CW: CV signer pinned public key cannot be substituted midstream',()=>{
  denied(x=>{x.cvEvidence.registry.SECURITY_WITNESS.spkiSha256='b'.repeat(64)},
   'CW_PRECEDING_1CV_CANDIDATE_MATHEMATICS_INVALID');
  denied(x=>{x.roster.BUSINESS_WITNESS.keyId='different-business-id'},

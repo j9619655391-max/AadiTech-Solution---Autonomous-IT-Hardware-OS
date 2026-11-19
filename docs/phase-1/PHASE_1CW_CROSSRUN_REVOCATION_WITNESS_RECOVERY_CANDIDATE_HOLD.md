@@ -68,3 +68,8 @@ After pushing, verify the **new final commit's** GitHub Actions push and PR runs
 **Current real blockers at phase start (20 Nov 2026):** GitHub submitted PR reviews **0**, installed rulesets **0**, actual `main` CODEOWNERS unavailable; no independently approved corporate Security/Business nominator keys, live revocation source, offsite immutable checkpoint/DR, provider authority, MCA/CCA/eMudhra onboarding or external staging approvals. No real off-repo candidate verified or external key enrollment claimed.
 
 **Release remains HARD HOLD — no live customer/supplier/provider actions, finance posting, merge or deployment.**
+
+
+## Initial GitHub CI failure record — retained, never relabel green
+
+The first Phase 1CW commit `6cc8112a69713748dfcecee1dc3c9c79bdc90df3` triggered push run [44632315888](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44632315888) and PR run [44632328257](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44632328257). Both initial **baseline** jobs FAILED the Typecheck stage. Hosted log reported `TS1005`/`TS1002` syntax failures at line 186 of `tests/phase1cw-crossrun-revocation-recovery-candidate.test.mjs`: the single-quoted test description had an unescaped apostrophe in `signer's`. The runtime verifier did not grant external GO; this was a test parser typo, not a verified successful baseline. Corrective action changes only that test description to `CV signer pinned public key`. New exact-commit push+PR CI must pass separately before declaring Phase 1CW internal engineering verified. Do not suppress, reinterpret or overwrite the initial failed results.
