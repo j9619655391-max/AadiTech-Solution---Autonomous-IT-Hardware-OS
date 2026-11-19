@@ -83,7 +83,9 @@ function packet(){
    signature:sign(null,candidateSigningBytes(statement),privateKey).toString('base64')});
  }
  return {
-  before:snapshot,after:assessGovernanceFingerprint(structuredClone(source())),
+  // Real reports are frozen receipts; test mutations require explicit copies.
+  before:structuredClone(snapshot),
+  after:structuredClone(assessGovernanceFingerprint(structuredClone(source()))),
   statement,signatures,registry:keys,
   checkpoint:{epoch:42,lastDigest:'e'.repeat(64),
    observedAt:'2026-11-19T11:50:00.000Z'},now:NOW

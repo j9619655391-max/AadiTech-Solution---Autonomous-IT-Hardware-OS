@@ -95,3 +95,10 @@ The existing GitHub Actions workflow `ci.yml`, jobs, pinned third-party actions,
 **Evidence status at phase start:** No genuine appointed Security+Business reviewers, real main CODEOWNERS/rulesets, eMudhra/MCA approval, external attestation credential or trusted off-repo high-watermark is available. The operator commands have **not** been run with genuine external authority. New hosted push and PR CI must be verified at the final Phase 1CV commit before this document can claim this implementation passed hosted CI.
 
 **Final standing decision: production HARD HOLD.**
+
+
+## Hosted initial-run failure record (retain; do not relabel green)
+
+- Initial Phase 1CV push workflow **[44577151898](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44577151898)** and PR workflow **[44577168849](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44577168849)** were started against commit `0b9d2178fc5612387b28f925bb412b232555d125`. Both **baseline test jobs FAILED** with the same test-only TypeError.
+- Hosted JS test `CV: changed source SHA, main base or exact CI run IDs is a TOCTOU HOLD` attempted mutation of an intentionally `Object.freeze`-protected actual `assessGovernanceFingerprint` technical receipt; error: `Cannot assign to read only property 'currentHeadSha'`. This represents a **test fixture mutation bug**, not proof that policy drift was accepted, and was not silently ignored.
+- Corrective action: create independent `structuredClone` copies of the frozen receipts **only inside the test fixture** before adversarial mutations; leave production Phase 1CV read-only evaluation and fail-closed behavior unchanged. Re-run hosted CI at the new corrective commit and record its distinct push/PR workflow IDs. This initial pair must remain explicitly **FAILED** even if later runs pass.
