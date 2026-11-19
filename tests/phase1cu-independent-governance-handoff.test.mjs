@@ -84,6 +84,9 @@ test('CU: synthetic complete technical handoff never grants legal mandate, OIDC 
  assert.equal(r.technicalGovernanceHandoffPreconditionsObserved,true,
   r.sourceReviewCodes.join(';'));
  assert.equal(r.actualMainBaseStableAcrossAllSources,true);
+ assert.equal(r.verifiedMainBaseSha,BASE);
+ assert.equal(r.pushRunId,111);
+ assert.equal(r.prRunId,222);
  assert.equal(r.installedMainCodeownersExactNominatedBytesMatched,true);
  assert.equal(r.exactActiveMainRulesAndNoBypassFieldsObservable,true);
  assert.equal(r.distinctNominatedLatestHeadTechnicalGithubApprovalsMatched,true);

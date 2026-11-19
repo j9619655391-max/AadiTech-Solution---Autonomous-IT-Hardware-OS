@@ -220,7 +220,10 @@ export function assessIndependentGovernanceHandoff({
   ct.officialPrUnchangedAcrossAllReads===true&&
   ct.sourceBranchAndPrHeadMatch===true&&
   ct.sourceHeadSha===head&&ct.baseSha===base&&
-  ct.productionReleaseAuthorized===false&&ct.releaseDecision==='HOLD';
+  ct.productionReleaseAuthorized===false&&ct.releaseDecision==='HOLD'&&
+  Number.isSafeInteger(ct.pushRunId)&&ct.pushRunId>0&&
+  Number.isSafeInteger(ct.prRunId)&&ct.prRunId>0&&
+  ct.pushRunId!==ct.prRunId;
  if(!dual)errors.add('CU_COMPLETED_EXACT_HEAD_PUSH_PR_EVIDENCE_NOT_VERIFIED');
  const reviewers=co?.phase==='1CO'&&
   co.twoDistinctNominatedLatestHeadTechnicalApprovalsObserved===true&&
@@ -251,6 +254,8 @@ export function assessIndependentGovernanceHandoff({
   kind:'OPERATOR_ONLY_CROSS_SOURCE_REVIEWER_MAIN_PROTECTION_HANDOFF_HOLD',
   repo:REPO,
   currentDevHeadSha:head,
+  verifiedMainBaseSha:main?base:null,
+  pushRunId:dual?ct.pushRunId:null,prRunId:dual?ct.prRunId:null,
   actualMainBaseStableAcrossAllSources:main,
   exactHeadPushAndPrTechnicalCiReceiptsMatched:dual,
   distinctNominatedLatestHeadTechnicalGithubApprovalsMatched:reviewers,
