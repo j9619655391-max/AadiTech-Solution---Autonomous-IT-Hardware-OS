@@ -236,7 +236,7 @@ export function assessCrossRunRecoveryCandidate({
     rec.checkpointDigest!==checkpointDigest||
     rec.revocationDigest!==revDigest||
     rec.objectVersion!==snap?.objectVersion||
-    rec.archivedDigest!==snap?.archiveDigest||
+    rec.archiveDigest!==snap?.archiveDigest||
     rec.primaryRegion!==snap?.primaryRegion||
     !/^[a-z]{2}-[a-z]+-\d$/.test(rec.recoveryRegion??'')||
     rec.recoveryRegion===snap?.primaryRegion||

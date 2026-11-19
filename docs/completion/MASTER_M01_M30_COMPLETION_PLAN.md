@@ -427,3 +427,6 @@ Internal CI proves only that the current tested implementation and safeguards ex
 
 
 **Phase 1CW initial CI failure and corrective evidence (20 Nov 2026):** First `6cc8112a69713748dfcecee1dc3c9c79bdc90df3` hosted push `44632315888` and PR `44632328257` baseline jobs FAILED Typecheck due to an unescaped apostrophe in a Phase 1CW test title (line 186, TS1005/TS1002). A separate corrective commit repairs only this test string; the failed CI history remains explicit. New hosted runs require independent verification before release status change; external governance HARD HOLD stays unchanged.
+
+
+**Phase 1CW second CI correction history (20 Nov 2026):** Against `cd3ad3cea0a685bf0cb2876d40e20e3c36b28eaa`, hosted push `44632580206` and PR `44632588284` baseline had **642/643 JavaScript pass** and one positive recovery test failed. The verifier used undefined `rec.archivedDigest` instead of the exact signed schema's required `rec.archiveDigest`. Corrected the field reference while retaining a strict matching archive digest gate; all initial and second failures remain documented. New hosted CI at the next commit must be separately verified before declaring engineering complete.
