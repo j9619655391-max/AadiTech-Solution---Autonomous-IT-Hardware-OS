@@ -174,7 +174,10 @@ test('DF: operator CLI is explicit, rejects GitHub Actions and is read-only',()=
  const text=readFileSync(resolve(dirname(fileURLToPath(import.meta.url)),
   '../scripts/phase1df-role-bound-readonly-reconciliation.mjs'),'utf8');
  for(const pattern of ["process.env.GITHUB_ACTIONS==='true'","--inspect-role-approvals-readonly",
-   'collectLiveActualGovernance','collectLiveReviewerEvidence','console.log(JSON.stringify(verdict'])
+   'collectLiveActualGovernance','collectLiveReviewerEvidence',
+   'console.log(JSON.stringify(safeReceipt'])
   assert.equal(text.includes(pattern),true,pattern);
+ assert.equal(text.includes('console.log(JSON.stringify(verdict'),false);
+ assert.equal(text.includes('opaqueReviewerRoleSessionHmacSha256:_privateBinding'),true);
  assert.equal(/method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/.test(text),false);
 });
