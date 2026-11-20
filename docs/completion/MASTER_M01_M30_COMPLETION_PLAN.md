@@ -662,6 +662,15 @@ Engineering SOURCE `4c5de3b8048a3f395a47586b9e3ff819d4fb76c1`: PR CI [4471701125
 - [x] Added strict role-and-step-domain-separated four-signature offline candidate handover to distinguish fully cross-signed prospective transitions from Phase 1DR unsigned key-label changes; previous and next LEGAL/REGISTRY Ed25519 key material is internally bound to role, keyId, SPKI, exact manifest and source/predecessor context. This is NOT genuine externally authenticated rollover.
 - [x] Signed transition forks, nonce reuse, key collisions, unpinned predecessors, forged GO/digests, invalid clocks and incident-recovery authorization gaps quarantine in immutable HOLD. Existing historical witness v1/v2 signatures are not upgraded. No source origin, trusted next checkpoint receipt or externally enrolled witness registry is verified.
 - [x] New source, adversarial Node tests, [Phase 1DS runbook](../phase-1/PHASE_1DS_CROSS_SIGNED_WITNESS_ROLLOVER_HARD_HOLD.md), and both Phase 1BV/1BW custody inventories updated.
-- [ ] Phase 1DS final exact-head GitHub push/PR CI success and mandatory job-level verification (must be checked against the final documentation-inclusive commit; never assume).
+- [x] Phase 1DS exact-head GitHub push/PR CI complete and successful at 51f65be0ab9771183132ca81e94180f0969a8edf: push 44828782015 (7 executed jobs success + PR-only skip), PR 44828790501 (8 jobs success), observed from GitHub Actions; no independent legal or release acceptance.
 - [ ] Independent Legal/Registry key registry, MCA corporate and signatory evidence, real observer publication/trusted time/revocation, protected-main nonauthor review, approved CCA/RCAI/eMudhra/CRL/OCSP and independently signed staging/DR acceptance remain absent.
 - **PRODUCTION HARD HOLD:** productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD; main unchanged, Draft PR #1 unmerged and Issue #2 open.
+
+
+## Phase 1DT — Offline rollover-to-next-v2 signed checkpoint continuity (21 November 2026 IST)
+
+- [x] Built a deny-only offline cross-envelope evaluator. The four fully verified Phase 1DS old/new role signatures must mathematically connect to actual fully dual-signed Phase 1DR next-v2 checkpoint packets, including signed new key IDs and SPKI, unchanged source/main/organization/previous checkpoint and SHA-256 digest. Cross-signed fork, v2 manifest/identity fork, digest mismatch, unsigned relabel, replays, stale time, recovery and fabricated GO remain quarantined.
+- [x] Added 15 synthetic adversarial Node test groups; both Phase 1BV/1BW source inventories include the new verifier and test. [Runbook](../phase-1/PHASE_1DT_SIGNED_ROLLOVER_V2_CHECKPOINT_CONTINUITY_HARD_HOLD.md).
+- [ ] Verify final docs-inclusive Phase 1DT exact-head push/PR GitHub CI runs and mandatory job conclusions; historical runs cannot substitute for the new commit.
+- [ ] Real Legal/MCA and Registry custody, independently authenticated external observer publication, trusted clock/previous head, revocation, protected main and nonauthor reviewers, CCA/RCAI/eMudhra and staging/WORM/DR independent approvals remain absent.
+- **PRODUCTION HARD HOLD:** productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD. PR #1 Draft/unmerged; Issue #2 open; main unchanged; no real keys, deployment or financial/customer/supplier actions.
