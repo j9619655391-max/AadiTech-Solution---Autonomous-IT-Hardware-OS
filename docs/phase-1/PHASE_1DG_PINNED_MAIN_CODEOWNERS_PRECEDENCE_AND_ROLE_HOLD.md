@@ -49,3 +49,16 @@ A read-only GitHub snapshot is not cryptographically signed external authority. 
 Official GitHub before this phase: PR #1 Draft/open/unmerged, zero submitted reviews, zero listed main rulesets, all three standard base-main CODEOWNERS paths HTTP 404 and branch-protection GET HTTP 403 (**UNKNOWN**, not disabled). Corporate Owner/Legal must first authenticate and appoint genuine independent nonauthor Security and Business personnel; approved GitHub admin must install and prove effective protected-main no-bypass governance. External eMudhra/CCA/RCAI provider-authorized trust, MCA legal signatory, live signed CRL/OCSP, real WORM COMPLIANCE CAS/DR, third-party OIDC/SLSA and independently approved staging remain absent.
 
 **Release remains `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`.** No CODEOWNERS installation, reviewer request, main merge, production deployment, provider onboarding or business dispatch.
+
+
+## Official source-run verification — 20 November 2026 IST
+
+**Actual Phase 1DG engineering source SHA:** `cb88a9add0ad9c0cd6e67bfc8806f2d19921ef24` on `chore/phase0-foundation-20261106`. This runbook update is documentation-only and does **not** reuse an earlier SHA's CI as certification of its own later commit.
+
+- [PR GitHub Actions #44728317106](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44728317106): `completed/success`, **8/8 GitHub Actions jobs passed**. Official check suite `121067378043`.
+- [Push GitHub Actions #44728308969](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44728308969): `completed/success`, **7 jobs passed and 1 `source-merge-lineage-hold` expected skipped**. Official check suite `121067356631`. Do not represent the push run as eight passes.
+- Official GitHub source-HEAD Check Runs API returned **16** checks across the two separate suites. The eight checks of each suite were independently matched to the eight corresponding Actions Jobs by **check/job ID, name, run ID, exact source SHA, GitHub Actions app 15368 and conclusion**. No cross-run blending or skipped-check promotion.
+- Actual hosted typecheck, baseline Node test job (including 20 DG adversarial groups), build, dependency advisory checks, disposable MySQL migration/integration and isolated Chromium MFA/role smoke all completed successfully. All are internal engineering tests, not independent release approvals.
+- Fresh GitHub governance after push: **zero PR submitted reviews**, **zero listed rulesets**, all three `main` CODEOWNERS standard paths HTTP **404**, direct branch protection HTTP **403/UNKNOWN**, `main=b5af0313de5f2439dcf2aa4b4e8bb241220b5a6b` unchanged, Draft PR #1 open/unmerged and Issue #2 OPEN. No actual nominated Security/Business account or live privileged operator token was provided. Human-only 1DG live operator check was **NOT** performed or misrepresented as passing.
+
+Production remains `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`; independent corporate/CA/MCA/provider/WORM/CAS/DR/OIDC/SLSA/staging approvals are still mandatory and unverified.
