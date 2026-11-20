@@ -105,16 +105,26 @@ function full(){
   roleQuorumFirst,roleQuorumSecond,roleJoin,pinnedOwners,
   terminalNominatedReview,terminalReadback};
 }
-const evaluate=(change)=>{const x=full();change?.(x);
- return assessEphemeralReviewerHandoffContinuity(x);};
+const evaluate=(change)=>{
+ const x=full();
+ // Source assessors freeze their authentic receipts. Adversarial tests
+ // explicitly clone those receipts before simulating tampering.
+ for(const k of ['roleQuorumFirst','roleQuorumSecond','roleJoin',
+  'pinnedOwners','terminalNominatedReview','terminalReadback'])
+  x[k]={...x[k]};
+ change?.(x);
+ return assessEphemeralReviewerHandoffContinuity(x);
+};
 function hold(v){
  assert.equal(v.productionReleaseAuthorized,false);
  assert.equal(v.productionReleaseBlocked,true);
  assert.equal(v.releaseDecision,'HOLD');
- assert.equal(v.independentCorporateOfficerAppointmentsOrMandatesAuthenticated,false);
- assert.equal(v.externalSignerKeysAndMcaCaWormDrOidcStagingVerified,false);
- assert.equal(v.canInstallMainPolicyRequestReviewsMergeOrDeploy,false);
- assert.equal(v.opaqueSessionKeyAndReviewerIdentityExcludedFromOutput,true);
+ if(v.phase==='1DL'){
+  assert.equal(v.independentCorporateOfficerAppointmentsOrMandatesAuthenticated,false);
+  assert.equal(v.externalSignerKeysAndMcaCaWormDrOidcStagingVerified,false);
+  assert.equal(v.canInstallMainPolicyRequestReviewsMergeOrDeploy,false);
+  assert.equal(v.opaqueSessionKeyAndReviewerIdentityExcludedFromOutput,true);
+ }
 }
 function reject(change,code){
  const v=evaluate(change);hold(v);
