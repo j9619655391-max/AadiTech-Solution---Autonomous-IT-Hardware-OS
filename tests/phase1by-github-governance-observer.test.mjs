@@ -29,6 +29,7 @@ const requiredChecks=[
 ];
 const examplePR={
  number:1,state:'open',draft:true,merged:false,merge_commit_sha:MERGE,
+ body:'# Draft technical governance — production HOLD',
  user:{login:'j9619655391-max'},
  head:{ref:DEV,sha:HEAD,repo:{full_name:REPO}},
  base:{ref:'main',sha:BASE,repo:{full_name:REPO}}
@@ -77,11 +78,18 @@ const mockedApi=(routes)=>async(url,config)=>{
  assert.match(config.headers.Authorization,/^Bearer test-token$/);
  const path=new URL(url).pathname+new URL(url).search;
  const entry=routes[path]??{status:404,data:{}};
+ const bytes=Buffer.from(JSON.stringify(entry.data??null));
  return {
-  status:entry.status??200,
-  headers:{get:key=>key==='content-length'?
-    String(entry.length??JSON.stringify(entry.data??null).length):null},
-  text:async()=>JSON.stringify(entry.data??null)
+  status:entry.status??200,url,redirected:false,
+  headers:{get:key=>key==='content-type'?'application/json':
+   key==='content-length'?String(entry.length??bytes.byteLength):null},
+  body:{getReader(){
+   let finished=false;
+   return {async read(){
+    if(finished)return {done:true};
+    finished=true;return {done:false,value:bytes};
+   }};
+  }}
  };
 };
 
@@ -214,7 +222,8 @@ test('BY origin allowlist refuses arbitrary path, reflected hosts and oversized 
  await assert.rejects(readOfficialGithubEndpoint(
   paths.reviews+'&page=999','test-token',{fetchImpl:fake}),/untrusted API path/);
  const oversized=await readOfficialGithubEndpoint(paths.pr,'test-token',{
-  fetchImpl:async()=>({status:200,headers:{get:()=>String(196609)}})
+  fetchImpl:async(url)=>({status:200,url,redirected:false,
+   headers:{get:key=>key==='content-type'?'application/json':'196609'}})
  });
  assert.equal(oversized.status,'oversize');
  const denied=await readOfficialGithubEndpoint(paths.pr,'test-token',{

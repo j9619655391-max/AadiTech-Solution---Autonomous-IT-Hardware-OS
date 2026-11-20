@@ -1,4 +1,6 @@
 import {readFileSync,writeFileSync} from 'node:fs';
+import {Buffer} from 'node:buffer';
+import {TextDecoder} from 'node:util';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {BUILD_INPUT_PATHS,makeBuildInputInventory}
@@ -13,6 +15,9 @@ const DEV='chore/phase0-foundation-20261106';
 const ORIGIN='https://api.github.com';
 const ROOT='/repos/'+REPO;
 const SHA=/^[0-9a-f]{40}$/;
+// Phase 1DJ: no unbounded response.text() ingestion or ever-growing PR body.
+export const BY_MAX_API_JSON_BYTES=196608;
+export const BY_MAX_PR_DESCRIPTION_BYTES=8192;
 const REQUIRED_CHECKS=Object.freeze([
  'baseline','mysql-integration','production-runtime-scope',
  'build-input-provenance','review-vendor-intake-hold',
@@ -40,37 +45,69 @@ function apiStatus(status){
 export async function readOfficialGithubEndpoint(path,token,{
  fetchImpl=fetch,timeoutMs=6500
 }={}){
- // Paths are closed over literal repository endpoints; attacker input cannot
- // add arbitrary URLs/paths, query arguments or redirected destinations.
+ // Closed source endpoints: no attacker-provided URL, SSRF or API mutation.
  if(!Object.values(ENDPOINTS).includes(path)&&
     !/^\/repos\/j9619655391-max\/AadiTech-Solution---Autonomous-IT-Hardware-OS\/pulls\/1\/reviews\?per_page=100&page=[1-3]$/.test(path))
   throw Error('BY untrusted API path');
  if(typeof token!=='string'||!token.length||token.length>4096)
   return {status:'missing_token',data:null,httpStatus:null};
+ const url=ORIGIN+path;
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  try{
-  const response=await fetchImpl(ORIGIN+path,{
-   method:'GET',redirect:'error',
-   signal:AbortSignal.timeout(timeoutMs),
+  const response=await fetchImpl(url,{
+   method:'GET',redirect:'error',cache:'no-store',
+   signal:controller.signal,
    headers:{
-    'Accept':'application/vnd.github+json',
-    'Authorization':'Bearer '+token,
+    Accept:'application/vnd.github+json',
+    Authorization:'Bearer '+token,
     'X-GitHub-Api-Version':'2022-11-28',
-    'User-Agent':'AadiTech-Phase1BY-HOLD-ReadOnly'
+    'User-Agent':'AadiTech-Phase1DJ-BoundedOfficialGithub-HOLD'
    }
   });
   const status=apiStatus(response.status);
   if(status!=='read')return {status,data:null,httpStatus:response.status};
-  const len=Number(response.headers?.get?.('content-length')??0);
-  if(Number.isFinite(len)&&len>196608)
-   return {status:'oversize',data:null,httpStatus:200};
-  const body=await response.text();
-  if(body.length>196608)return {status:'oversize',data:null,httpStatus:200};
-  const data=JSON.parse(body);
-  return {status:'read',data,httpStatus:200};
+  if(response.redirected||response.url!==url||
+     !/^application\/(?:json|[a-z0-9.+-]*\+json)\b/i.test(
+      response.headers?.get?.('content-type')??''))
+   return {status:'invalid',data:null,httpStatus:200};
+  const declared=response.headers?.get?.('content-length');
+  if(declared!==null&&declared!==undefined){
+   if(!/^\d+$/.test(declared)||
+      !Number.isSafeInteger(Number(declared)))
+    return {status:'invalid',data:null,httpStatus:200};
+   if(Number(declared)>BY_MAX_API_JSON_BYTES)
+    return {status:'oversize',data:null,httpStatus:200};
+  }
+  if(!response.body||typeof response.body.getReader!=='function')
+   return {status:'invalid',data:null,httpStatus:200};
+  const reader=response.body.getReader(),chunks=[];
+  let received=0;
+  while(true){
+   const {done,value}=await reader.read();
+   if(done)break;
+   if(!(value instanceof Uint8Array))
+    return {status:'invalid',data:null,httpStatus:200};
+   if(received+value.byteLength>BY_MAX_API_JSON_BYTES){
+    controller.abort();
+    return {status:'oversize',data:null,httpStatus:200};
+   }
+   received+=value.byteLength;
+   chunks.push(Buffer.from(value));
+  }
+  let json;
+  try{
+   const content=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true})
+    .decode(Buffer.concat(chunks,received));
+   json=JSON.parse(content);
+  }catch{return {status:'invalid',data:null,httpStatus:200};}
+  if(!obj(json)&&!Array.isArray(json))
+   return {status:'invalid',data:null,httpStatus:200};
+  return {status:'read',data:json,httpStatus:200};
  }catch{
-  // Never leak network errors: they might contain credential headers.
+  // Untrusted network/credential errors are intentionally not reflected.
   return {status:'unavailable',data:null,httpStatus:null};
- }
+ }finally{clearTimeout(timeout);}
 }
 export async function collectReadonlyGithubSnapshot({
  token,fetchImpl=fetch,environment={}
@@ -192,6 +229,12 @@ export function assessObservedGithubGovernance(snapshot,{expectedRepository=REPO
   if(status!=='read')anomalies.add('BY_GITHUB_'+name.toUpperCase()+'_NOT_READ');
  }
  const pr=endpoints.pr?.status==='read'?endpoints.pr.data:null;
+ const prDescriptionBytes=pr?.body===null?0:
+  typeof pr?.body==='string'?Buffer.byteLength(pr.body,'utf8'):null;
+ const prDescriptionWithinBudget=Number.isSafeInteger(prDescriptionBytes)&&
+  prDescriptionBytes<=BY_MAX_PR_DESCRIPTION_BYTES;
+ if(!prDescriptionWithinBudget)
+  anomalies.add('BY_PR_DESCRIPTION_OUTSIDE_BOUNDED_EVIDENCE_INDEX');
  const correctRepo=expectedRepository===REPO&&
   snapshot.repository===REPO;
  const correctPR=pr?.number===1&&pr?.state==='open'&&pr?.draft===true&&
@@ -244,6 +287,9 @@ export function assessObservedGithubGovernance(snapshot,{expectedRepository=REPO
  return Object.freeze({
   schemaVersion:1,phase:'1BY',kind:'READ_ONLY_GITHUB_GOVERNANCE_OBSERVATION',
   endpointStatuses,
+  prDescriptionWithinBudget,
+  observedPrDescriptionUtf8Bytes:prDescriptionBytes,
+  prDescriptionBudgetUtf8Bytes:BY_MAX_PR_DESCRIPTION_BYTES,
   githubRepoContextMatched:correctRepo,
   observedPrDraftAndUnmerged:correctPR,
   eventSourceHeadAndBaseMatch:exactGitHubEventSource,
@@ -290,8 +336,9 @@ async function main(){
   JSON.stringify(output,null,2)+'\n',{flag:'w',mode:0o600});
  console.log(JSON.stringify(output,null,2));
  // No review or ruleset approval could ever turn this into GO.
- if(result.productionReleaseAuthorized||
-    output.productionReleaseAuthorized||result.releaseDecision!=='HOLD')
+ if(result.prDescriptionWithinBudget===false||
+    result.productionReleaseAuthorized||output.productionReleaseAuthorized||
+    result.releaseDecision!=='HOLD')
   process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
