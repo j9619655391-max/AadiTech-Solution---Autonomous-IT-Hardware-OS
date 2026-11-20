@@ -182,6 +182,7 @@ test('DA: replayed old sequence, skipped sequence, duplicate version and false p
  ])denied(edit,'DA_APPEND_EVENT_SEQ_PREDECESSOR_BINDING_OR_CLOCK_INVALID_'+(
   edit.toString().includes('events[0]')?'INCIDENT_OPENED':
   edit.toString().includes('events[1]')?'EVIDENCE_SEALED':
+  edit.toString().includes('events[3]')?'RELEASE_DENIED':
   edit.toString().includes('events[2]')?'RECOVERY_REHEARSED':'RELEASE_DENIED'));
 });
 test('DA: dropped, extra, reordered or duplicated audit event never forms append-only chain',()=>{
