@@ -36,7 +36,7 @@ const HELD=Object.freeze({
  */
 export function assessInProcessAppointmentReviewerBinding({
  candidatePacket=null,expectedExternalPins=null,operatorSession=null,
- now='2026-11-20T14:00:00.000Z'
+ now=null
 }={}){
  const errors=new Set();
  const nominees=candidatePacket?.appointment?.officers;

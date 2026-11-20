@@ -107,7 +107,7 @@ const result=(errors,head,main,registrarMatch,signatureCount,roleMatched,
 export function assessOfflineCorporateAppointmentCandidate({
  packet=null,expectedExternalPins=null,terminalContinuity=null,
  securityLogin=null,businessLogin=null,
- now='2026-11-20T14:00:00.000Z'
+ now=null
 }={}){
  const errors=new Set();
  const add=(ok,id)=>{if(!ok)errors.add(id);};
