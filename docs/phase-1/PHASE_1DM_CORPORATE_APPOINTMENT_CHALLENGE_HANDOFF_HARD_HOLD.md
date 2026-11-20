@@ -32,3 +32,12 @@ Record real Phase 1DM engineering SHA and hosted PR/push workflow jobs only afte
 
 No successful synthetic candidate carries legal officer appointment, production approval, independent external root evidence, signed provider enrollment or real audit witness.
 
+
+
+## Exact hosted Phase 1DM engineering-source receipt — 20 November 2026 IST
+
+The original six-file **engineering commit `39541448b9959f4165e230475da6e68fe81716fa`** on the existing development branch was verified against two independently hosted events: [PR run #44754452094](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44754452094) completed/success **8/8 successful jobs**, official source Check Suite `121137989125`; [push run #44754441818](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44754441818) completed/success **7 successful plus one expected skipped source-merge-lineage job**, source Check Suite `121137961348`. The official exact source GitHub Check Runs endpoint returned **16 distinct checks**, partitioned eight per suite. For *each event independently*, all eight Check Runs matched that event's eight GitHub Actions Jobs by immutable check/job ID, name, expected exact source SHA, event run ID, GitHub Actions App ID `15368`, completed status and conclusion. No PR/push cross-suite borrowing; no promotion of the expected push skip into a pass.
+
+Hosted Node baseline tests (including **33** Phase 1DM adversarial signature/nomination/clock/pin/nonce/group tests and previous regressions), typecheck/build, dependency gates, disposable actual MySQL migration/integration and isolated Chromium MFA/role smoke succeeded. This is **only internal engineering CI**. The new applicant-controlled Ed25519 signature and accompanying operator-provided SPKI/registry comparison pins remain mathematically verifiable but **never independently authenticated corporate/legal/providership proof**. No actual officer appointments, real RCAI/CCA/eMudhra approvals, live CRL/OCSP, MCA signatory evidence, external WORM/CAS/DR/OIDC/SLSA or staging signoff was supplied; release HARD HOLD is unchanged.
+
+A subsequent **documentation-only source SHA** is expected; it requires its own new independent hosted PR/push CI and 16 exact-head Check Run reconciliation before being described as green.
