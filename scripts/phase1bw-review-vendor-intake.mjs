@@ -67,6 +67,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'tests/phase1de-admin-activation-readiness.test.mjs',
  'tests/phase1df-role-bound-readonly-reconciliation.test.mjs',
  'tests/phase1dg-effective-codeowners.test.mjs',
+ 'tests/phase1dh-codeowners-contract.test.mjs',
  'tests/helpers/phase1cz-candidate-fixture.mjs',
  'tests/helpers/phase1da-candidate-fixture.mjs',
  'tests/helpers/phase1db-candidate-fixture.mjs',

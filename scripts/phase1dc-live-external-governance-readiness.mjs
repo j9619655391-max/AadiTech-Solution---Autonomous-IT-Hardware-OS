@@ -1,4 +1,5 @@
 import {Buffer} from 'node:buffer';
+import {TextDecoder} from 'node:util';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {REPO,AUTHOR,REQUIRED_JOBS,GITHUB_ACTIONS_INTEGRATION_ID}
@@ -55,7 +56,15 @@ function acceptablePr(x){
   SHA.test(p.merge_commit_sha??'')&&
   typeof p.updated_at==='string'&&Number.isFinite(Date.parse(p.updated_at));
 }
-function validOwners(data,path){
+// Phase 1DH: syntax-only *strict subset* shared with the 1CM admin
+// proposal and 1DG pinned SHA/role-specific validator. No corporate
+// identity, Git blob authenticity, effective admin protection or GO follows.
+export const REVIEWED_CODEOWNER_PATTERNS=Object.freeze([
+ '*','/.github/CODEOWNERS','/.github/workflows/',
+ '/docs/security/','/server/security/','/scripts/','/tests/'
+]);
+const REVIEWED_OWNER_SET=new Set(REVIEWED_CODEOWNER_PATTERNS);
+export function validOwners(data,path){
  if(!object(data)||data.type!=='file'||data.path!==path||
     data.encoding!=='base64'||!SHA.test(data.sha??'')||
     typeof data.content!=='string'||data.content.length>87384||
@@ -65,19 +74,36 @@ function validOwners(data,path){
  if(!b64||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(b64))
   return {valid:false,rootCovers:false};
  const raw=Buffer.from(b64,'base64');
- if(raw.length!==data.size||raw.toString('base64')!==b64)return {valid:false,rootCovers:false};
- const lines=raw.toString('utf8').split(/\r?\n/).map(x=>x.trim())
+ if(raw.length!==data.size||raw.toString('base64')!==b64)
+  return {valid:false,rootCovers:false};
+ let text;
+ try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(raw);}
+ catch{return {valid:false,rootCovers:false};}
+ // Fewer cases than GitHub CODEOWNERS supports are intentional: unknown
+ // grammar or a late shadow rule must be reviewed by a real administrator.
+ if(!/^[\x09\x0a\x0d\x20-\x7e]*$/.test(text)||
+    text.includes('\r')&&!/^([^\r]|\r\n)*$/.test(text))
+  return {valid:true,rootCovers:false};
+ const lines=text.split(/\r?\n/).map(x=>x.trim())
   .filter(x=>x.length>0&&!x.startsWith('#'));
- // Extremely conservative: no intervening precedence or path overrides.
- // Other valid owner-file layouts remain UNKNOWN/HOLD until human review.
- if(lines.length!==1)return {valid:true,rootCovers:false};
- const fields=lines[0].split(/\s+/);
- const owners=fields.slice(1);
- const good=fields.length===3&&fields[0]==='*'&&
-  owners.every(x=>x.startsWith('@')&&validUser(x.slice(1))&&
-   x.slice(1).toLowerCase()!==AUTHOR.toLowerCase())&&
-  owners[0]?.toLowerCase()!==owners[1]?.toLowerCase();
- return {valid:true,rootCovers:good};
+ if(lines.length<1||lines.length>REVIEWED_OWNER_SET.size)
+  return {valid:true,rootCovers:false};
+ const seen=new Set();let firstOwners=null;
+ for(const line of lines){
+  const fields=line.split(/[\t ]+/);
+  if(fields.length!==3||!REVIEWED_OWNER_SET.has(fields[0])||
+     seen.has(fields[0]))return {valid:true,rootCovers:false};
+  const logins=fields.slice(1).map(x=>x.startsWith('@')?x.slice(1):'');
+  if(!logins.every(x=>validUser(x)&&
+     x.toLowerCase()!==AUTHOR.toLowerCase())||
+     logins[0].toLowerCase()===logins[1].toLowerCase())
+   return {valid:true,rootCovers:false};
+  const pair=logins.map(x=>x.toLowerCase()).sort().join('\0');
+  if(firstOwners!==null&&pair!==firstOwners)
+   return {valid:true,rootCovers:false};
+  firstOwners=pair;seen.add(fields[0]);
+ }
+ return {valid:true,rootCovers:seen.has('*')};
 }
 export function protectedMainRuleset(detail){
  if(!object(detail)||detail.enforcement!=='active'||detail.target!=='branch'||
@@ -138,7 +164,7 @@ export function assessActualReadOnlyHandoff(observations={}){
   review.counts.currentHeadApprovals>=2;
  if(!technicalReview)errors.add('DC_TWO_DISTINCT_NONAUTHOR_LATEST_HEAD_APPROVALS_NOT_OBSERVED');
  const owners=observations?.codeowners;
- let present=0,coverage=0,ownerHidden=false;
+ let present=0,coverage=0,ownerHidden=false,selectedEffective=false;
  for(const [key,path] of [
   ['githubCodeowners','.github/CODEOWNERS'],
   ['rootCodeowners','CODEOWNERS'],['docsCodeowners','docs/CODEOWNERS']]){
@@ -146,8 +172,14 @@ export function assessActualReadOnlyHandoff(observations={}){
   if(read(r)){
    const check=validOwners(r.data,path);
    if(check.valid)present++;
-   if(check.rootCovers)coverage++;
-   else errors.add('DC_CODEOWNERS_EXISTS_BUT_STRICT_MAIN_COVERAGE_NOT_PROVEN_'+key);
+   // GitHub uses the FIRST existing CODEOWNERS file, not the union
+   // of coverage in all three file locations. A broken higher-priority
+   // file must never be rescued by a valid lower-priority one.
+   if(!selectedEffective){
+    selectedEffective=true;
+    if(check.rootCovers)coverage=1;
+    else errors.add('DC_CODEOWNERS_EXISTS_BUT_STRICT_MAIN_COVERAGE_NOT_PROVEN_'+key);
+   }
   }else if(!status(r)||!['absent_or_hidden','read'].includes(r.status))
    ownerHidden=true;
  }
