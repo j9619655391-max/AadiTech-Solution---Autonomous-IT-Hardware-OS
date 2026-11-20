@@ -1,4 +1,5 @@
 import {Buffer} from 'node:buffer';
+import {createHash} from 'node:crypto';
 import {TextDecoder} from 'node:util';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -137,6 +138,35 @@ export function protectedMainRuleset(detail){
  }
  return seen.size===REQUIRED_JOBS.length;
 }
+// Phase 1DI: local SHA-256 fingerprint of the *entire* bounded official
+// main-policy readback, not just ruleset and CODEOWNERS counts.
+// This is unsigned, non-transactional and NEVER an admin attestation.
+export function digestGithubMainPolicyReadbacks(observations={}){
+ if(!object(observations)||!object(observations.rulesets)||
+    !object(observations.rulesetDetails)||
+    !object(observations.codeowners)||!object(observations.protection)||
+    !['githubCodeowners','rootCodeowners','docsCodeowners'].every(
+     key=>object(observations.codeowners[key])))
+  return null;
+ try{
+  const projection={
+   rulesets:observations.rulesets,
+   rulesetDetails:observations.rulesetDetails,
+   codeowners:{
+    githubCodeowners:observations.codeowners.githubCodeowners,
+    rootCodeowners:observations.codeowners.rootCodeowners,
+    docsCodeowners:observations.codeowners.docsCodeowners
+   },
+   protection:observations.protection
+  };
+  const encoded=JSON.stringify(projection);
+  if(typeof encoded!=='string'||encoded.length<1||
+     Buffer.byteLength(encoded,'utf8')>3*1024*1024)return null;
+  return createHash('sha256').update(
+   'AADI-1DI-GITHUB-MAIN-POLICY-UNSIGNED-V1\n'+encoded,'utf8').digest('hex');
+ }catch{return null;}
+}
+
 export function assessActualReadOnlyHandoff(observations={}){
  const errors=new Set(),pr1=observations?.prBefore,pr2=observations?.prAfter,
   main1=observations?.mainBefore,main2=observations?.mainAfter;
@@ -240,6 +270,7 @@ export function assessActualReadOnlyHandoff(observations={}){
   observedStrictBypassFreeMainRulesetCount:accepted,
   directMainBranchProtectionStatus:err(branch),
   directMainBranchProtectionExplicitly403:protectionDenied,
+  unsignedMainPolicyReadbackSha256:digestGithubMainPolicyReadbacks(observations),
   technicallyObservedGithubPrerequisitesOnly:technicallyObserved,
   checklist:Object.freeze(items),
   outstandingExternalPrerequisiteKeys:EXTERNAL_GATES,

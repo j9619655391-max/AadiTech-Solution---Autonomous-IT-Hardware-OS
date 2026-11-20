@@ -190,8 +190,26 @@ async function main(){
  const observedFirst=await take(),observedSecond=await take();
  const outcome=assessPinnedMainCodeowners({roleJoin,securityLogin,businessLogin,
   observedFirst,observedSecond});
- console.log(JSON.stringify(outcome,null,2));
- if(!outcome.effectiveFilePrecedenceAndAllOwnerRulesCheckedOnly)
+ // Phase 1DI: CLOSE the stale-read window AFTER pinned owner files, not
+ // before. Bracket a third exact-role review with fresh full policy/main
+ // readbacks; refuse races including same-count policy content swaps.
+ const {assessTerminalReadOnlyMainAndReviewRecheck}=await import(
+  './phase1di-terminal-main-review-recheck.mjs');
+ const terminalGovernanceBefore=await collectLiveActualGovernance({token});
+ const terminalNominatedReview=await collectLiveReviewerEvidence({
+  token,securityLogin,businessLogin
+ });
+ const terminalGovernanceAfter=await collectLiveActualGovernance({token});
+ const terminal=assessTerminalReadOnlyMainAndReviewRecheck({
+  roleJoin,pinnedOwners:outcome,
+  initialGovernanceBefore:governanceBefore,
+  initialGovernanceAfter:governanceAfter,
+  terminalGovernanceBefore,terminalNominatedReview,terminalGovernanceAfter
+ });
+ // No logins, token, raw policy content, official responses or credentials.
+ console.log(JSON.stringify({codeowners:outcome,terminal},null,2));
+ if(!outcome.effectiveFilePrecedenceAndAllOwnerRulesCheckedOnly||
+    !terminal.wholeOperatorReadWindowTechnicallyConsistentOnly)
   process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))
