@@ -1,4 +1,6 @@
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
+import {assessEphemeralReviewerHandoffContinuity}
+ from './phase1dl-ephemeral-reviewer-handoff-continuity.mjs';
 import {Buffer} from 'node:buffer';
 import {TextDecoder} from 'node:util';
 import {resolve} from 'node:path';
@@ -173,15 +175,23 @@ async function main(){
     token.length<1||token.length>4096)
   throw Error('DG_AUTHORIZED_OPERATOR_ONLY_WITH_DISTINCT_REAL_NOMINEES');
  const [securityLogin,businessLogin]=args.slice(1);
+ // One fresh session key binds the *same role-ordered pair* throughout
+ // 1CO→1DF→1DG→terminal 1CO→1DI; it is never serialized or logged.
+ const sessionKey=randomBytes(32);
  const {collectLiveActualGovernance}=await import('./phase1dc-live-external-governance-readiness.mjs');
  const {collectLiveReviewerEvidence}=await import('./phase1co-live-exact-head-reviewer-quorum.mjs');
  const {assessRoleBoundReadOnlyReconciliation}=await import('./phase1df-role-bound-readonly-reconciliation.mjs');
  const governanceBefore=await collectLiveActualGovernance({token});
- const roleQuorumFirst=await collectLiveReviewerEvidence({token,securityLogin,businessLogin});
- const roleQuorumSecond=await collectLiveReviewerEvidence({token,securityLogin,businessLogin});
+ const roleQuorumFirst=await collectLiveReviewerEvidence({
+  token,securityLogin,businessLogin,nomineeSessionKey:sessionKey
+ });
+ const roleQuorumSecond=await collectLiveReviewerEvidence({
+  token,securityLogin,businessLogin,nomineeSessionKey:sessionKey
+ });
  const governanceAfter=await collectLiveActualGovernance({token});
  const roleJoin=assessRoleBoundReadOnlyReconciliation({governanceBefore,
-  roleQuorumFirst,roleQuorumSecond,governanceAfter});
+  roleQuorumFirst,roleQuorumSecond,governanceAfter,
+  requireRoleContinuity:true});
  const mainSha=roleJoin.currentMainBaseSha;
  if(!SHA.test(mainSha??''))throw Error('DG_MAIN_REF_NOT_STABLY_PINNED');
  const take=async()=>Object.fromEntries(await Promise.all(
@@ -197,7 +207,7 @@ async function main(){
   './phase1di-terminal-main-review-recheck.mjs');
  const terminalGovernanceBefore=await collectLiveActualGovernance({token});
  const terminalNominatedReview=await collectLiveReviewerEvidence({
-  token,securityLogin,businessLogin
+  token,securityLogin,businessLogin,nomineeSessionKey:sessionKey
  });
  const terminalGovernanceAfter=await collectLiveActualGovernance({token});
  const terminal=assessTerminalReadOnlyMainAndReviewRecheck({
@@ -206,10 +216,18 @@ async function main(){
   initialGovernanceAfter:governanceAfter,
   terminalGovernanceBefore,terminalNominatedReview,terminalGovernanceAfter
  });
- // No logins, token, raw policy content, official responses or credentials.
- console.log(JSON.stringify({codeowners:outcome,terminal},null,2));
+ // Explicit final in-process nominee continuity check. Only opaque
+ // booleans/anomaly codes appear in this hard-HOLD read-only receipt.
+ const continuity=assessEphemeralReviewerHandoffContinuity({
+  sessionKey,securityLogin,businessLogin,
+  roleQuorumFirst,roleQuorumSecond,roleJoin,pinnedOwners:outcome,
+  terminalNominatedReview,terminalReadback:terminal
+ });
+ // No usernames, session key, token or raw GitHub payloads are printed.
+ console.log(JSON.stringify({codeowners:outcome,terminal,continuity},null,2));
  if(!outcome.effectiveFilePrecedenceAndAllOwnerRulesCheckedOnly||
-    !terminal.wholeOperatorReadWindowTechnicallyConsistentOnly)
+    !terminal.wholeOperatorReadWindowTechnicallyConsistentOnly||
+    !continuity.technicalSameNomineesAcrossEntireOperatorReadOnlySessionOnly)
   process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))

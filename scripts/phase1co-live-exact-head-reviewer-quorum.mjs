@@ -7,6 +7,8 @@ import {
 } from './phase1cm-admin-ruleset-reviewer-handoff.mjs';
 import {readOfficialGithubEndpoint}
  from './phase1by-github-governance-observer.mjs';
+import {deriveEphemeralReviewerRoleBinding}
+ from './phase1dl-ephemeral-reviewer-handoff-continuity.mjs';
 
 // Phase 1CO: a real, optional human-initiated, read-only verification
 // of TWO explicitly authorized nonauthor reviewer usernames against
@@ -98,7 +100,8 @@ function prIdentity(pr){
 export function assessRealNonauthorApprovalQuorum({
   securityLogin,businessLogin,prBefore,prAfter,
   reviews,reviewPaginationComplete=false,
-  securityPermission,businessPermission
+  securityPermission,businessPermission,
+  nomineeSessionKey=null
 }={}){
  const errors=new Set();
  const candidates=validateReviewerNominees(securityLogin,businessLogin);
@@ -131,6 +134,13 @@ export function assessRealNonauthorApprovalQuorum({
  if(!business?.currentHeadApprovedByThisAccount)
   errors.add('CO_BUSINESS_NOMINEE_NOT_CURRENT_HEAD_APPROVED');
  const technicallyObserved=errors.size===0;
+ // Phase 1DL: ephemeral role-ordered nominees, current PR source/main.
+ // GitHub usernames and session key never enter the receipt.
+ const opaqueRoleBinding=technicallyObserved?
+  deriveEphemeralReviewerRoleBinding({
+   sessionKey:nomineeSessionKey,securityLogin,businessLogin,
+   currentDevHeadSha:currentHead,currentMainBaseSha:prBefore.base.sha
+  }):null;
  return Object.freeze({
   phase:'1CO',schemaVersion:1,
   kind:'REAL_EXPLICIT_TWO_GITHUB_REVIEWER_CURRENT_HEAD_TECHNICAL_RECEIPT_HOLD',
@@ -146,6 +156,7 @@ export function assessRealNonauthorApprovalQuorum({
   actualNominatedReviewerWritePermissionsObserved:
    technical.technicalRepoPermissionPreconditionMet,
   twoDistinctNominatedLatestHeadTechnicalApprovalsObserved:technicallyObserved,
+  opaqueReviewerRoleSessionHmacSha256:opaqueRoleBinding,
   anomalyCodes:[...errors].sort(),
   // Even verified Github APPROVED entries and write permissions do not
   // authenticate legal/corporate role, no-bypass, genuine external keys.
@@ -158,7 +169,8 @@ export function assessRealNonauthorApprovalQuorum({
  });
 }
 export async function collectLiveReviewerEvidence({
- token,securityLogin,businessLogin,fetchImpl=fetch
+ token,securityLogin,businessLogin,fetchImpl=fetch,
+ nomineeSessionKey=null
 }={}){
  const identity=validateReviewerNominees(securityLogin,businessLogin);
  if(!identity.valid)throw Error('CO_UNVERIFIED_OR_SELF_NOMINATED_GITHUB_ACCOUNTS');
@@ -189,7 +201,7 @@ export async function collectLiveReviewerEvidence({
   prAfter:after.status==='read'?after.data:null,
   reviews:complete?reviewResults:null,
   reviewPaginationComplete:complete,
-  securityPermission,businessPermission
+  securityPermission,businessPermission,nomineeSessionKey
  });
  return verdict;
 }

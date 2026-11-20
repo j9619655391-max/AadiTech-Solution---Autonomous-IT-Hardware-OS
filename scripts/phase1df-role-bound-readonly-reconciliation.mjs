@@ -1,3 +1,5 @@
+import {randomBytes,timingSafeEqual} from 'node:crypto';
+import {Buffer} from 'node:buffer';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -6,6 +8,9 @@ import {fileURLToPath} from 'node:url';
 // This script never writes GitHub, authorizes a release or stores logins.
 const REPO='j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS';
 const SHA=/^[0-9a-f]{40}$/;
+const HMAC=/^[0-9a-f]{64}$/;
+const equalHmac=(x,y)=>HMAC.test(x??'')&&HMAC.test(y??'')&&
+ timingSafeEqual(Buffer.from(x,'hex'),Buffer.from(y,'hex'));
 const held=x=>x?.productionReleaseAuthorized===false&&
  x?.productionReleaseBlocked===true&&x?.releaseDecision==='HOLD';
 const nonnegative=x=>Number.isSafeInteger(x)&&x>=0&&x<=100000;
@@ -51,7 +56,7 @@ function roleQuorumValid(q,head){
  */
 export function assessRoleBoundReadOnlyReconciliation({
   governanceBefore=null,roleQuorumFirst=null,roleQuorumSecond=null,
-  governanceAfter=null
+  governanceAfter=null,requireRoleContinuity=false
 }={}){
  const problems=new Set();
  const gb=governanceValid(governanceBefore),
@@ -70,6 +75,14 @@ export function assessRoleBoundReadOnlyReconciliation({
   roleQuorumFirst.observedSubmittedReviewCount===roleQuorumSecond.observedSubmittedReviewCount&&
   roleQuorumFirst.observedDistinctCurrentHeadApprovals===roleQuorumSecond.observedDistinctCurrentHeadApprovals;
  if(!repeat)problems.add('DF_REVIEW_DISMISSAL_OR_RACE_NOT_RULED_OUT');
+ // 1DL: role-specific nominee pairs must not be silently swapped
+ // between identical-count GitHub reviewer observations.
+ const hmacFirst=roleQuorumFirst?.opaqueReviewerRoleSessionHmacSha256;
+ const hmacSecond=roleQuorumSecond?.opaqueReviewerRoleSessionHmacSha256;
+ const roleContinuity=Boolean(stable&&first&&second&&
+  equalHmac(hmacFirst,hmacSecond));
+ if(requireRoleContinuity===true&&!roleContinuity)
+  problems.add('DL_TWO_REAL_ROLE_APPROVAL_READS_NOT_SAME_NOMINEE_SESSION');
  const githubCounts=stable&&first&&second&&repeat&&
   governanceBefore.observedDistinctCurrentHeadNonauthorApprovals>=2&&
   governanceBefore.observedDistinctCurrentHeadNonauthorApprovals===
@@ -95,7 +108,8 @@ export function assessRoleBoundReadOnlyReconciliation({
   governanceBefore.observedStrictBypassFreeMainRulesetCount>0&&
   governanceAfter.observedStrictBypassFreeMainRulesetCount>0;
  if(!visibleMain)problems.add('DF_EFFECTIVE_MAIN_POLICY_AND_ADMIN_READBACK_NOT_VERIFIED');
- const checks=stable&&first&&second&&repeat&&githubCounts;
+ const checks=stable&&first&&second&&repeat&&githubCounts&&
+  (requireRoleContinuity!==true||roleContinuity);
  return Object.freeze({
   phase:'1DF',schemaVersion:1,
   kind:'TWO_ACTUAL_GITHUB_ROLE_SPECIFIC_REVIEW_READS_UNTRUSTED_HUMAN_HANDOFF_HOLD',
@@ -111,6 +125,8 @@ export function assessRoleBoundReadOnlyReconciliation({
    governanceBefore.directMainBranchProtectionExplicitly403===true||
    governanceAfter.directMainBranchProtectionExplicitly403===true),
   candidateCrossSourceTechnicalApprovalJoinOnly:checks,
+  roleBoundNomineeContinuityOnly:roleContinuity,
+  opaqueReviewerRoleSessionHmacSha256:roleContinuity?hmacFirst:null,
   reviewerNamesAndTokensExcludedFromReport:true,
   githubReviewCannotIndependentlyProveCorporateRoleMandate:true,
   independentSecurityBusinessCorporateAppointmentsAuthenticated:false,
@@ -139,12 +155,18 @@ async function main(){
   throw Error('DF_APPROVED_READONLY_OPERATOR_TOKEN_REQUIRED');
  const {collectLiveActualGovernance}=await import('./phase1dc-live-external-governance-readiness.mjs');
  const {collectLiveReviewerEvidence}=await import('./phase1co-live-exact-head-reviewer-quorum.mjs');
+ const sessionKey=randomBytes(32);
  const governanceBefore=await collectLiveActualGovernance({token});
- const roleQuorumFirst=await collectLiveReviewerEvidence({token,securityLogin,businessLogin});
- const roleQuorumSecond=await collectLiveReviewerEvidence({token,securityLogin,businessLogin});
+ const roleQuorumFirst=await collectLiveReviewerEvidence({
+  token,securityLogin,businessLogin,nomineeSessionKey:sessionKey
+ });
+ const roleQuorumSecond=await collectLiveReviewerEvidence({
+  token,securityLogin,businessLogin,nomineeSessionKey:sessionKey
+ });
  const governanceAfter=await collectLiveActualGovernance({token});
  const verdict=assessRoleBoundReadOnlyReconciliation({
-  governanceBefore,roleQuorumFirst,roleQuorumSecond,governanceAfter
+  governanceBefore,roleQuorumFirst,roleQuorumSecond,governanceAfter,
+  requireRoleContinuity:true
  });
  console.log(JSON.stringify(verdict,null,2));
  if(!verdict.candidateCrossSourceTechnicalApprovalJoinOnly||
