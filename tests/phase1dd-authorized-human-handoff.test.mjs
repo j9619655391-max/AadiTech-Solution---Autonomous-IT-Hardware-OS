@@ -189,7 +189,7 @@ test('DD: schema requires only narrow metadata keys, no secret, URL or arbitrary
  rejected((g,m)=>{m.secret='malicious-value'},
   'DD_UNREVIEWED_INTAKE_METADATA_SCHEMA');
  rejected((g,m)=>{m.schemaVersion=2},
-  'DD_UNREVIEWED_INTAKE_METADATA_SCHEMA');
+  'DD_INTAKE_REPOSITORY_OR_CURRENT_HEAD_MISMATCH');
  rejected((g,m)=>{delete m.repository},
   'DD_UNREVIEWED_INTAKE_METADATA_SCHEMA');
 });
