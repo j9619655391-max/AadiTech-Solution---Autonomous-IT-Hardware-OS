@@ -47,7 +47,8 @@ function gov(){
   observedStrictBypassFreeMainRulesetCount:1,
   directMainBranchProtectionStatus:'read',
   directMainBranchProtectionExplicitly403:false,
-  unsignedMainPolicyReadbackSha256:HASH,anomalyCodes:[],
+  unsignedMainPolicyReadbackSha256:HASH,
+  unsignedSubmittedReviewHistorySha256:'d'.repeat(64),anomalyCodes:[],
   legalSecurityBusinessIdentityNominationsIndependentlyAuthenticated:false,
   externallyAuthorizedTrustProviderMandateAndKeyEnrollment:false,...held};
 }

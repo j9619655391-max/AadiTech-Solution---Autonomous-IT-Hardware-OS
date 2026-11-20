@@ -29,6 +29,7 @@ export function validFinalGovernanceSnapshot(g,head,main){
   g.officialSubmittedReviewPaginationComplete===true&&
   g.technicallyObservedGithubPrerequisitesOnly===true&&
   HASH.test(g.unsignedMainPolicyReadbackSha256??'')&&
+  HASH.test(g.unsignedSubmittedReviewHistorySha256??'')&&
   int(g.observedSubmittedReviewCount)&&g.observedSubmittedReviewCount>=2&&
   int(g.observedDistinctCurrentHeadNonauthorApprovals)&&
   g.observedDistinctCurrentHeadNonauthorApprovals>=2&&
@@ -118,6 +119,13 @@ export function assessTerminalReadOnlyMainAndReviewRecheck({
   reports.every(g=>same(g[key],reports[0][key])));
  if(!consistent)
   anomalies.add('DI_MAIN_POLICY_DIGEST_OR_HEAD_APPROVAL_COUNTS_CHANGED');
+ // 1DK: same-count review decision swaps must not pass. The four
+ // official 1DC reads bracket both the nominated reviewer and owner reads.
+ const historyStable=allSourcesValid&&reports.every(g=>
+  g.unsignedSubmittedReviewHistorySha256===
+   reports[0].unsignedSubmittedReviewHistorySha256);
+ if(!historyStable)
+  anomalies.add('DK_OFFICIAL_SUBMITTED_REVIEW_HISTORY_CHANGED_OR_UNREADABLE');
  const reviewers=Boolean(validTerminalNominatedReview(terminalNominatedReview,head));
  if(!reviewers)
   anomalies.add('DI_TERMINAL_DISTINCT_ROLE_SPECIFIC_APPROVALS_NOT_VERIFIED');
@@ -128,7 +136,7 @@ export function assessTerminalReadOnlyMainAndReviewRecheck({
     initialGovernanceBefore.observedDistinctCurrentHeadNonauthorApprovals);
  if(!counts)anomalies.add('DI_FINAL_ROLE_APPROVAL_COUNTS_DO_NOT_MATCH_LIVE_GITHUB');
  const technicallyStable=Boolean(original&&pinned&&allSourcesValid&&
-  consistent&&reviewers&&counts);
+  consistent&&historyStable&&reviewers&&counts);
  return Object.freeze({
   phase:'1DI',schemaVersion:1,
   kind:'TERMINAL_REAL_GITHUB_MAIN_POLICY_AND_NOMINEE_RECHECK_UNSIGNED_HOLD',
@@ -139,6 +147,9 @@ export function assessTerminalReadOnlyMainAndReviewRecheck({
   fullUnsignedMainPolicyFingerprintUnchangedAcrossFourReadsOnly:
    consistent&&allSourcesValid,
   exactHeadNominatedApprovalsStillPresentAtTerminalReadOnly:reviewers,
+  reviewDecisionHistoryFingerprintStableAcrossFourReadsOnly:historyStable,
+  unsignedReviewHistoryFingerprint:technicallyStable?
+   initialGovernanceBefore.unsignedSubmittedReviewHistorySha256:null,
   terminalNominatedReviewCountsMatchedOfficialSourceOnly:counts,
   wholeOperatorReadWindowTechnicallyConsistentOnly:technicallyStable,
   unsignedPolicyFingerprint:technicallyStable?

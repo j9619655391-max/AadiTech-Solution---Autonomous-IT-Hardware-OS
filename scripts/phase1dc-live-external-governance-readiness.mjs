@@ -7,6 +7,8 @@ import {REPO,AUTHOR,REQUIRED_JOBS,GITHUB_ACTIONS_INTEGRATION_ID}
  from './phase1cm-admin-ruleset-reviewer-handoff.mjs';
 import {evaluateLatestSubmittedReviews}
  from './phase1co-live-exact-head-reviewer-quorum.mjs';
+import {digestOfficialSubmittedReviewHistory}
+ from './phase1dk-submitted-review-history-integrity.mjs';
 
 // Phase 1DC: LIVE GitHub official read-only governance readiness, no mock
 // provider onboarding and no review request, ruleset install or production GO.
@@ -190,6 +192,12 @@ export function assessActualReadOnlyHandoff(observations={}){
   evaluateLatestSubmittedReviews(reviews.data,pr1?.data?.head?.sha,AUTHOR):
   null;
  if(!review?.valid)errors.add('DC_SUBMITTED_GITHUB_REVIEWS_UNTRUSTED');
+ // Phase 1DK: equal review totals can mask changed actual decisions.
+ const reviewHistorySha256=digestOfficialSubmittedReviewHistory({
+  reviews,head:pr1?.data?.head?.sha
+ });
+ if(reviewHistorySha256===null)
+  errors.add('DC_COMPLETE_GITHUB_REVIEW_HISTORY_FINGERPRINT_UNAVAILABLE');
  const technicalReview=stable&&mainStable&&review?.valid===true&&
   review.counts.currentHeadApprovals>=2;
  if(!technicalReview)errors.add('DC_TWO_DISTINCT_NONAUTHOR_LATEST_HEAD_APPROVALS_NOT_OBSERVED');
@@ -271,6 +279,7 @@ export function assessActualReadOnlyHandoff(observations={}){
   directMainBranchProtectionStatus:err(branch),
   directMainBranchProtectionExplicitly403:protectionDenied,
   unsignedMainPolicyReadbackSha256:digestGithubMainPolicyReadbacks(observations),
+  unsignedSubmittedReviewHistorySha256:reviewHistorySha256,
   technicallyObservedGithubPrerequisitesOnly:technicallyObserved,
   checklist:Object.freeze(items),
   outstandingExternalPrerequisiteKeys:EXTERNAL_GATES,
