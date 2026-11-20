@@ -54,7 +54,7 @@ function fixture(){
    role,organizationId:organizations[i],host:names[i],
    keyId:key.keyId,publicKeyPem:key.publicKeyPem,
    spkiSha256:key.spkiSha256,tlsSpkiSha256:String(i+3).repeat(64),
-   authorityEvidenceSha256:String(i+7).repeat(64),
+   authorityEvidenceSha256:['7','8','9','a'][i].repeat(64),
    validFrom:'2026-11-19T22:00:00.000Z',
    validUntil:'2026-11-21T00:00:00.000Z',revoked:false
   };
