@@ -168,7 +168,11 @@ async function main(){
   governanceBefore,roleQuorumFirst,roleQuorumSecond,governanceAfter,
   requireRoleContinuity:true
  });
- console.log(JSON.stringify(verdict,null,2));
+ // The HMAC is only an in-process cross-read equality token.
+ // Do not print it even from the stand-alone operator CLI.
+ const {opaqueReviewerRoleSessionHmacSha256:_privateBinding,
+  ...safeReceipt}=verdict;
+ console.log(JSON.stringify(safeReceipt,null,2));
  if(!verdict.candidateCrossSourceTechnicalApprovalJoinOnly||
     !verdict.effectiveBaseMainGovernanceReadableOnly)
   process.exitCode=1;

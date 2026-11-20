@@ -344,3 +344,11 @@ test('DL human 1DG entrypoint uses same ephemeral key for three actual reviewer 
  assert.equal(count,3);
  assert.equal(/method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/.test(file),false);
 });
+
+test('DL stand-alone human 1DF report removes opaque HMAC before logging',()=>{
+ const src=readFileSync(resolve(dirname(fileURLToPath(import.meta.url)),
+  '../scripts/phase1df-role-bound-readonly-reconciliation.mjs'),'utf8');
+ assert.ok(src.includes('opaqueReviewerRoleSessionHmacSha256:_privateBinding'));
+ assert.ok(src.includes('console.log(JSON.stringify(safeReceipt,null,2))'));
+ assert.equal(src.includes('console.log(JSON.stringify(verdict,null,2))'),false);
+});
