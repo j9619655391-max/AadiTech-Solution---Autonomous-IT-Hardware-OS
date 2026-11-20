@@ -202,3 +202,88 @@ test('DP no network, local file writes or approval/mutation API',()=>{
  assert.ok(code.includes('verify(null,witnessSigningBytes('));
  assert.equal(code.includes('productionReleaseAuthorized:true'),false);
 });
+
+function relabelUnsignedKeyId(packet,id){
+ packet.witnesses.LEGAL_WITNESS.keyId=id;
+ packet.claimedCheckpointSha256=hash(Buffer.from(
+  DOMAIN+'checkpoint/v1\n'+canonical({manifest:packet.manifest,
+   signatures:WITNESS_ROLES.map(role=>
+    [role,packet.witnesses[role].keyId,packet.witnesses[role].signature])}),
+  'utf8'));
+}
+test('DQ identical dual-signed receipts remain duplicate, no metadata-drift warning',()=>{
+ const r=assess();hold(r);
+ assert.equal(r.distinctCryptographicallySignedManifestDigestsOnly,1);
+ assert.equal(r.checkpointHashDriftWithoutSignedManifestForkObservedOnly,false);
+ assert.equal(r.unsignedWitnessKeyIdMetadataDriftObservedOnly,false);
+ assert.equal(r.witnessKeyIdBoundByRoleSignature,false);
+});
+test('DQ forged equivocation via unsigned keyId-only relabel is correctly quarantined',()=>{
+ const r=assess(f=>{
+  const p=f.x.observations[1],old=p.witnesses.LEGAL_WITNESS.signature;
+  relabelUnsignedKeyId(p,'legal-witness-alias');
+  assert.equal(p.witnesses.LEGAL_WITNESS.signature,old);
+ });
+ assert.equal(r.verifiedDualSignedPacketsMathematicallyOnly,2);
+ assert.equal(r.distinctNextCheckpointDigestsOnly,2);
+ assert.equal(r.distinctCryptographicallySignedManifestDigestsOnly,1);
+ assert.equal(r.sameSequenceConflictingDualSignedHeadsObservedOnly,false);
+ assert.equal(r.checkpointHashDriftWithoutSignedManifestForkObservedOnly,true);
+ assert.equal(r.unsignedWitnessKeyIdMetadataDriftObservedOnly,true);
+ assert.ok(r.anomalyCodes.includes('DQ_CHECKPOINT_HASH_DRIFT_WITHOUT_SIGNED_MANIFEST_FORK'));
+ assert.ok(r.anomalyCodes.includes('DQ_UNBOUND_WITNESS_KEY_ID_METADATA_DRIFT'));
+ assert.ok(!r.anomalyCodes.includes('DP_DUAL_SIGNED_SAME_SEQUENCE_EQUIVOCATION'));
+});
+test('DQ true signed manifest fork remains detectable independently of keyId drift',()=>{
+ const r=assess(f=>{
+  const m={...f.x.observations[1].manifest,
+   expiresAt:'2026-11-20T14:08:00.000Z'};
+  f.x.observations[1]=f.signed(m);
+  relabelUnsignedKeyId(f.x.observations[1],'legal-witness-alias');
+ });
+ assert.equal(r.distinctCryptographicallySignedManifestDigestsOnly,2);
+ assert.equal(r.sameSequenceConflictingDualSignedHeadsObservedOnly,true);
+ assert.equal(r.unsignedWitnessKeyIdMetadataDriftObservedOnly,true);
+ assert.ok(r.anomalyCodes.includes('DP_DUAL_SIGNED_SAME_SEQUENCE_EQUIVOCATION'));
+ assert.ok(r.anomalyCodes.includes('DQ_UNBOUND_WITNESS_KEY_ID_METADATA_DRIFT'));
+});
+test('DQ invalid relabeled signature is not eligible for signed fork claims',()=>{
+ const r=assess(f=>{
+  const m={...f.x.observations[1].manifest,
+   expiresAt:'2026-11-20T14:08:00.000Z'};
+  const p=f.signed(m);
+  relabelUnsignedKeyId(p,'legal-witness-alias');
+  p.witnesses.LEGAL_WITNESS.signature='A'.repeat(86)+'==';
+  f.x.observations[1]=p;
+ });
+ assert.equal(r.verifiedDualSignedPacketsMathematicallyOnly,1);
+ assert.equal(r.sameSequenceConflictingDualSignedHeadsObservedOnly,false);
+ assert.equal(r.unsignedWitnessKeyIdMetadataDriftObservedOnly,false);
+ assert.ok(r.anomalyCodes.includes('DP_INVALID_SIGNED_WITNESS_OBSERVATION'));
+ assert.ok(r.anomalyCodes.includes('DP_INCOMPLETE_VALID_OBSERVATION_QUORUM'));
+});
+test('DQ triple observation separates keyId-label ambiguity from signed-payload divergence',()=>{
+ const r=assess(f=>{
+  const copy=structuredClone(f.x.observations[0]);
+  relabelUnsignedKeyId(copy,'legal-witness-alias');
+  f.x.observations=[f.x.observations[0],copy,
+   f.signed({...f.x.observations[0].manifest,
+    issuedAt:'2026-11-20T13:58:00.000Z'})];
+ });
+ assert.equal(r.verifiedDualSignedPacketsMathematicallyOnly,3);
+ assert.equal(r.distinctNextCheckpointDigestsOnly,3);
+ assert.equal(r.distinctCryptographicallySignedManifestDigestsOnly,2);
+ assert.equal(r.sameSequenceConflictingDualSignedHeadsObservedOnly,true);
+ assert.equal(r.unsignedWitnessKeyIdMetadataDriftObservedOnly,true);
+});
+test('DQ redacted anomaly output and immutable HARD HOLD survive unsigned key relabel',()=>{
+ const f=fixture();relabelUnsignedKeyId(f.x.observations[1],
+  'legal-witness-alias');
+ const r=assessRegistrarWitnessEquivocationCandidate(f.x),json=JSON.stringify(r);
+ hold(r);
+ for(const secret of [NONCE,REG,
+  f.x.observations[0].witnesses.LEGAL_WITNESS.signature,
+  f.x.observations[0].witnesses.LEGAL_WITNESS.publicKeyPem,
+  f.x.observations[1].claimedCheckpointSha256])
+  assert.equal(json.includes(secret),false);
+});

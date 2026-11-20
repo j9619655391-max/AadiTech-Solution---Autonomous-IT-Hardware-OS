@@ -96,7 +96,7 @@ export function assessRegistrarWitnessEquivocationCandidate({
  const array=Array.isArray(observations)&&observations.length>=2&&
   observations.length<=8;
  add(array,'DP_TWO_TO_EIGHT_OBSERVATIONS_REQUIRED');
- const heads=[];
+ const heads=[],signedManifestHashes=[],witnessKeyIdPairs=[];
  if(array)for(const o of observations){
   if(!EXACT(o,['manifest','witnesses','claimedCheckpointSha256'])||
      !bounded(o)){
@@ -144,10 +144,22 @@ export function assessRegistrarWitnessEquivocationCandidate({
    errors.add('DP_CLAIMED_CHECKPOINT_DIGEST_MISMATCH');continue;
   }
   heads.push(h);
+  // Phase 1DQ: ONLY the manifest is Ed25519 signed. Checkpoint hashes
+  // ALSO contain unsigned witness keyId labels: relabels are not forks.
+  signedManifestHashes.push(digest(Buffer.from(
+   DOMAIN+'manifest/v1\n'+canonical(m),'utf8')));
+  witnessKeyIdPairs.push(canonical(WITNESS_ROLES.map(role=>
+   [role,w[role].keyId])));
  }
- const fork=new Set(heads).size>1;
+ const fork=new Set(signedManifestHashes).size>1;
+ const checkpointOnlyDrift=new Set(heads).size>1&&!fork;
+ const unsignedKeyIdDrift=new Set(witnessKeyIdPairs).size>1;
  if(fork)errors.add('DP_DUAL_SIGNED_SAME_SEQUENCE_EQUIVOCATION');
- if(heads.length>1&&!fork)
+ if(checkpointOnlyDrift)
+  errors.add('DQ_CHECKPOINT_HASH_DRIFT_WITHOUT_SIGNED_MANIFEST_FORK');
+ if(unsignedKeyIdDrift)
+  errors.add('DQ_UNBOUND_WITNESS_KEY_ID_METADATA_DRIFT');
+ if(heads.length>1&&new Set(heads).size===1)
   errors.add('DP_DUPLICATE_RECEIPT_NOT_INDEPENDENT_PUBLICATION');
  if(array&&heads.length!==observations.length)
   errors.add('DP_INCOMPLETE_VALID_OBSERVATION_QUORUM');
@@ -158,6 +170,11 @@ export function assessRegistrarWitnessEquivocationCandidate({
   checkedSourceHeadSha:context?comparisonPins.sourceHeadSha:null,
   verifiedDualSignedPacketsMathematicallyOnly:heads.length,
   distinctNextCheckpointDigestsOnly:new Set(heads).size,
+  distinctCryptographicallySignedManifestDigestsOnly:
+   new Set(signedManifestHashes).size,
+  checkpointHashDriftWithoutSignedManifestForkObservedOnly:checkpointOnlyDrift,
+  unsignedWitnessKeyIdMetadataDriftObservedOnly:unsignedKeyIdDrift,
+  witnessKeyIdBoundByRoleSignature:false,
   sameSequenceConflictingDualSignedHeadsObservedOnly:fork,
   duplicateCopiesCannotProveIndependentPublication:true,
   suppliedObserverOriginsAuthenticated:false,

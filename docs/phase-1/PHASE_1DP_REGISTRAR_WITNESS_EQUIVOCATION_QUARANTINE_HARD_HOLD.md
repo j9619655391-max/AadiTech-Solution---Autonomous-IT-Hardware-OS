@@ -4,7 +4,7 @@
 
 ## Why this phase exists
 
-An attacker can present two distinct next-checkpoint heads for the same sequence and predecessor, each bearing mathematically valid signatures from the two pinned candidate witness roles. Phase 1DP detects such a same-sequence fork and **quarantines the candidate** rather than selecting a winner. It never treats copied receipts as proof of independent publication. If one packet has an invalid signature, the packet fails verification: the discrepancy alone is not authenticated proof of actual witness equivocation.
+An attacker can present two distinct next-checkpoint heads for the same sequence and predecessor, each bearing mathematically valid signatures from the two pinned candidate witness roles. **Phase 1DQ correction:** an unsigned witness key-ID label change alone can also alter a checkpoint digest. The detector now separates signed-manifest divergence from metadata-only hash drift; the latter cannot establish signed-content equivocation. Phase 1DP detects such a same-sequence fork and **quarantines the candidate** rather than selecting a winner. It never treats copied receipts as proof of independent publication. If one packet has an invalid signature, the packet fails verification: the discrepancy alone is not authenticated proof of actual witness equivocation.
 
 All candidate witness keys, observation origins, comparison pins and clock values are caller supplied and may be colluding or forged. A mathematical signature check can never independently establish legal identity, corporate authority, live revocation status or WORM publication.
 
