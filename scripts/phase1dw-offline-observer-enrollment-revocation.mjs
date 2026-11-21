@@ -24,12 +24,12 @@ const EXACT=(x,fields)=>OWN(x)&&Object.keys(x).length===fields.length&&
  fields.every(k=>Object.hasOwn(x,k));
 const TOP=['publicationCandidate','enrollmentPackets','enrollmentPins',
  'revocationPackets','revocationPins','revocationState','previousAnchor','now'];
-const PIN=['keyId','spkiSha256','operatorId','organizationId'];
+const PIN=['keyId','spkiSha256','operatorId','custodianOrganizationId'];
 const PACKET=['statement','publicKeyPem','signature'];
 const BASE=['schemaVersion','kind','role','repository','organizationId',
  'sourceHeadSha','mainBaseSha','checkpointSha256','archiveSha256',
  'legalMandateDigestSha256','revocationDigestSha256','challengeNonce',
- 'keyId','operatorId','spkiSha256','observedAt','expiresAt','decision'];
+ 'keyId','operatorId','custodianOrganizationId','spkiSha256','observedAt','expiresAt','decision'];
 const ENROLL=[...BASE,'observerPinDigestSha256'];
 const REV=[...BASE,'currentVersion','previousVersion',
  'previousDigestSha256','revokedKeyIds'];
@@ -54,7 +54,7 @@ function utc(x){
 }
 function validPin(p){
  return EXACT(p,PIN)&&ID.test(p.keyId??'')&&
-  ID.test(p.operatorId??'')&&ID.test(p.organizationId??'')&&
+  ID.test(p.operatorId??'')&&ID.test(p.custodianOrganizationId??'')&&
   SPKI.test(p.spkiSha256??'');
 }
 function validState(s){
@@ -82,6 +82,8 @@ function uniqueAuthority(pins,publication){
   if(list.some(x=>typeof x!=='string')||
     new Set(list).size!==list.length)return false;
  }
+ const custodianOrgs=roles.map(role=>pins[role].custodianOrganizationId);
+ if(new Set(custodianOrgs).size!==custodianOrgs.length)return false;
  const hist=publication?.history?.epochs;
  if(!Array.isArray(hist))return false;
  for(const epoch of hist){
