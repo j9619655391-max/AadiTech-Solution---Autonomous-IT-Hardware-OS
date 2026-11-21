@@ -1911,3 +1911,353 @@ test('1DZ output is immutable, metadata-only and cannot leak archive, nonce, SPK
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);dzHold(r);
 });
+
+/* Phase 1EA: synthetic three-party gossip views and two HOLD-only
+ * freeze-review signatures. NOT authenticated external source retrieval. */
+import {EA_PEER_ROLES,EA_FREEZE_ROLES,
+ candidateEpochViewEa,epochViewDigestEa,admissionClaimDigestEa,
+ peerSigningBytesEa,peerQuorumDigestEa,freezeSigningBytesEa,
+ assessOfflineGossipAdmissionBoundaryEa}
+ from '../scripts/phase1ea-offline-gossip-admission-boundary.mjs';
+
+function eaFixture(){
+ const dz=dzFixture(),d=dz.args,
+  c=d.admissionCandidate.decisionCase,
+  e=d.admissionCandidate.rehearsalCandidate.custodyCandidate
+   .publicationCandidate.expected;
+ const last=d.epochs.at(-1).record;
+ const previousGossipCursor=clone(d.previousAnchor);
+ const admissionClaim={
+  kind:'UNTRUSTED_OFFLINE_ADMISSION_PREFLIGHT',
+  sourceType:'APPLICANT_OFFLINE_SUBMISSION',
+  trustStatus:'NOT_AUTHENTICATED',
+  providerAuthorized:false,legalAuthorityVerified:false,
+  liveIssuerRevocationAuthenticated:false,remoteArchiveRetrieved:false,
+  wormCasRetentionVerified:false,independentStagingApproved:false,
+  releaseApproved:false,decision:'HOLD'
+ };
+ const peerPins={},freezePins={},privateKeys={},publicPems={};
+ function key(role,i){
+  const kp=pair();
+  privateKeys[role]=kp.privateKey;publicPems[role]=kp.publicKeyPem;
+  return {keyId:'key_ea_'+i+'_001',spkiSha256:kp.spkiSha256,
+   operatorId:'operator_ea_'+i+'_001',
+   custodianOrganizationId:'org_ea_'+i+'_001'};
+ }
+ const view=candidateEpochViewEa(d),viewSha=epochViewDigestEa(view);
+ const peerPackets=EA_PEER_ROLES.map((role,i)=>{
+  const pin=key(role,i),observedAt='2026-11-21T00:00:0'+(i+4)+'.000Z';
+  peerPins[role]=pin;
+  const statement={schemaVersion:1,kind:'UNTRUSTED_OFFLINE_EPOCH_GOSSIP',
+   role,repository:REPO,incidentId:c.incidentId,
+   organizationId:e.organizationId,sourceHeadSha:e.sourceHeadSha,
+   mainBaseSha:e.mainBaseSha,
+   previousSequence:d.previousAnchor.sequence,
+   previousAnchorSha256:d.previousAnchor.digestSha256,
+   finalSequence:last.sequence,
+   finalAnchorSha256:anchorDigestDz(last),
+   evidenceBundleSha256:last.evidenceBundleSha256,
+   authorityInventorySha256:c.authorityInventorySha256,
+   epochViewSha256:viewSha,challengeNonce:hash('ea_challenge_nonce_'+role),
+   ...pin,observedAt,expiresAt:'2026-11-21T00:10:00.000Z',
+   decision:'HOLD'};
+  return {statement,viewEpochs:clone(view),publicKeyPem:publicPems[role],
+   signature:sign(null,peerSigningBytesEa(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ const quorumSha=peerQuorumDigestEa(peerPackets.map(p=>p.statement)),
+  claimSha=admissionClaimDigestEa(admissionClaim);
+ const freezePackets=EA_FREEZE_ROLES.map((role,i)=>{
+  const pin=key(role,i+3),observedAt='2026-11-21T00:00:0'+(i+7)+'.000Z';
+  freezePins[role]=pin;
+  const statement={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_GOSSIP_ADMISSION_FREEZE',
+   role,repository:REPO,incidentId:c.incidentId,
+   organizationId:e.organizationId,sourceHeadSha:e.sourceHeadSha,
+   mainBaseSha:e.mainBaseSha,finalSequence:last.sequence,
+   finalAnchorSha256:anchorDigestDz(last),
+   evidenceBundleSha256:last.evidenceBundleSha256,
+   epochViewSha256:viewSha,peerQuorumSha256:quorumSha,
+   admissionClaimSha256:claimSha,reviewNonce:c.reviewNonce,
+   ...pin,observedAt,expiresAt:'2026-11-21T00:10:00.000Z',
+   disposition:'CONTINUE_FREEZE_NO_AUTHORITY'};
+  return {statement,publicKeyPem:publicPems[role],
+   signature:sign(null,freezeSigningBytesEa(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ return {args:{anchorCandidate:d,previousGossipCursor,admissionClaim,
+  peerPins,peerPackets,freezePins,freezePackets,now:NOW},
+  privateKeys,publicPems,dz};
+}
+function eaResign(f,kind,i){
+ const packet=f.args[kind==='peer'?'peerPackets':'freezePackets'][i];
+ const role=packet.statement.role;
+ const bytes=kind==='peer'?peerSigningBytesEa:freezeSigningBytesEa;
+ packet.signature=sign(null,bytes(role,packet.statement),
+  f.privateKeys[role]).toString('base64');
+}
+function eaRebindQuorum(f){
+ const next=peerQuorumDigestEa(EA_PEER_ROLES.map(r=>
+  f.args.peerPackets.find(p=>p.statement.role===r).statement));
+ f.args.freezePackets.forEach((p,i)=>{
+  p.statement.peerQuorumSha256=next;eaResign(f,'freeze',i);
+ });
+}
+const eaAssess=f=>assessOfflineGossipAdmissionBoundaryEa(f.args);
+const eaHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualHttpsGossipOrPublicationRetrievalPerformed,false);
+ assert.equal(r.independentlyAuthenticatedExternalPeerEnrollment,false);
+ assert.equal(r.actualOffPlatformCasWormObjectLockOrDurableCursorVerified,false);
+ assert.equal(r.corporateMcaProviderMandateAndExternalReviewAuthenticated,false);
+ assert.equal(r.productionIncidentUnfreezeOrSourceActivationPossible,false);
+};
+test('1EA three synthetic gossip views and two freeze signatures agree but never authorize',()=>{
+ const r=eaAssess(eaFixture());
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.priorDzToDuOriginalHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.threeSignedCandidatePeerViewsMathematicallyVerifiedOnly,3);
+ assert.equal(r.epochVectorClaimsAgreeWithReverifiedSourceOnly,true);
+ assert.equal(r.twoFrozenAdmissionReviewSignaturesMathematicallyVerifiedOnly,2);
+ assert.equal(r.localGossipReplayAndForkCandidateInternallyConsistentOnly,true);
+ eaHold(r);
+});
+test('1EA signed independently forked gossip epoch digest fails even if issuer re-signs',()=>{
+ const f=eaFixture(),p=f.args.peerPackets[1];
+ p.viewEpochs[1].anchorDigestSha256='e'.repeat(64);
+ p.statement.epochViewSha256=epochViewDigestEa(p.viewEpochs);
+ eaResign(f,'peer',1);eaRebindQuorum(f);
+ const r=eaAssess(f);
+ assert.equal(r.threeSignedCandidatePeerViewsMathematicallyVerifiedOnly,3);
+ assert.equal(r.twoFrozenAdmissionReviewSignaturesMathematicallyVerifiedOnly,2);
+ has(r,'EA_SIGNED_PEER_EPOCH_FORK_OR_REPLAY');eaHold(r);
+});
+test('1EA peer cannot splice a past signed entry into current epoch transcript',()=>{
+ for(const change of [
+  v=>{v[2]=clone(v[1]);},
+  v=>{v.reverse();},
+  v=>{v[1].previousDigestSha256='e'.repeat(64);},
+  v=>{v[2].nonceSha256=v[0].nonceSha256;}
+ ]){
+  const f=eaFixture(),p=f.args.peerPackets[2];
+  change(p.viewEpochs);
+  const r=eaAssess(f);
+  has(r,'EA_SIGNED_PEER_EPOCH_FORK_OR_REPLAY');eaHold(r);
+ }
+});
+test('1EA claimed gossip epoch truncation or missing vector is never full source corroboration',()=>{
+ const f=eaFixture(),p=f.args.peerPackets[0];
+ p.viewEpochs.pop();
+ let r=eaAssess(f);
+ has(r,'EA_SIGNED_PEER_EPOCH_FORK_OR_REPLAY');eaHold(r);
+ p.viewEpochs=null;
+ r=eaAssess(f);
+ has(r,'EA_PEER_EPOCH_VECTOR_SCHEMA_INVALID');eaHold(r);
+});
+test('1EA peer with self-signed final anchor SHA fork cannot impersonate original source',()=>{
+ const f=eaFixture(),p=f.args.peerPackets[0];
+ p.statement.finalAnchorSha256='f'.repeat(64);
+ eaResign(f,'peer',0);eaRebindQuorum(f);
+ const r=eaAssess(f);
+ has(r,'EA_PEER_SIGNED_SOURCE_OR_HOLD_SCOPE_INVALID');eaHold(r);
+});
+test('1EA previous untrusted gossip cursor cannot be rewound, substituted or shifted',()=>{
+ for(const [field,value] of [
+  ['sequence',1],['digestSha256','f'.repeat(64)],
+  ['observedAt','2026-11-20T23:59:59.000Z']]){
+  const f=eaFixture();f.args.previousGossipCursor[field]=value;
+  const r=eaAssess(f);
+  has(r,'EA_GOSSIP_CURSOR_REPLAY_ROLLBACK_OR_SUBSTITUTION');eaHold(r);
+ }
+});
+test('1EA copied candidate gossip roles and absent third source are not independent quorum',()=>{
+ let f=eaFixture();f.args.peerPackets[2]=clone(f.args.peerPackets[0]);
+ let r=eaAssess(f);
+ has(r,'EA_PEER_ROLE_OR_PACKET_SCHEMA_INVALID');
+ has(r,'EA_PEER_ROLE_QUORUM_INCOMPLETE');eaHold(r);
+ f=eaFixture();f.args.peerPackets.pop();
+ r=eaAssess(f);
+ has(r,'EA_THREE_EXACT_PEER_PACKETS_REQUIRED');eaHold(r);
+});
+test('1EA current gossip peer cannot claim a retired DZ anchor SPKI even with valid signature',()=>{
+ const f=eaFixture(),prior=DZ_ANCHOR_ROLES[0],
+  role=EA_PEER_ROLES[0];
+ const earlier=f.args.anchorCandidate.epochs[0].observerPackets[0];
+ const old=f.args.anchorCandidate.anchorPins[prior];
+ f.args.peerPins[role].spkiSha256=old.spkiSha256;
+ f.args.peerPackets[0].statement.spkiSha256=old.spkiSha256;
+ f.args.peerPackets[0].publicKeyPem=earlier.publicKeyPem;
+ f.privateKeys[role]=f.dz.privateKeys[prior];eaResign(f,'peer',0);
+ const r=eaAssess(f);
+ has(r,'EA_SIGNER_OPERATOR_OR_ORGANIZATION_COLLISION');eaHold(r);
+});
+test('1EA collisions across peers and freeze signers do not confer organization independence',()=>{
+ for(const field of ['keyId','spkiSha256','operatorId','custodianOrganizationId']){
+  const f=eaFixture(),pin=f.args.peerPins[EA_PEER_ROLES[0]];
+  f.args.freezePins[EA_FREEZE_ROLES[0]][field]=pin[field];
+  f.args.freezePackets[0].statement[field]=pin[field];
+  eaResign(f,'freeze',0);
+  const r=eaAssess(f);
+  has(r,'EA_SIGNER_OPERATOR_OR_ORGANIZATION_COLLISION');eaHold(r);
+ }
+});
+test('1EA re-signed gossip GO, false source identity or wrong prior anchor scope is denied',()=>{
+ for(const [field,value] of [
+  ['decision','GO'],['kind','TRUSTED_EXTERNAL_PROVIDER_GOSSIP'],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['previousAnchorSha256','f'.repeat(64)],
+  ['evidenceBundleSha256','f'.repeat(64)]
+ ]){
+  const f=eaFixture(),p=f.args.peerPackets[1];
+  p.statement[field]=value;eaResign(f,'peer',1);eaRebindQuorum(f);
+  const r=eaAssess(f);
+  has(r,'EA_PEER_SIGNED_SOURCE_OR_HOLD_SCOPE_INVALID');eaHold(r);
+ }
+});
+test('1EA repeated original signed nonce and copied peer nonce fail replay test',()=>{
+ for(const nonce of ['0'.repeat(64),hash('ea_challenge_nonce_'+EA_PEER_ROLES[0])]){
+  const f=eaFixture(),p=f.args.peerPackets[1];
+  p.statement.challengeNonce=nonce;eaResign(f,'peer',1);eaRebindQuorum(f);
+  const r=eaAssess(f);
+  has(r,'EA_REPLAYED_PEER_CHALLENGE_NONCE');eaHold(r);
+ }
+});
+test('1EA copied Ed25519 signature or fake public key cannot pass gossip source',()=>{
+ for(const field of ['signature','publicKeyPem']){
+  const f=eaFixture();
+  f.args.peerPackets[0][field]=f.args.peerPackets[1][field];
+  const r=eaAssess(f);
+  has(r,'EA_PEER_ED25519_OR_SPKI_INVALID');eaHold(r);
+ }
+});
+test('1EA signed peer TLS/authority spoof extension cannot become authenticated online retrieval',()=>{
+ const f=eaFixture();
+ f.args.peerPackets[0].statement.validatedLiveTls=true;
+ const r=eaAssess(f);
+ has(r,'EA_PEER_ROLE_OR_PACKET_SCHEMA_INVALID');eaHold(r);
+});
+test('1EA expired, premature or future gossip peer receipts are quarantined',()=>{
+ for(const [key,value] of [
+  ['observedAt','2026-11-21T00:00:02.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z'],
+  ['observedAt','2026-11-21T00:10:00.000Z']
+ ]){
+  const f=eaFixture();
+  f.args.peerPackets[0].statement[key]=value;eaResign(f,'peer',0);
+  const r=eaAssess(f);
+  has(r,'EA_PEER_FRESHNESS_OR_EXPIRY_INVALID');eaHold(r);
+ }
+});
+test('1EA self reported authenticated provider, MCA, issuer CRL and production GO cannot be admitted',()=>{
+ for(const field of ['providerAuthorized','legalAuthorityVerified',
+  'liveIssuerRevocationAuthenticated','remoteArchiveRetrieved',
+  'wormCasRetentionVerified','independentStagingApproved',
+  'releaseApproved']){
+  const f=eaFixture();f.args.admissionClaim[field]=true;
+  const r=eaAssess(f);
+  has(r,'EA_SELF_APPROVAL_OR_ADMISSION_CLAIM_INVALID');eaHold(r);
+ }
+});
+test('1EA sourceType TRUSTED_REMOTE and admission status VERIFIED are always rejected',()=>{
+ for(const [field,value] of [
+  ['sourceType','AUTHENTICATED_REMOTE'],
+  ['trustStatus','INDEPENDENTLY_VERIFIED'],
+  ['decision','UNFREEZE'],
+  ['kind','REAL_EXTERNAL_APPROVAL']]){
+  const f=eaFixture();f.args.admissionClaim[field]=value;
+  const r=eaAssess(f);
+  has(r,'EA_SELF_APPROVAL_OR_ADMISSION_CLAIM_INVALID');eaHold(r);
+ }
+});
+test('1EA applicant cannot add providerApproved flag to exact source admission contract',()=>{
+ const f=eaFixture();
+ f.args.admissionClaim.providerApproved=true;
+ const r=eaAssess(f);
+ has(r,'EA_SELF_APPROVAL_OR_ADMISSION_CLAIM_INVALID');eaHold(r);
+});
+test('1EA signed quarantine freeze receipt cannot mutate review disposition',()=>{
+ for(const [field,value] of [
+  ['disposition','PRODUCTION_UNFREEZE'],
+  ['kind','AUTHORIZED_EXTERNAL_RELEASE'],
+  ['peerQuorumSha256','f'.repeat(64)],
+  ['admissionClaimSha256','f'.repeat(64)],
+  ['finalAnchorSha256','f'.repeat(64)]
+ ]){
+  const f=eaFixture();
+  f.args.freezePackets[0].statement[field]=value;eaResign(f,'freeze',0);
+  const r=eaAssess(f);
+  has(r,'EA_FREEZE_SIGNED_SOURCE_OR_UNFREEZE_FORBIDDEN');eaHold(r);
+ }
+});
+test('1EA cloned freeze role and missing reviewer do not count as dual custody',()=>{
+ let f=eaFixture();f.args.freezePackets[1]=clone(f.args.freezePackets[0]);
+ let r=eaAssess(f);
+ has(r,'EA_FREEZE_REVIEW_ROLE_OR_PACKET_INVALID');
+ has(r,'EA_FREEZE_REVIEW_QUORUM_INCOMPLETE');eaHold(r);
+ f=eaFixture();f.args.freezePackets.pop();
+ r=eaAssess(f);
+ has(r,'EA_TWO_EXACT_FREEZE_REVIEW_RECEIPTS_REQUIRED');eaHold(r);
+});
+test('1EA freeze reviewer signature key substitution or operator pin drift remains denied',()=>{
+ let f=eaFixture();
+ f.args.freezePackets[0].signature=f.args.freezePackets[1].signature;
+ let r=eaAssess(f);has(r,'EA_FREEZE_ED25519_OR_SPKI_INVALID');eaHold(r);
+ f=eaFixture();
+ f.args.freezePackets[0].statement.operatorId='rogue_freeze_operator';
+ eaResign(f,'freeze',0);
+ r=eaAssess(f);has(r,'EA_FREEZE_REVIEW_KEY_PIN_MISMATCH');eaHold(r);
+});
+test('1EA freeze HOLD must be signed later than all three claimed gossip timestamps',()=>{
+ for(const [field,value] of [
+  ['observedAt','2026-11-21T00:00:05.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z']
+ ]){
+  const f=eaFixture();
+  f.args.freezePackets[1].statement[field]=value;eaResign(f,'freeze',1);
+  const r=eaAssess(f);
+  has(r,'EA_FREEZE_REVIEW_STALE_OR_PRE_GOSSIP');eaHold(r);
+ }
+});
+test('1EA original signed multi-epoch DZ or older Legal history mutation never becomes genuine gossip',()=>{
+ const f=eaFixture();
+ f.args.anchorCandidate.admissionCandidate.rehearsalCandidate
+  .custodyCandidate.publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=eaAssess(f);
+ has(r,'EA_DZ_FULL_SOURCE_NOT_REVERIFIED');eaHold(r);
+});
+test('1EA unauthorized extra top-level release flag, cyclic and oversized JSON fail closed',()=>{
+ let f=eaFixture();
+ let r=assessOfflineGossipAdmissionBoundaryEa({
+  ...f.args,actualAuthorityVerified:true});
+ has(r,'EA_EXACT_BOUNDED_INPUT_REQUIRED');eaHold(r);
+ f=eaFixture();f.args.anchorCandidate.self=f.args;
+ r=eaAssess(f);has(r,'EA_EXACT_BOUNDED_INPUT_REQUIRED');eaHold(r);
+ f=eaFixture();
+ f.args.anchorCandidate.extra='x'.repeat(2560*1024);
+ r=eaAssess(f);has(r,'EA_EXACT_BOUNDED_INPUT_REQUIRED');eaHold(r);
+});
+test('1EA malformed signed view payload and missing reference UTC are immutable HOLD not crash',()=>{
+ let f=eaFixture();f.args.peerPackets[0].viewEpochs={at:42};
+ let r=eaAssess(f);
+ has(r,'EA_PEER_EPOCH_VECTOR_SCHEMA_INVALID');eaHold(r);
+ f=eaFixture();f.args.now=null;
+ r=eaAssess(f);
+ has(r,'EA_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'EA_DZ_FULL_SOURCE_NOT_REVERIFIED');eaHold(r);
+});
+test('1EA mathematical agreement never exposes raw identities, keys, SHA, nonce or signed evidence',()=>{
+ const f=eaFixture(),r=eaAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.peerPackets[0].signature,
+  f.args.freezePackets[0].publicKeyPem,
+  f.args.peerPins[EA_PEER_ROLES[0]].keyId,
+  f.args.peerPackets[2].statement.challengeNonce,
+  f.args.peerPackets[1].viewEpochs[0].anchorDigestSha256,
+  f.args.anchorCandidate.evidenceBundleBase64
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);eaHold(r);
+});
