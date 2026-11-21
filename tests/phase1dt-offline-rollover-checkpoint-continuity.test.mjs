@@ -221,3 +221,151 @@ test('1DT response hides raw private evidence and remains immutable',()=>{
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);hold(r);
 });
+
+/* Phase 1DU: reuse the same cryptographic fixture suite for consecutive epochs.
+ * Both epochs remain completely synthetic and do NOT prove independent custody. */
+import {assessOfflineMultiEpochRolloverChain}
+ from '../scripts/phase1du-offline-multi-epoch-rollover-chain.mjs';
+
+function twoEpochFixture(){
+ const fresh={LEGAL_WITNESS:pair(),REGISTRY_WITNESS:pair()};
+ const newIds={LEGAL_WITNESS:'legal-third',
+  REGISTRY_WITNESS:'registry-third'};
+ const m2={...baseV2,sequence:2,
+  previousCheckpointSha256:defaultV2.claimedCheckpointSha256,
+  nonce:'f'.repeat(64),issuedAt:'2026-11-21T00:00:01.000Z',
+  expiresAt:'2026-11-21T00:11:00.000Z'};
+ const opts=Object.fromEntries(V2_ROLES.map(role=>[role,
+  {key:fresh[role],keyId:newIds[role]}]));
+ const cp2=v2(m2,opts);
+ const rm2={...baseRotation,previousSequence:1,nextSequence:2,
+  previousCheckpointSha256:defaultV2.claimedCheckpointSha256,
+  nextCandidateCheckpointSha256:cp2.claimedCheckpointSha256,
+  rotationNonce:'8'.repeat(64),
+  issuedAt:'2026-11-21T00:00:01.000Z',
+  expiresAt:'2026-11-21T00:11:00.000Z'};
+ const identities=Object.fromEntries(V2_ROLES.map(role=>[
+  role,{previous:{keyId:ids[role].next,
+   spkiSha256:keys[role].next.spkiSha256},
+   next:{keyId:newIds[role],spkiSha256:fresh[role].spkiSha256}}
+ ]));
+ const attestations=Object.fromEntries(V2_ROLES.map(role=>{
+  const old=keys[role].next,upcoming=fresh[role];
+  return [role,Object.fromEntries([
+   ['previous',{publicKeyPem:old.publicKeyPem,
+    signature:sign(null,rotationSigningBytes(
+     role,'previous',rm2,identities),old.privateKey).toString('base64')}],
+   ['next',{publicKeyPem:upcoming.publicKeyPem,
+    signature:sign(null,rotationSigningBytes(
+     role,'next',rm2,identities),upcoming.privateKey).toString('base64')}]
+  ])];
+ }));
+ const rot2={manifest:rm2,identities,attestations,
+  claimedTransitionSha256:rotationDigest(rm2,identities,attestations)};
+ const ep1=input();delete ep1.now;
+ const ep2={transitionCandidates:[rot2,clone(rot2)],
+  checkpointObservations:[cp2,clone(cp2)],
+  expected:{...expected,previousSequence:1,
+   previousCheckpointSha256:defaultV2.claimedCheckpointSha256,
+   nextCandidateCheckpointSha256:cp2.claimedCheckpointSha256},
+  previousIdentityPins:Object.fromEntries(V2_ROLES.map(role=>[
+   role,{...identities[role].previous}])),
+  comparisonPins:{...comparisonPins,nonce:m2.nonce}};
+ return {epochs:[ep1,ep2],now:NOW};
+}
+const du=o=>assessOfflineMultiEpochRolloverChain(o);
+const duHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.productionMutationOrKeyEnrollmentPossible,false);
+ assert.equal(r.trustedTimeExternalWormCasTransparencyAndRevocationVerified,false);
+};
+test('1DU valid two-step four-way and signed-v2 chain is mathematical only',()=>{
+ const r=du(twoEpochFixture());
+ assert.equal(r.independentlyReverifiedEpochsMathematicallyOnly,2);
+ assert.equal(r.consecutiveSignedRolloverCheckpointsLinkedMathematicallyOnly,true);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.applicantSuppliedHistoryIsNotIndependentPublication,true);
+ duHold(r);
+});
+test('1DU swapped signed chronology cannot establish history',()=>{
+ const x=twoEpochFixture();x.epochs.reverse();
+ const r=du(x);
+ has(r,'DU_NONCONTIGUOUS_SEQUENCE_OR_PREDECESSOR');
+ duHold(r);
+});
+test('1DU reusing a signed epoch cannot count as additional rollover',()=>{
+ const x=twoEpochFixture();x.epochs[1]=clone(x.epochs[0]);
+ const r=du(x);
+ has(r,'DU_REPLAYED_CHECKPOINT_OR_TRANSITION');
+ has(r,'DU_CROSS_EPOCH_SIGNED_NONCE_REUSE');
+ assert.equal(r.consecutiveSignedRolloverCheckpointsLinkedMathematicallyOnly,false);
+ duHold(r);
+});
+test('1DU signed checkpoint predecessor claim mismatch is quarantined',()=>{
+ const x=twoEpochFixture();
+ x.epochs[1].expected.previousCheckpointSha256='a'.repeat(64);
+ const r=du(x);
+ has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');duHold(r);
+});
+test('1DU predecessor witness key ID drift cannot inherit old authority',()=>{
+ const x=twoEpochFixture();
+ x.epochs[1].previousIdentityPins.LEGAL_WITNESS.keyId='forged-old';
+ const r=du(x);
+ has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');duHold(r);
+});
+test('1DU unsigned checkpoint tampering in a later epoch denied',()=>{
+ const x=twoEpochFixture();
+ x.epochs[1].checkpointObservations[0].manifest.issuedAt=
+  '2026-11-21T00:00:02.000Z';
+ const r=du(x);
+ has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');duHold(r);
+});
+test('1DU partial transition observation list is not a verifier quorum',()=>{
+ const x=twoEpochFixture();x.epochs[1].transitionCandidates.length=1;
+ const r=du(x);
+ has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');duHold(r);
+});
+test('1DU cannot skip a broken first epoch and restart the chain',()=>{
+ const x=twoEpochFixture();
+ x.epochs[0].checkpointObservations[0].manifest.decision='GO';
+ const r=du(x);
+ has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');
+ has(r,'DU_PREDECESSOR_EPOCH_NOT_VERIFIED');duHold(r);
+});
+test('1DU rejects applicant-supplied approval/extension fields',()=>{
+ const x=twoEpochFixture();
+ x.epochs[1].approved=true;
+ const r=du(x);
+ has(r,'DU_EPOCH_SCHEMA_INVALID');duHold(r);
+});
+test('1DU refuses omitted or stale clock',()=>{
+ const x=twoEpochFixture();x.now=null;
+ let r=du(x);has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');
+ duHold(r);
+ x.now='2026-11-22T00:00:00.000Z';
+ r=du(x);has(r,'DU_EPOCH_SIGNATURES_OR_SIGNED_FORK_INVALID');
+ duHold(r);
+});
+test('1DU rejects unbounded, singleton and malformed histories',()=>{
+ let r=du({epochs:[],now:NOW});has(r,'DU_TWO_TO_SIX_EPOCHS_REQUIRED');duHold(r);
+ r=du({epochs:Array(7).fill(twoEpochFixture().epochs[0]),now:NOW});
+ has(r,'DU_TWO_TO_SIX_EPOCHS_REQUIRED');duHold(r);
+ r=du({epochs:[{},{}],now:NOW});
+ has(r,'DU_EPOCH_SCHEMA_INVALID');duHold(r);
+ r=du({...twoEpochFixture(),claimedReleaseApproved:true});
+ has(r,'DU_EXACT_TOP_LEVEL_INPUT_REQUIRED');duHold(r);
+});
+test('1DU redacts witness identities, signatures, nonce and raw PEM',()=>{
+ const x=twoEpochFixture(),r=du(x),s=JSON.stringify(r);
+ for(const secret of [
+  x.epochs[1].transitionCandidates[0].manifest.rotationNonce,
+  x.epochs[1].transitionCandidates[0].attestations.LEGAL_WITNESS.next.signature,
+  x.epochs[1].checkpointObservations[0].witnesses.REGISTRY_WITNESS.publicKeyPem,
+  'legal-third','registry-third'
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ duHold(r);
+});
