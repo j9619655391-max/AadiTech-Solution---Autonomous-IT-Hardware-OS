@@ -1569,3 +1569,345 @@ test('1DY cyclical and oversized input never bypass exact bounded denial',()=>{
  r=dyAssess(oversized);
  has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
 });
+
+/* Phase 1DZ: applicant-only, offline cross-epoch anchor, dual signed
+ * candidate observer views and Legal/Security retention-HOLD signatures.
+ * NEVER external gossip, WORM, actual DR or production release proof. */
+import {DZ_ANCHOR_ROLES,DZ_CUSTODY_ROLES,
+ evidenceBundleBytesDz,anchorDigestDz,anchorSigningBytesDz,
+ custodySigningBytesDz,assessOfflineCrossEpochAnchorCustodyDz}
+ from '../scripts/phase1dz-offline-cross-epoch-anchor-custody.mjs';
+function dzFixture(){
+ const dy=dyFixture(),d=dy.args,c=d.decisionCase,
+  e=d.rehearsalCandidate.custodyCandidate.publicationCandidate.expected;
+ const previousAnchor={sequence:c.observationSequence,
+  digestSha256:frozenCaseDigestDy(c),observedAt:NOW};
+ const evidenceBundleBase64=evidenceBundleBytesDz(d).toString('base64');
+ const bundleSha=hash(Buffer.from(evidenceBundleBase64,'base64'));
+ const anchorPins={},custodyPins={},privateKeys={},pairPems={};
+ const makePin=(role,index)=>{
+  const kp=pair();
+  privateKeys[role]=kp.privateKey;pairPems[role]=kp.publicKeyPem;
+  return {key:{privateKey:kp.privateKey,publicKeyPem:kp.publicKeyPem},
+   pin:{keyId:'key_dz_'+index+'001',spkiSha256:kp.spkiSha256,
+    operatorId:'operator_dz_'+index+'001',
+    custodianOrganizationId:'org_dz_'+index+'001'}};
+ };
+ DZ_ANCHOR_ROLES.forEach((role,i)=>{
+  anchorPins[role]=makePin(role,i).pin;
+ });
+ DZ_CUSTODY_ROLES.forEach((role,i)=>{
+  custodyPins[role]=makePin(role,i+2).pin;
+ });
+ let previousHash=previousAnchor.digestSha256,prevSeq=previousAnchor.sequence;
+ const epochs=Array.from({length:3},(_,index)=>{
+  const sec=String(index+1).padStart(2,'0');
+  const record={schemaVersion:1,kind:'UNTRUSTED_OFFLINE_CROSS_EPOCH_ANCHOR',
+   repository:REPO,incidentId:c.incidentId,organizationId:e.organizationId,
+   sourceHeadSha:e.sourceHeadSha,mainBaseSha:e.mainBaseSha,
+   checkpointSha256:e.checkpointSha256,archiveSha256:e.archiveSha256,
+   revocationDigestSha256:e.revocationDigestSha256,
+   authorityInventorySha256:c.authorityInventorySha256,
+   frozenCaseSha256:previousAnchor.digestSha256,
+   sourceSetDigestSha256:c.evidenceSetDigestSha256,
+   recoveryLedgerDigestSha256:c.recoveryLedgerDigestSha256,
+   previousSequence:prevSeq,sequence:prevSeq+1,
+   previousDigestSha256:previousHash,evidenceBundleSha256:bundleSha,
+   nonce:hash('dz_anchor_nonce_'+index),
+   observedAt:'2026-11-21T00:00:'+sec+'.000Z',decision:'HOLD'};
+  const digest=anchorDigestDz(record);
+  const observerPackets=DZ_ANCHOR_ROLES.map(role=>{
+   const p=anchorPins[role];
+   const statement={...record,role,...p,anchorDigestSha256:digest,
+    expiresAt:'2026-11-21T00:10:00.000Z',
+    disposition:'OBSERVE_HOLD_ONLY'};
+   const signature=sign(null,anchorSigningBytesDz(role,statement),
+    privateKeys[role]).toString('base64');
+   const publicKeyPem=pairPems[role];
+   return {statement,publicKeyPem,signature};
+  });
+  previousHash=digest;prevSeq=record.sequence;
+  return {record,observerPackets};
+ });
+ const custodyPackets=DZ_CUSTODY_ROLES.map(role=>{
+  const pin=custodyPins[role];
+  const statement={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_EVIDENCE_RETENTION_CANDIDATE',
+   role,repository:REPO,incidentId:c.incidentId,
+   organizationId:e.organizationId,sourceHeadSha:e.sourceHeadSha,
+   mainBaseSha:e.mainBaseSha,
+   previousAnchorSha256:previousAnchor.digestSha256,
+   finalAnchorSha256:previousHash,finalSequence:prevSeq,
+   evidenceBundleSha256:bundleSha,
+   authorityInventorySha256:c.authorityInventorySha256,
+   sourceSetDigestSha256:c.evidenceSetDigestSha256,
+   challengeNonce:c.reviewNonce,...pin,
+   observedAt:'2026-11-21T00:00:04.000Z',
+   expiresAt:'2026-11-21T00:10:00.000Z',
+   retentionUntil:'2027-01-01T00:00:00.000Z',
+   disposition:'RETAIN_HOLD_NO_DELETE'};
+  return {statement,publicKeyPem:pairPems[role],
+   signature:sign(null,custodySigningBytesDz(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ return {args:{admissionCandidate:d,previousAnchor,epochs,anchorPins,
+  evidenceBundleBase64,custodyPins,custodyPackets,now:NOW},
+  privateKeys,dy};
+}
+
+function dzResign(f,kind,index,which=0){
+ const isAnchor=kind==='anchor',p=isAnchor?
+  f.args.epochs[index].observerPackets[which]:f.args.custodyPackets[index];
+ const role=p.statement.role,fn=isAnchor?
+  anchorSigningBytesDz:custodySigningBytesDz;
+ p.signature=sign(null,fn(role,p.statement),
+  f.privateKeys[role]).toString('base64');
+}
+const dzAssess=f=>assessOfflineCrossEpochAnchorCustodyDz(f.args);
+const dzHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.safeProductionSourceThawPossible,false);
+ assert.equal(r.actualCrossSystemForkAbsenceOrGossipAuthenticated,false);
+ assert.equal(r.externalWormRetentionOrObjectLockDenialTestVerified,false);
+ assert.equal(r.independentlyPersistedAntiRollbackHighwatermarkVerified,false);
+ assert.equal(r.productionMutationOrExternalCredentialEnrollmentPossible,false);
+};
+test('1DZ three contiguous synthetic epochs and two signed custody HOLD receipts are never authorization',()=>{
+ const f=dzFixture(),r=dzAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.previousDuToDyOriginalSignedHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.locallyLinkedCandidateAnchorEpochs,3);
+ assert.equal(r.mathematicallyVerifiedEpochWitnessSignatures,6);
+ assert.equal(r.mathematicallyVerifiedRetentionCustodySignatures,2);
+ assert.equal(r.suppliedEvidenceBundleBytesAgreeWithSourceDigestsOnly,true);
+ assert.equal(r.candidateCrossEpochAndRetentionClaimsCorrelatedMathematicallyOnly,true);
+ dzHold(r);
+});
+test('1DZ two-epoch minimum and four-epoch maximum bound',()=>{
+ let f=dzFixture();
+ f.args.epochs.pop();
+ f.args.custodyPackets.forEach((p,i)=>{
+  const final=f.args.epochs.at(-1);
+  p.statement.finalAnchorSha256=anchorDigestDz(final.record);
+  p.statement.finalSequence=final.record.sequence;
+  p.statement.observedAt='2026-11-21T00:00:04.000Z';
+  dzResign(f,'custody',i);
+ });
+ let r=dzAssess(f);
+ assert.equal(r.candidateCrossEpochAndRetentionClaimsCorrelatedMathematicallyOnly,true);dzHold(r);
+ f=dzFixture();f.args.epochs=[f.args.epochs[0]];
+ r=dzAssess(f);has(r,'DZ_TWO_TO_FOUR_EXACT_EPOCHS_REQUIRED');dzHold(r);
+});
+test('1DZ fake signed multi-epoch GO cannot override HOLD',()=>{
+ for(const [field,value] of [
+  ['decision','GO'],['kind','AUTHORIZED_EXTERNAL_ANCHOR'],
+  ['sourceHeadSha','f'.repeat(40)],['authorityInventorySha256','f'.repeat(64)]
+ ]){
+  const f=dzFixture(),e=f.args.epochs[0];
+  e.record[field]=value;
+  e.observerPackets.forEach((p,i)=>{
+   p.statement[field]=value;p.statement.anchorDigestSha256=anchorDigestDz(e.record);
+   dzResign(f,'anchor',0,i);
+  });
+  const r=dzAssess(f);
+  has(r,'DZ_EPOCH_FORK_ROLLBACK_OR_SCOPE_MISMATCH');dzHold(r);
+ }
+});
+test('1DZ independently signed archive witness fork contradicting another observer is quarantined',()=>{
+ const f=dzFixture(),p=f.args.epochs[1].observerPackets[1];
+ p.statement.anchorDigestSha256='f'.repeat(64);
+ dzResign(f,'anchor',1,1);
+ const r=dzAssess(f);
+ assert.equal(r.mathematicallyVerifiedEpochWitnessSignatures,6);
+ has(r,'DZ_SIGNED_CROSS_VIEW_EQUIVOCATION');dzHold(r);
+});
+test('1DZ full re-signing at duplicated epoch or skipped sequence remains a fork',()=>{
+ for(const edit of [
+  e=>{e.sequence=e.previousSequence;},
+  e=>{e.sequence+=2;},
+  e=>{e.previousSequence+=1;},
+  e=>{e.previousDigestSha256='e'.repeat(64);}
+ ]){
+  const f=dzFixture(),e=f.args.epochs[1];edit(e.record);
+  const digest=anchorDigestDz(e.record);
+  e.observerPackets.forEach((p,i)=>{
+   Object.assign(p.statement,e.record,{anchorDigestSha256:digest});
+   dzResign(f,'anchor',1,i);
+  });
+  const r=dzAssess(f);
+  has(r,'DZ_EPOCH_FORK_ROLLBACK_OR_SCOPE_MISMATCH');dzHold(r);
+ }
+});
+test('1DZ reordering signed epochs and replaying nonce are denied',()=>{
+ for(const action of [
+  f=>{f.args.epochs.reverse();},
+  f=>{f.args.epochs[1].record.nonce=f.args.epochs[0].record.nonce;}
+ ]){
+  const f=dzFixture();action(f);
+  const r=dzAssess(f);
+  has(r,'DZ_EPOCH_FORK_ROLLBACK_OR_SCOPE_MISMATCH');dzHold(r);
+ }
+});
+test('1DZ previously accepted DY anchor cannot be replaced, rewound or re-dated',()=>{
+ for(const edit of [
+  p=>{p.sequence=5;},p=>{p.digestSha256='f'.repeat(64);},
+  p=>{p.observedAt='2026-11-20T23:59:59.000Z';}
+ ]){
+  const f=dzFixture();edit(f.args.previousAnchor);
+  const r=dzAssess(f);
+  has(r,'DZ_PREVIOUS_ANCHOR_DY_CUSTODY_MISMATCH');dzHold(r);
+ }
+});
+test('1DZ candidate retention cannot cover forged, blank, or swapped original evidence bytes',()=>{
+ for(const change of [
+  s=>Buffer.from('forged-evidence').toString('base64'),
+  s=>'***invalid***',s=>s.slice(1)
+ ]){
+  const f=dzFixture();
+  f.args.evidenceBundleBase64=change(f.args.evidenceBundleBase64);
+  const r=dzAssess(f);
+  has(r,'DZ_BUNDLE_BYTES_NOT_SOURCE_BOUND');dzHold(r);
+ }
+});
+test('1DZ signer role copied from another role is not a witness quorum',()=>{
+ const f=dzFixture();
+ f.args.epochs[0].observerPackets[1]=clone(f.args.epochs[0].observerPackets[0]);
+ const r=dzAssess(f);
+ has(r,'DZ_EPOCH_OBSERVER_PACKET_INVALID');
+ has(r,'DZ_EPOCH_WITNESS_QUORUM_INCOMPLETE');dzHold(r);
+});
+test('1DZ source witness key SPKI, operator and claimed organizations cannot collide',()=>{
+ for(const field of ['keyId','spkiSha256','operatorId','custodianOrganizationId']){
+  const f=dzFixture(),from=f.args.anchorPins[DZ_ANCHOR_ROLES[0]];
+  f.args.custodyPins[DZ_CUSTODY_ROLES[0]][field]=from[field];
+  f.args.custodyPackets[0].statement[field]=from[field];
+  dzResign(f,'custody',0);
+  const r=dzAssess(f);
+  has(r,'DZ_ROLE_KEY_OPERATOR_OR_CUSTODY_COLLISION');dzHold(r);
+ }
+});
+test('1DZ using prior DY review keys to endorse new anchor fails distinct custody gate',()=>{
+ const f=dzFixture(),dyRole=DY_REVIEW_ROLES[0],dzRole=DZ_ANCHOR_ROLES[0];
+ const original=f.args.admissionCandidate.reviewPackets[0];
+ const pin=f.args.admissionCandidate.reviewPins[dyRole];
+ f.args.anchorPins[dzRole].spkiSha256=pin.spkiSha256;
+ f.args.epochs.forEach((ep,i)=>{
+  const p=ep.observerPackets[0];p.statement.spkiSha256=pin.spkiSha256;
+  p.publicKeyPem=original.publicKeyPem;
+ });
+ f.privateKeys[dzRole]=f.dy.privateKeys[dyRole];
+ f.args.epochs.forEach((ep,i)=>dzResign(f,'anchor',i,0));
+ const r=dzAssess(f);
+ has(r,'DZ_ROLE_KEY_OPERATOR_OR_CUSTODY_COLLISION');dzHold(r);
+});
+test('1DZ valid detached key substitution or copied Ed25519 signature is not an authentic anchor',()=>{
+ for(const field of ['signature','publicKeyPem']){
+  const f=dzFixture();
+  f.args.epochs[0].observerPackets[0][field]=
+   f.args.epochs[0].observerPackets[1][field];
+  const r=dzAssess(f);
+  has(r,'DZ_EPOCH_SIGNATURE_OR_SPKI_INVALID');dzHold(r);
+ }
+});
+test('1DZ earlier witness signature, expired epoch or invalid observer disposition fails',()=>{
+ for(const [field,value,code] of [
+  ['expiresAt','2026-11-20T23:59:59.000Z','DZ_EPOCH_WITNESS_TIME_OR_EXPIRY_INVALID'],
+  ['disposition','GO','DZ_SIGNED_CROSS_VIEW_EQUIVOCATION'],
+  ['role','ATTACKER_ANCHOR_ROLE','DZ_EPOCH_OBSERVER_PACKET_INVALID']
+ ]){
+  const f=dzFixture();
+  f.args.epochs[0].observerPackets[0].statement[field]=value;
+  if(field!=='role')dzResign(f,'anchor',0,0);
+  const r=dzAssess(f);has(r,code);dzHold(r);
+ }
+});
+test('1DZ signed delete, unfreeze or shortened retention remains rejected',()=>{
+ for(const [field,value,code] of [
+  ['disposition','DELETE_UNFREEZE','DZ_CUSTODY_FINAL_ANCHOR_OR_HOLD_SCOPE_INVALID'],
+  ['retentionUntil','2026-11-21T00:10:00.000Z','DZ_CUSTODY_RETENTION_CLAIM_OR_CLOCK_INVALID'],
+  ['finalAnchorSha256','f'.repeat(64),'DZ_CUSTODY_FINAL_ANCHOR_OR_HOLD_SCOPE_INVALID'],
+  ['finalSequence',100,'DZ_CUSTODY_FINAL_ANCHOR_OR_HOLD_SCOPE_INVALID'],
+  ['sourceHeadSha','f'.repeat(40),'DZ_CUSTODY_FINAL_ANCHOR_OR_HOLD_SCOPE_INVALID']
+ ]){
+  const f=dzFixture();
+  f.args.custodyPackets[0].statement[field]=value;dzResign(f,'custody',0);
+  const r=dzAssess(f);has(r,code);dzHold(r);
+ }
+});
+test('1DZ two re-signed custodians disagree on retention duration and cannot claim consensus',()=>{
+ const f=dzFixture();
+ f.args.custodyPackets[1].statement.retentionUntil='2027-02-01T00:00:00.000Z';
+ dzResign(f,'custody',1);
+ const r=dzAssess(f);
+ assert.equal(r.mathematicallyVerifiedRetentionCustodySignatures,2);
+ has(r,'DZ_CUSTODY_RETENTION_SPLIT_VIEW');dzHold(r);
+});
+test('1DZ cloned custody packet, missing signer and copied signature rejected',()=>{
+ let f=dzFixture();
+ f.args.custodyPackets[1]=clone(f.args.custodyPackets[0]);
+ let r=dzAssess(f);
+ has(r,'DZ_CUSTODY_ROLE_PACKET_INVALID');
+ has(r,'DZ_CUSTODY_SIGNER_QUORUM_INCOMPLETE');dzHold(r);
+ f=dzFixture();f.args.custodyPackets.pop();
+ r=dzAssess(f);has(r,'DZ_TWO_CUSTODY_HOLD_RECEIPTS_REQUIRED');dzHold(r);
+ f=dzFixture();
+ f.args.custodyPackets[0].signature=f.args.custodyPackets[1].signature;
+ r=dzAssess(f);has(r,'DZ_CUSTODY_SIGNATURE_OR_SPKI_INVALID');dzHold(r);
+});
+test('1DZ valid source witness but supplied epoch outside time or signed next nonce conflicts',()=>{
+ for(const [field,value] of [
+  ['observedAt','2026-11-20T23:59:00.000Z'],
+  ['nonce','0'.repeat(64)]
+ ]){
+  const f=dzFixture(),ep=f.args.epochs[0];
+  ep.record[field]=value;
+  ep.observerPackets.forEach((p,i)=>{
+   p.statement[field]=value;
+   p.statement.anchorDigestSha256=anchorDigestDz(ep.record);
+   dzResign(f,'anchor',0,i);
+  });
+  const r=dzAssess(f);
+  has(r,'DZ_EPOCH_FORK_ROLLBACK_OR_SCOPE_MISMATCH');dzHold(r);
+ }
+});
+test('1DZ historical DU signer or DY evidence source forgery cannot become valid newer anchor',()=>{
+ const f=dzFixture();
+ f.args.admissionCandidate.rehearsalCandidate.custodyCandidate
+  .publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=dzAssess(f);
+ has(r,'DZ_DY_FULL_HISTORY_UNVERIFIED');dzHold(r);
+});
+test('1DZ unexpected approval extension, cyclic and oversized original candidates fail closed',()=>{
+ const f=dzFixture();
+ let r=assessOfflineCrossEpochAnchorCustodyDz({...f.args,releaseApproved:true});
+ has(r,'DZ_EXACT_BOUNDED_INPUT_REQUIRED');dzHold(r);
+ const cycle=dzFixture();cycle.args.admissionCandidate.cyclic=cycle.args;
+ r=dzAssess(cycle);has(r,'DZ_EXACT_BOUNDED_INPUT_REQUIRED');dzHold(r);
+ const big=dzFixture();big.args.admissionCandidate.extraData='x'.repeat(2048*1024);
+ r=dzAssess(big);has(r,'DZ_EXACT_BOUNDED_INPUT_REQUIRED');dzHold(r);
+});
+test('1DZ oversized signed epoch statement and unexpected retained object-lock approval denied',()=>{
+ let f=dzFixture();
+ f.args.epochs[0].record.kind='x'.repeat(9000);
+ let r=dzAssess(f);
+ has(r,'DZ_EPOCH_RECORD_SCHEMA_INVALID');dzHold(r);
+ f=dzFixture();f.args.custodyPackets[0].statement.actualObjectLockVerified=true;
+ r=dzAssess(f);
+ has(r,'DZ_CUSTODY_ROLE_PACKET_INVALID');dzHold(r);
+});
+test('1DZ output is immutable, metadata-only and cannot leak archive, nonce, SPKI or signature',()=>{
+ const f=dzFixture(),r=dzAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.evidenceBundleBase64,
+  f.args.epochs[0].record.nonce,
+  f.args.epochs[1].observerPackets[0].signature,
+  f.args.custodyPackets[1].publicKeyPem,
+  f.args.custodyPins[DZ_CUSTODY_ROLES[0]].keyId,
+  f.args.admissionCandidate.decisionCase.incidentId
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);dzHold(r);
+});
