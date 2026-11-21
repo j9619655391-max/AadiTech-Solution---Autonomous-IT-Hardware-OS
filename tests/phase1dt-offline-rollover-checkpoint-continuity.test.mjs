@@ -1162,3 +1162,388 @@ test('1DX immutable redacted dry-run response excludes key IDs, nonces, private 
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);dxHold(r);
 });
+
+/* Phase 1DY: applicant-provided external readiness status inventory,
+ * two oversight receipts and three independent review-HOLD signatures.
+ * Every source and clock is synthetic; NEVER a real external approval. */
+import {DY_REQUIRED_GATES,DY_OVERSIGHT_ROLES,DY_REVIEW_ROLES,
+ inventoryDigestDy,frozenCaseDigestDy,oversightSigningBytesDy,
+ oversightSetDigestDy,reviewSigningBytesDy,
+ assessOfflineAdmissionUnfreezePreconditionsDy}
+ from '../scripts/phase1dy-offline-source-admission-unfreeze-preconditions.mjs';
+
+function dyFixture(){
+ const dx=dxFixture(),a=dx.args,e=a.custodyCandidate.publicationCandidate.expected;
+ const authorityInventory=Object.fromEntries(DY_REQUIRED_GATES.map(g=>[
+  g,{state:'MISSING',evidenceSha256:'0'.repeat(64),observedAt:null}
+ ]));
+ const previousObservationAnchor={sequence:5,digestSha256:'6'.repeat(64),
+  observedAt:'2026-11-20T23:59:50.000Z'};
+ const evidenceSetDigestSha256=evidenceSetDigestDx(DX_SOURCES.map(role=>
+  a.sourceReceipts.find(p=>p.statement.role===role).statement));
+ const recoveryLedgerDigestSha256=recoveryStepDigestDx(a.recoverySteps.at(-1));
+ const decisionCase={schemaVersion:1,
+  kind:'UNTRUSTED_INDEPENDENT_UNFREEZE_REVIEW_CASE',
+  incidentId:a.incident.incidentId,repository:REPO,
+  organizationId:e.organizationId,sourceHeadSha:e.sourceHeadSha,
+  mainBaseSha:e.mainBaseSha,checkpointSha256:e.checkpointSha256,
+  archiveSha256:e.archiveSha256,
+  revocationDigestSha256:e.revocationDigestSha256,
+  evidenceSetDigestSha256,recoveryLedgerDigestSha256,
+  authorityInventorySha256:inventoryDigestDy(authorityInventory),
+  previousObservationSha256:previousObservationAnchor.digestSha256,
+  observationSequence:previousObservationAnchor.sequence+1,
+  challengeNonce:e.challengeNonce,
+  reviewNonce:hash('dy-review-candidate:'+e.challengeNonce),
+  frozenAt:a.recoverySteps.at(-1).observedAt,decision:'REMAINS_FROZEN'};
+ const oversightPins={},reviewPins={},privateKeys={};
+ const base={repository:REPO,organizationId:e.organizationId,
+  sourceHeadSha:e.sourceHeadSha,mainBaseSha:e.mainBaseSha,
+  incidentId:decisionCase.incidentId,
+  evidenceSetDigestSha256,recoveryLedgerDigestSha256,
+  authorityInventorySha256:decisionCase.authorityInventorySha256,
+  caseDigestSha256:frozenCaseDigestDy(decisionCase),
+  previousObservationSha256:decisionCase.previousObservationSha256,
+  observationSequence:decisionCase.observationSequence,
+  challengeNonce:e.challengeNonce,reviewNonce:decisionCase.reviewNonce};
+ const make=(roles,pins,kind,disposition,signBytes,extra=()=>({}))=>
+  roles.map((role,index)=>{
+   const kp=pair(),suffix='dy_'+(roles===DY_OVERSIGHT_ROLES?'oversight':'review')+index;
+   privateKeys[role]=kp.privateKey;
+   const pin={keyId:'key_'+suffix+'01',spkiSha256:kp.spkiSha256,
+    operatorId:'operator_'+suffix+'01',
+    custodianOrganizationId:'org_'+suffix+'01'};
+   pins[role]=pin;
+   const statement={schemaVersion:1,kind,role,...base,
+    ...pin,observedAt:NOW,expiresAt:'2026-11-21T00:10:00.000Z',
+    disposition,...extra()};
+   return {statement,publicKeyPem:kp.publicKeyPem,
+    signature:sign(null,signBytes(role,statement),
+     kp.privateKey).toString('base64')};
+  });
+ const oversightPackets=make(DY_OVERSIGHT_ROLES,oversightPins,
+  'UNTRUSTED_OFFLINE_FROZEN_SOURCE_OVERSIGHT','OBSERVE_FROZEN_ONLY',
+  oversightSigningBytesDy);
+ const oversightSetDigestSha256=oversightSetDigestDy(
+  oversightPackets.map(p=>p.statement));
+ const reviewPackets=make(DY_REVIEW_ROLES,reviewPins,
+  'UNTRUSTED_OFFLINE_INDEPENDENT_REVIEW_HOLD','REVIEW_HOLD_ONLY',
+  reviewSigningBytesDy,()=>({oversightSetDigestSha256}));
+ return {args:{rehearsalCandidate:dx.args,authorityInventory,
+  previousObservationAnchor,decisionCase,oversightPins,oversightPackets,
+  reviewPins,reviewPackets,now:NOW},privateKeys,dx};
+}
+function dyResign(f,kind,index){
+ const oversight=kind==='oversight',p=f.args[
+  oversight?'oversightPackets':'reviewPackets'][index];
+ const fn=oversight?oversightSigningBytesDy:reviewSigningBytesDy;
+ p.signature=sign(null,fn(p.statement.role,p.statement),
+  f.privateKeys[p.statement.role]).toString('base64');
+}
+function dyResignCompleteInventory(f){
+ const a=f.args,c=a.decisionCase;
+ c.authorityInventorySha256=inventoryDigestDy(a.authorityInventory);
+ const caseDigestSha256=frozenCaseDigestDy(c);
+ a.oversightPackets.forEach((p,i)=>{
+  p.statement.authorityInventorySha256=c.authorityInventorySha256;
+  p.statement.caseDigestSha256=caseDigestSha256;
+  dyResign(f,'oversight',i);
+ });
+ const oversightSetDigestSha256=oversightSetDigestDy(
+  a.oversightPackets.map(p=>p.statement));
+ a.reviewPackets.forEach((p,i)=>{
+  p.statement.authorityInventorySha256=c.authorityInventorySha256;
+  p.statement.caseDigestSha256=caseDigestSha256;
+  p.statement.oversightSetDigestSha256=oversightSetDigestSha256;
+  dyResign(f,'review',i);
+ });
+}
+const dyAssess=f=>assessOfflineAdmissionUnfreezePreconditionsDy(f.args);
+const dyHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualProductionUnfreezeOrAutomaticReleasePossible,false);
+ assert.equal(r.currentExternalIndependentTrustGatesAuthenticated,0);
+ assert.equal(r.genuineProviderAgreementCredentialsAndIssuerTrustVerified,false);
+ assert.equal(r.protectedMainNonauthorStagingAndDrAcceptanceVerified,false);
+};
+test('1DY 12 missing authority gates and five valid synthetic HOLD signers NEVER authorize',()=>{
+ const r=dyAssess(dyFixture());
+ assert.equal(r.precedingDxDwDvDuFullOriginalHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.authorityPrerequisiteSlotsInspected,12);
+ assert.equal(r.authorityPrerequisitesMissing,12);
+ assert.equal(r.authorityPrerequisitesPresentButNotAuthenticated,0);
+ assert.equal(r.dualOversightObservationsSignedMathematicallyOnly,2);
+ assert.equal(r.tripleIndependentReviewHoldSignaturesMathematicallyOnly,3);
+ assert.equal(r.candidateFrozenCaseAndReviewScopesCorrelatedMathematicallyOnly,true);
+ assert.deepEqual(r.anomalyCodes,[]);dyHold(r);
+});
+test('1DY present-but-unverified 12 prerequisites remain legally and technically untrusted',()=>{
+ const f=dyFixture();
+ DY_REQUIRED_GATES.forEach((g,i)=>{
+  f.args.authorityInventory[g]={state:'PRESENT_UNVERIFIED',
+   evidenceSha256:hash('synthetic-evidence:'+g+':'+i),observedAt:NOW};
+ });
+ dyResignCompleteInventory(f);
+ const r=dyAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.authorityPrerequisitesMissing,0);
+ assert.equal(r.authorityPrerequisitesPresentButNotAuthenticated,12);
+ assert.equal(r.candidateFrozenCaseAndReviewScopesCorrelatedMathematicallyOnly,true);
+ assert.equal(r.currentExternalIndependentTrustGatesAuthenticated,0);
+ dyHold(r);
+});
+test('1DY mix of missing, rejected and present unverified preserves hold and counts',()=>{
+ const f=dyFixture(),g=DY_REQUIRED_GATES;
+ f.args.authorityInventory[g[0]]={state:'REJECTED',
+  evidenceSha256:hash('rejected-fixture'),observedAt:NOW};
+ f.args.authorityInventory[g[1]]={state:'PRESENT_UNVERIFIED',
+  evidenceSha256:hash('unverified-fixture'),observedAt:NOW};
+ dyResignCompleteInventory(f);
+ const r=dyAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.authorityPrerequisitesMissing,10);
+ assert.equal(r.authorityPrerequisitesRejected,1);
+ assert.equal(r.authorityPrerequisitesPresentButNotAuthenticated,1);
+ dyHold(r);
+});
+test('1DY forged VERIFIED or APPROVED external gate flag is not admitted by schema',()=>{
+ for(const state of ['VERIFIED','APPROVED','PRODUCTION_READY']){
+  const f=dyFixture(),g=DY_REQUIRED_GATES[0];
+  f.args.authorityInventory[g].state=state;
+  const r=dyAssess(f);
+  has(r,'DY_EXACT_AUTHORITY_PREREQUISITE_STATUSES_REQUIRED');dyHold(r);
+ }
+});
+test('1DY malformed missing evidence digest and unverified missing timestamp fail',()=>{
+ for(const edit of [
+  g=>{g.evidenceSha256='f'.repeat(64);},
+  g=>{g.observedAt=NOW;},
+  g=>{g.state='PRESENT_UNVERIFIED';},
+  g=>{g.providerApproved=true;}
+ ]){
+  const f=dyFixture();edit(f.args.authorityInventory[DY_REQUIRED_GATES[0]]);
+  const r=dyAssess(f);
+  has(r,'DY_EXACT_AUTHORITY_PREREQUISITE_STATUSES_REQUIRED');dyHold(r);
+ }
+});
+test('1DY independently signed inventory drift triggers failed frozen case binding',()=>{
+ const f=dyFixture(),g=DY_REQUIRED_GATES[0];
+ f.args.authorityInventory[g]={state:'PRESENT_UNVERIFIED',
+  evidenceSha256:hash('other-authority-scope'),observedAt:NOW};
+ const r=dyAssess(f);
+ has(r,'DY_FROZEN_CASE_SCOPE_SEQUENCE_OR_THAW_INVALID');
+ assert.equal(r.candidateFrozenCaseAndReviewScopesCorrelatedMathematicallyOnly,false);
+ dyHold(r);
+});
+test('1DY future observed gate is invalid even when entirely re-signed by synthetic reviewers',()=>{
+ const f=dyFixture(),g=DY_REQUIRED_GATES[0];
+ f.args.authorityInventory[g]={state:'PRESENT_UNVERIFIED',
+  evidenceSha256:hash('future-synthetic-gate'),
+  observedAt:'2026-11-21T00:10:00.000Z'};
+ dyResignCompleteInventory(f);
+ const r=dyAssess(f);
+ has(r,'DY_GATE_TIME_CLAIM_INVALID');dyHold(r);
+});
+test('1DY authority inventory missing/extra role or unbounded header cannot be admitted',()=>{
+ let f=dyFixture();
+ delete f.args.authorityInventory[DY_REQUIRED_GATES[0]];
+ let r=dyAssess(f);
+ has(r,'DY_EXACT_AUTHORITY_PREREQUISITE_STATUSES_REQUIRED');dyHold(r);
+ f=dyFixture();f.args.authorityInventory.UNKNOWN_AUTHORITY={
+  state:'MISSING',evidenceSha256:'0'.repeat(64),observedAt:null};
+ r=dyAssess(f);
+ has(r,'DY_EXACT_AUTHORITY_PREREQUISITE_STATUSES_REQUIRED');dyHold(r);
+});
+test('1DY no cloned oversight key, operator, organization or SPKI across five roles',()=>{
+ for(const attr of ['keyId','operatorId','custodianOrganizationId','spkiSha256']){
+  const f=dyFixture(),source=f.args.oversightPins[DY_OVERSIGHT_ROLES[0]];
+  const other=f.args.reviewPins[DY_REVIEW_ROLES[0]];
+  other[attr]=source[attr];f.args.reviewPackets[0].statement[attr]=source[attr];
+  dyResign(f,'review',0);
+  const r=dyAssess(f);
+  has(r,'DY_NEW_INDEPENDENT_ROLE_PINS_UNPROVEN');dyHold(r);
+ }
+});
+test('1DY prior DX recovery signer key reuse cannot become independent review',()=>{
+ const f=dyFixture(),role=DY_REVIEW_ROLES[0],dxRole=DX_RECOVERY_ROLES[0];
+ const old=f.args.rehearsalCandidate.recoveryPins[dxRole];
+ const p=f.args.reviewPackets[0];
+ p.statement.spkiSha256=old.spkiSha256;
+ f.args.reviewPins[role].spkiSha256=old.spkiSha256;
+ p.publicKeyPem=f.args.rehearsalCandidate.recoverySigners[0].publicKeyPem;
+ f.privateKeys[role]=f.dx.privateKeys[dxRole];
+ dyResign(f,'review',0);
+ const r=dyAssess(f);
+ has(r,'DY_NEW_INDEPENDENT_ROLE_PINS_UNPROVEN');dyHold(r);
+});
+test('1DY prior Legal witness re-enrolled with new role cannot impersonate oversight',()=>{
+ const f=dyFixture(),role=DY_OVERSIGHT_ROLES[0],old=keys.LEGAL_WITNESS.next;
+ f.args.oversightPins[role].spkiSha256=old.spkiSha256;
+ f.args.oversightPackets[0].statement.spkiSha256=old.spkiSha256;
+ f.args.oversightPackets[0].publicKeyPem=old.publicKeyPem;
+ f.privateKeys[role]=old.privateKey;dyResign(f,'oversight',0);
+ const r=dyAssess(f);
+ has(r,'DY_NEW_INDEPENDENT_ROLE_PINS_UNPROVEN');dyHold(r);
+});
+test('1DY signed dual-oversight candidate split-view source digest is quarantined',()=>{
+ const f=dyFixture();
+ f.args.oversightPackets[1].statement.evidenceSetDigestSha256='f'.repeat(64);
+ dyResign(f,'oversight',1);
+ const r=dyAssess(f);
+ assert.equal(r.dualOversightObservationsSignedMathematicallyOnly,2);
+ has(r,'DY_OVERSIGHT_CASE_SCOPE_OR_DISPOSITION_MISMATCH');dyHold(r);
+});
+test('1DY oversight role cloning or missing independent view fails two-party quorum',()=>{
+ const f=dyFixture();
+ f.args.oversightPackets[1]=clone(f.args.oversightPackets[0]);
+ const r=dyAssess(f);
+ has(r,'DY_OVERSIGHT_ROLE_PACKET_INVALID');
+ has(r,'DY_OVERSIGHT_QUORUM_INCOMPLETE');dyHold(r);
+ const g=dyFixture();g.args.oversightPackets.pop();
+ const b=dyAssess(g);
+ has(b,'DY_TWO_EXACT_OVERSIGHT_PACKETS_REQUIRED');dyHold(b);
+});
+test('1DY copied Ed25519 oversight signature and PEM substitutions cannot pass',()=>{
+ for(const k of ['publicKeyPem','signature']){
+  const f=dyFixture();
+  f.args.oversightPackets[0][k]=f.args.oversightPackets[1][k];
+  const r=dyAssess(f);
+  has(r,'DY_OVERSIGHT_SIGNATURE_OR_SPKI_INVALID');dyHold(r);
+ }
+});
+test('1DY signed oversight GO, role change or expired receipt never attains quorum',()=>{
+ for(const [key,value,code] of [
+  ['disposition','GO','DY_OVERSIGHT_CASE_SCOPE_OR_DISPOSITION_MISMATCH'],
+  ['kind','VERIFIED_REAL_EXTERNAL_OPERATOR','DY_OVERSIGHT_CASE_SCOPE_OR_DISPOSITION_MISMATCH'],
+  ['expiresAt','2026-11-20T23:59:59.000Z','DY_OVERSIGHT_STALE_OR_PRE_FREEZE'],
+  ['caseDigestSha256','f'.repeat(64),'DY_OVERSIGHT_CASE_SCOPE_OR_DISPOSITION_MISMATCH']
+ ]){
+  const f=dyFixture();
+  f.args.oversightPackets[0].statement[key]=value;
+  dyResign(f,'oversight',0);
+  const r=dyAssess(f);has(r,code);dyHold(r);
+ }
+});
+test('1DY stale prior observation anchor, rollback and signed sequence fork cannot pass',()=>{
+ for(const edit of [
+  f=>{f.args.previousObservationAnchor.sequence=1;},
+  f=>{f.args.previousObservationAnchor.digestSha256='f'.repeat(64);},
+  f=>{f.args.previousObservationAnchor.observedAt='2026-11-20T23:59:59.000Z';},
+  f=>{f.args.previousObservationAnchor.observedAt='2026-11-19T00:00:00.000Z';},
+  f=>{f.args.decisionCase.observationSequence+=1;}
+ ]){
+  const f=dyFixture();edit(f);
+  const r=dyAssess(f);
+  has(r,'DY_FROZEN_CASE_SCOPE_SEQUENCE_OR_THAW_INVALID');dyHold(r);
+ }
+});
+test('1DY signed unfreeze decision is quarantined even if five new keys re-sign paperwork',()=>{
+ for(const [key,val] of [
+  ['decision','GO'],
+  ['kind','AUTHENTICATED_UNFREEZE_APPROVAL'],
+  ['challengeNonce','d'.repeat(64)],
+  ['reviewNonce','0'.repeat(64)],
+  ['frozenAt','2026-11-20T23:59:57.000Z'],
+  ['sourceHeadSha','f'.repeat(40)]
+ ]){
+  const f=dyFixture();f.args.decisionCase[key]=val;
+  const r=dyAssess(f);
+  has(r,'DY_FROZEN_CASE_SCOPE_SEQUENCE_OR_THAW_INVALID');dyHold(r);
+ }
+});
+test('1DY independently signed three-role review split-view is quarantined',()=>{
+ for(const [field,value] of [
+  ['oversightSetDigestSha256','f'.repeat(64)],
+  ['authorityInventorySha256','f'.repeat(64)],
+  ['recoveryLedgerDigestSha256','f'.repeat(64)],
+  ['caseDigestSha256','f'.repeat(64)],
+  ['disposition','UNFREEZE'],
+  ['kind','LIVE_RELEASE_APPROVAL']
+ ]){
+  const f=dyFixture();
+  f.args.reviewPackets[1].statement[field]=value;
+  dyResign(f,'review',1);
+  const r=dyAssess(f);
+  has(r,'DY_REVIEW_CASE_SCOPE_OR_FORBIDDEN_UNFREEZE');dyHold(r);
+ }
+});
+test('1DY cloned role, missing Operations and reused review signature cannot count as three',()=>{
+ const f=dyFixture();
+ f.args.reviewPackets[2]=clone(f.args.reviewPackets[0]);
+ let r=dyAssess(f);
+ has(r,'DY_REVIEW_ROLE_PACKET_INVALID');
+ has(r,'DY_REVIEW_QUORUM_INCOMPLETE');dyHold(r);
+ const g=dyFixture();g.args.reviewPackets.pop();
+ r=dyAssess(g);
+ has(r,'DY_THREE_EXACT_REVIEW_HOLD_PACKETS_REQUIRED');dyHold(r);
+ const h=dyFixture();
+ h.args.reviewPackets[2].signature=h.args.reviewPackets[0].signature;
+ r=dyAssess(h);has(r,'DY_REVIEW_SIGNATURE_OR_SPKI_INVALID');dyHold(r);
+});
+test('1DY valid detached review signature with key/identity drift fails source pins',()=>{
+ for(const attr of ['keyId','operatorId','custodianOrganizationId','spkiSha256']){
+  const f=dyFixture();
+  f.args.reviewPackets[1].statement[attr]=attr==='spkiSha256'?
+   'a'.repeat(64):'malicious_review01';
+  dyResign(f,'review',1);
+  const r=dyAssess(f);
+  has(r,'DY_REVIEW_DETACHED_PIN_MISMATCH');dyHold(r);
+ }
+});
+test('1DY review signed before source oversight or expiry fails cryptographic chronology',()=>{
+ for(const [key,val] of [
+  ['observedAt','2026-11-20T23:59:59.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z']
+ ]){
+  const f=dyFixture();
+  f.args.reviewPackets[0].statement[key]=val;
+  dyResign(f,'review',0);
+  const r=dyAssess(f);
+  has(r,'DY_REVIEW_STALE_OR_PRE_OVERSIGHT');dyHold(r);
+ }
+});
+test('1DY previous DU-DX original history tampering is never fixed by new committee signatures',()=>{
+ const f=dyFixture();
+ f.args.rehearsalCandidate.custodyCandidate.publicationCandidate.history
+  .epochs[0].checkpointObservations[0].manifest.decision='GO';
+ const r=dyAssess(f);
+ has(r,'DY_PRECEDING_DX_OR_HISTORY_NOT_REVERIFIED');dyHold(r);
+});
+test('1DY missing UTC reference and unknown approval extension fail early with safe HOLD',()=>{
+ let f=dyFixture();f.args.now=null;
+ let r=dyAssess(f);
+ has(r,'DY_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'DY_PRECEDING_DX_OR_HISTORY_NOT_REVERIFIED');dyHold(r);
+ f=dyFixture();
+ r=assessOfflineAdmissionUnfreezePreconditionsDy({
+  ...f.args,externalProviderApproved:true});
+ has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
+});
+test('1DY bounded exact reviewer, oversight and frozen-case schemata disallow hidden GO field',()=>{
+ for(const add of [
+  f=>{f.args.reviewPackets[0].statement.verifiedRelease=true;},
+  f=>{f.args.oversightPackets[0].statement.verifiedExternalTLS=true;},
+  f=>{f.args.decisionCase.authorizedByCCA=true;}
+ ]){
+  const f=dyFixture();add(f);
+  const r=dyAssess(f);
+  assert.ok(r.anomalyCodes.some(code=>code.startsWith('DY_')));
+  assert.equal(r.candidateFrozenCaseAndReviewScopesCorrelatedMathematicallyOnly,false);
+  dyHold(r);
+ }
+});
+test('1DY output redacts keys, signatures, roles identity strings, incident and nonce',()=>{
+ const f=dyFixture(),r=dyAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.reviewPackets[0].signature,
+  f.args.oversightPackets[1].publicKeyPem,
+  f.args.reviewPins[DY_REVIEW_ROLES[0]].keyId,
+  f.args.decisionCase.incidentId,
+  f.args.decisionCase.reviewNonce,
+  f.args.rehearsalCandidate.sourceBytes[DX_SOURCES[0]]
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);dyHold(r);
+});
