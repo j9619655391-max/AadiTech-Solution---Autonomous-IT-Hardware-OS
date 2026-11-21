@@ -271,7 +271,7 @@ function twoEpochFixture(options={}){
  }));
  const rot2={manifest:rm2,identities,attestations,
   claimedTransitionSha256:rotationDigest(rm2,identities,attestations)};
- const ep1=input();delete ep1.now;
+ const ep1=clone(input());delete ep1.now; // isolate per-test signed fixtures
  const ep2={transitionCandidates:[rot2,clone(rot2)],
   checkpointObservations:[cp2,clone(cp2)],
   expected:{...expected,previousSequence:1,
