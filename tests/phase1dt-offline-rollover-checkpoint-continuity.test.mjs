@@ -2938,3 +2938,267 @@ test('1EC redacted frozen result never returns private evidence source hashes, i
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);ecHold(r);
 });
+
+/* Phase 1ED: Strict disconnected authority-verification port contracts.
+ * No real HTTP, official CA/MCA credentials, secrets manager, WORM/CAS
+ * or production side effects: synthetic locally generated adapter receipts. */
+import {ED_GATE_INTERFACE_CONTRACT,ED_RECEIPT_STATUSES,
+ createDisconnectedAuthorityWorkOrdersEd,createDisconnectedTestReceiptEd,
+ workOrderDigestEd,assessDisconnectedAuthorityVerificationPortEd}
+ from '../scripts/phase1ed-disconnected-authority-verification-ports.mjs';
+
+function edFixture(){
+ const ec=ecFixture(),workOrders=createDisconnectedAuthorityWorkOrdersEd(ec.args);
+ const receipts=workOrders.map((order,i)=>createDisconnectedTestReceiptEd(order,{
+  adapterId:'test_adapter_gate_'+String(i).padStart(3,'0'),
+  observedAt:'2026-11-21T00:00:'+String(i+25).padStart(2,'0')+'.000Z'
+ }));
+ return {args:{handoffCandidate:ec.args,workOrders:clone(workOrders),
+  receipts:clone(receipts),now:NOW},ec,originalOrders:workOrders,
+  originalReceipts:receipts};
+}
+const edAssess=f=>assessDisconnectedAuthorityVerificationPortEd(f.args);
+const edHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.realProviderOrMcaMandateAuthenticated,false);
+ assert.equal(r.liveIssuerSignedCrlOcspOrCcaRcaiEmudhraVerified,false);
+ assert.equal(r.actualIndependentTlsEvidenceOrGossipObtained,false);
+ assert.equal(r.realProtectedWormCasObjectLockOrDrAcceptanceVerified,false);
+ assert.equal(r.independentSignerEnrollmentOrStagingReleaseApproved,false);
+ assert.equal(r.productionSourceActivationOrCredentialEnrollmentPossible,false);
+};
+test('1ED all 12 disconnected work orders and receipts bind original chain but always HOLD',()=>{
+ const f=edFixture(),r=edAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.priorEcToDuOriginalHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.exactApplicantOnlyPortWorkOrders,12);
+ assert.equal(r.internallyCorrelatedDisconnectedTestReceipts,12);
+ assert.equal(r.notExecutedReceiptCount,12);
+ assert.equal(r.syntheticPortProtocolInternallyConsistentOnly,true);
+ assert.equal(f.args.workOrders.length,12);
+ assert.equal(f.args.receipts.length,12);
+ edHold(r);
+});
+test('1ED port protocol exposes required checks for issuer CRL/OCSP and authenticated HTTPS',()=>{
+ const rev=ED_GATE_INTERFACE_CONTRACT.LIVE_ISSUER_SIGNED_CRL_OCSP;
+ const tls=ED_GATE_INTERFACE_CONTRACT.AUTHENTICATED_EXTERNAL_TLS_ARCHIVE_BYTES;
+ assert.deepEqual([...rev.requiredChecks],
+  ['ISSUER_SIGNATURE','SERIAL','NONCE','THIS_NEXT_UPDATE','REVOCATION_STATE']);
+ assert.deepEqual([...tls.requiredChecks],
+  ['TLS_HOSTNAME','CHAIN_AND_SPKI','BOUNDED_BYTES','NO_REDIRECT','SSRF_DENY']);
+ assert.equal(Object.isFrozen(rev),true);
+ assert.equal(Object.isFrozen(tls.requiredChecks),true);
+ assert.equal(ED_RECEIPT_STATUSES.includes('VERIFIED'),false);
+ assert.equal(ED_RECEIPT_STATUSES.includes('PRODUCTION_GO'),false);
+});
+test('1ED test-only constructor is frozen, never executes an adapter and accepts no GO status',()=>{
+ const f=edFixture(),w=f.originalOrders[0],receipt=f.originalReceipts[0];
+ assert.equal(Object.isFrozen(w),true);
+ assert.equal(Object.isFrozen(receipt),true);
+ assert.equal(Object.isFrozen(f.originalOrders),true);
+ assert.equal(receipt.networkRequests,0);
+ assert.equal(receipt.authoritiesAuthenticated,0);
+ assert.equal(receipt.sideEffects,0);
+ assert.throws(()=>createDisconnectedTestReceiptEd(w,{
+  adapterId:'test_adapter_gate_000',status:'VERIFIED',
+  observedAt:'2026-11-21T00:00:25.000Z'
+ }),/ED_INVALID_DISCONNECTED_TEST_DOUBLE_INPUT/);
+});
+test('1ED duplicate or missing work order cannot create 12 source-scoped verifications',()=>{
+ for(const edit of [
+  f=>f.args.workOrders.pop(),
+  f=>{f.args.workOrders[1]=clone(f.args.workOrders[0]);},
+  f=>{f.args.workOrders.reverse();}
+ ]){
+  const f=edFixture();edit(f);
+  const r=edAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('ED_')));edHold(r);
+ }
+});
+test('1ED no independent provider approval may be self-reported via any test receipt status',()=>{
+ for(const status of ['VERIFIED','APPROVED','PRODUCTION_GO',
+  'SIMULATED_VERIFIED','REJECTED','AUTHENTICATED']){
+  const f=edFixture();f.args.receipts[0].status=status;
+  const r=edAssess(f);
+  has(r,'ED_FAKE_VERIFIED_APPROVED_OR_STATUS_DRIFT');edHold(r);
+ }
+});
+test('1ED a simulated UNVERIFIED status cannot overwrite original MISSING gate state',()=>{
+ for(const status of ['SIMULATED_UNVERIFIED','SIMULATED_REJECTED']){
+  const f=edFixture();f.args.receipts[2].status=status;
+  const r=edAssess(f);
+  has(r,'ED_FAKE_VERIFIED_APPROVED_OR_STATUS_DRIFT');edHold(r);
+ }
+});
+test('1ED all-missing receipt may be SIMULATED_MISSING but never becomes external proof',()=>{
+ const f=edFixture();
+ f.args.receipts[5].status='SIMULATED_MISSING';
+ const r=edAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.notExecutedReceiptCount,11);
+ assert.equal(r.syntheticPortProtocolInternallyConsistentOnly,true);
+ edHold(r);
+});
+test('1ED re-ordered, duplicate or missing fake adapters are denied',()=>{
+ for(const edit of [
+  f=>f.args.receipts.reverse(),
+  f=>{f.args.receipts[0]=clone(f.args.receipts[1]);},
+  f=>f.args.receipts.pop()
+ ]){
+  const f=edFixture();edit(f);
+  const r=edAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('ED_')));edHold(r);
+ }
+});
+test('1ED a duplicate or forged adapter identity cannot masquerade as independent actor',()=>{
+ for(const value of ['test_adapter_gate_001','provider_mca_authorized',
+  'test_adapter_0','test_adapter_$$$$']){
+  const f=edFixture();f.args.receipts[0].adapterId=value;
+  const r=edAssess(f);
+  has(r,'ED_DUPLICATE_OR_FORGED_TEST_ADAPTER_ID');edHold(r);
+ }
+});
+test('1ED response attempt to claim live network traffic, authority, writes or release GO rejected',()=>{
+ for(const [field,value] of [
+  ['networkRequests',1],['authoritiesAuthenticated',1],
+  ['sideEffects',1],['executionMode','REAL_PROVIDER_API'],
+  ['releaseDecision','GO'],['kind','AUTHENTICATED_VERIFIED_RECEIPT']
+ ]){
+  const f=edFixture();f.args.receipts[0][field]=value;
+  const r=edAssess(f);
+  has(r,'ED_DISCONNECTED_RESPONSE_SCOPE_OR_FALSE_AUTHORITY');edHold(r);
+ }
+});
+test('1ED signed origin replay attempt from one work order to another is rejected',()=>{
+ for(const [field,value] of [
+  ['workOrderSha256','f'.repeat(64)],
+  ['requestNonce','f'.repeat(64)],
+  ['gate','PROVIDER_WRITTEN_AGREEMENT'],
+  ['observedEvidenceSha256','e'.repeat(64)],
+  ['portType','ISSUER_CHAIN']
+ ]){
+  const f=edFixture();f.args.receipts[2][field]=value;
+  const r=edAssess(f);
+  has(r,'ED_DISCONNECTED_RESPONSE_SCOPE_OR_FALSE_AUTHORITY');edHold(r);
+ }
+});
+test('1ED cloned and replayed nonce is rejected even when source receipts correlate',()=>{
+ const f=edFixture();
+ f.args.receipts[5].requestNonce=f.args.receipts[3].requestNonce;
+ const r=edAssess(f);
+ has(r,'ED_REPLAYED_REQUEST_NONCE');
+ has(r,'ED_DISCONNECTED_RESPONSE_SCOPE_OR_FALSE_AUTHORITY');edHold(r);
+});
+test('1ED work order source or previous manifest hash substitution fails exact binding',()=>{
+ for(const [field,value] of [
+  ['sourceHeadSha','f'.repeat(40)],
+  ['manifestSha256','f'.repeat(64)],
+  ['authorityClaimsSha256','f'.repeat(64)],
+  ['expectedEvidenceSha256','e'.repeat(64)],
+  ['handoffSequence',99],
+  ['requestNonce','f'.repeat(64)]
+ ]){
+  const f=edFixture();f.args.workOrders[4][field]=value;
+  const r=edAssess(f);
+  has(r,'ED_WORK_ORDER_SOURCE_SCOPE_OR_PORT_DRIFT');edHold(r);
+ }
+});
+test('1ED per-gate required checks must match exact machine-readable verified-authority contract',()=>{
+ for(const edit of [
+  w=>w.requiredChecks.pop(),
+  w=>w.requiredChecks.reverse(),
+  w=>w.requiredChecks.push('ASSUME_VERIFIED'),
+  w=>{w.portType='SELF_VERIFIED_PROVIDER';}
+ ]){
+  const f=edFixture();edit(f.args.workOrders[3]);
+  const r=edAssess(f);
+  has(r,'ED_WORK_ORDER_SOURCE_SCOPE_OR_PORT_DRIFT');edHold(r);
+ }
+});
+test('1ED work order cannot permit live IO, external source thaw, or extra approval fields',()=>{
+ for(const edit of [
+  w=>{w.executionPolicy='ALLOW_EXTERNAL_TLS';},
+  w=>{w.decision='GO';},
+  w=>{w.providerApproved=true;},
+  w=>{w.kind='PRODUCTION_PROVIDER_AUTHORIZED';}
+ ]){
+  const f=edFixture();edit(f.args.workOrders[0]);
+  const r=edAssess(f);
+  has(r,'ED_WORK_ORDER_SOURCE_SCOPE_OR_PORT_DRIFT');edHold(r);
+ }
+});
+test('1ED time future, stale, expired and nonmonotonic test receipts fail closed',()=>{
+ for(const [field,value] of [
+  ['observedAt','2026-11-21T00:00:21.000Z'],
+  ['observedAt','2026-11-21T00:10:00.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z'],
+  ['expiresAt','2026-11-21T00:00:25.000Z'],
+  ['observedAt','2026-11-21T00:00:27.000Z']
+ ]){
+  const f=edFixture();f.args.receipts[0][field]=value;
+  const r=edAssess(f);
+  has(r,'ED_TEST_RECEIPT_TIME_OR_EXPIRY_INVALID');edHold(r);
+ }
+});
+test('1ED entire prior Phase 1EC source-signed history is re-evaluated on every assessment',()=>{
+ const f=edFixture();
+ f.args.handoffCandidate.incidentCandidate.gossipCandidate.anchorCandidate
+  .admissionCandidate.rehearsalCandidate.custodyCandidate
+  .publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=edAssess(f);
+ has(r,'ED_ORIGINAL_EC_AUTHORITY_HANDOFF_NOT_REVERIFIED');edHold(r);
+});
+test('1ED changed original 12 gate authority status never inherits old passing ports',()=>{
+ const f=edFixture();
+ f.args.handoffCandidate.authorityClaims.PROVIDER_WRITTEN_AGREEMENT.state='VERIFIED';
+ const r=edAssess(f);
+ has(r,'ED_ORIGINAL_EC_AUTHORITY_HANDOFF_NOT_REVERIFIED');edHold(r);
+});
+test('1ED forged source handshake and signed original manifest GO never get a test receipt greenlight',()=>{
+ for(const edit of [
+  ec=>{ec.manifest.decision='GO';},
+  ec=>{ec.manifest.sourceHeadSha='f'.repeat(40);},
+  ec=>{ec.custodyPackets[0].statement.disposition='UNFREEZE_PRODUCTION';}
+ ]){
+  const f=edFixture();edit(f.args.handoffCandidate);
+  const r=edAssess(f);
+  has(r,'ED_ORIGINAL_EC_AUTHORITY_HANDOFF_NOT_REVERIFIED');edHold(r);
+ }
+});
+test('1ED unexpected approval extension, invalid order shape and wrong receipts scope fail',()=>{
+ let f=edFixture();
+ let r=assessDisconnectedAuthorityVerificationPortEd({...f.args,
+  realProviderVerified:true});
+ has(r,'ED_EXACT_BOUNDED_INPUT_REQUIRED');edHold(r);
+ f=edFixture();f.args.workOrders[1].realProviderApproved=true;
+ r=edAssess(f);
+ has(r,'ED_WORK_ORDER_SOURCE_SCOPE_OR_PORT_DRIFT');edHold(r);
+ f=edFixture();f.args.receipts[0].officialIssuerSignatureValid=true;
+ r=edAssess(f);has(r,'ED_RECEIPT_EXACT_SCHEMA_REQUIRED');edHold(r);
+});
+test('1ED cyclic JSON, excessively large payload and malformed clock fail closed',()=>{
+ let f=edFixture();f.args.handoffCandidate.circular=f.args;
+ let r=edAssess(f);has(r,'ED_EXACT_BOUNDED_INPUT_REQUIRED');edHold(r);
+ f=edFixture();f.args.handoffCandidate.overflow='x'.repeat(4096*1024);
+ r=edAssess(f);has(r,'ED_EXACT_BOUNDED_INPUT_REQUIRED');edHold(r);
+ f=edFixture();f.args.now='not-a-utc';
+ r=edAssess(f);
+ has(r,'ED_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'ED_ORIGINAL_EC_AUTHORITY_HANDOFF_NOT_REVERIFIED');edHold(r);
+});
+test('1ED redacted frozen report contains no local signer, source hash, adapter ID or nonce',()=>{
+ const f=edFixture(),r=edAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.workOrders[0].requestNonce,
+  f.args.receipts[0].adapterId,
+  f.args.workOrders[0].sourceHeadSha,
+  f.args.handoffCandidate.reviewPackets[0].signature,
+  f.args.handoffCandidate.manifest.challengeNonce,
+  f.args.workOrders[3].manifestSha256
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);edHold(r);
+});
