@@ -55,6 +55,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/phase1dx-offline-evidence-incident-recovery.mjs',
  'scripts/phase1dy-offline-source-admission-unfreeze-preconditions.mjs',
  'scripts/phase1dz-offline-cross-epoch-anchor-custody.mjs',
+ 'scripts/phase1ea-offline-gossip-admission-boundary.mjs',
  'scripts/phase1by-github-governance-observer.mjs',
  'scripts/phase1cs-push-head-governance.mjs',
  'scripts/phase1ck-picomatch-worker.cjs',
