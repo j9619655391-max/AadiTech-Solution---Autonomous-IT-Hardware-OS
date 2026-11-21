@@ -22,7 +22,7 @@ Both Phase 1BV build-input and Phase 1BW reviewer source-custody inventories inc
 node --test tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs
 ```
 
-Follow with exact-final-HEAD GitHub push and PR CI job verification. This runbook does **not** pre-certify unobserved hosted runs, identity, supply chain or independent release approval.
+**Observed engineering HEAD CI:** `9d9135b8db7424eb0d8f39fdecb13926ca7798d5` push [44885024009](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44885024009) **COMPLETED/SUCCESS**, seven executed jobs succeeded and only PR-only lineage skipped; PR [44885028276](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44885028276) **COMPLETED/SUCCESS**, eight of eight jobs succeeded. Baseline includes all fifteen DU adversarial cases, and disposable MySQL/Chromium checks succeeded. Intermediate 1DU SHA `301f66bb8f37764de4cf20cdc3832d0f2a0a0a64` had a real three-test failure caused by cross-test mutation of an un-cloned fixture; this was corrected at `9d9135b8db74`, not erased or re-labelled successful. Follow with exact-final-documentation-HEAD push/PR verification after this runbook update. Neither CI pass attests independent identity, supply chain, staging authority or release approval.
 
 ## Authority and deployment boundaries
 
