@@ -3496,3 +3496,157 @@ test('1EE report never leaks applicant adapter IDs, private signatures, source d
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);eeHold(r);
 });
+
+
+/* Phase 1EF: local-only source-bound incident quarantine escalation records. */
+import {EF_INDEPENDENT_AUTHORITY_ROLES,
+ failureTranscriptDigestEf,quarantineCaseDigestEf,
+ createOfflineQuarantineCasesEf,assessOfflineQuarantineEscalationEf}
+ from '../scripts/phase1ef-disconnected-quarantine-escalation.mjs';
+function efFixture(){
+ const f=eeFixture();
+ return {args:{previousFailureCandidate:f.args,
+  cases:clone(createOfflineQuarantineCasesEf(f.args)),now:NOW}};
+}
+const efAssess=f=>assessOfflineQuarantineEscalationEf(f.args);
+function efHold(r){
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualIndependentAuthorityCasesClosed,0);
+ assert.equal(r.independentReviewerOrProviderAuthenticated,false);
+ assert.equal(r.externalIssuerOrLegalEvidenceVerified,false);
+ assert.equal(r.externalNetworkOrAdapterExecutionPerformed,false);
+ assert.equal(r.durableOffPlatformCaseOrAuditLogWritten,false);
+ assert.equal(r.localCasesCannotCloseOrUnfreezeProduction,true);
+}
+test('1EF 12 source-linked local quarantine cases never complete genuine gate approvals',()=>{
+ const f=efFixture(),r=efAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.fullOriginalEeToDuHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.exactApplicantControlledQuarantineCases,12);
+ assert.equal(r.notAttemptedAuthorityGates,12);
+ assert.equal(r.injectedSimulatedFaultCases,0);
+ assert.equal(r.syntheticEscalationTranscriptConsistentOnly,true);
+ assert.equal(Object.keys(EF_INDEPENDENT_AUTHORITY_ROLES).length,12);
+ assert.equal(Object.isFrozen(EF_INDEPENDENT_AUTHORITY_ROLES),true);
+ efHold(r);
+});
+test('1EF all 12 correctly injected negative fault classes still require external authority',()=>{
+ const f=eeFixture();
+ f.args.failureEvents.forEach((e,i)=>e.faultCode=
+  EE_PORT_FAILURE_CLASSES[f.args.plans[i].gate][1]);
+ eeResignSuffix(f,0);
+ const cases=createOfflineQuarantineCasesEf(f.args);
+ const r=assessOfflineQuarantineEscalationEf({
+  previousFailureCandidate:f.args,cases,now:NOW});
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.injectedSimulatedFaultCases,12);
+ assert.equal(r.notAttemptedAuthorityGates,0);
+ assert.ok(cases.every(c=>c.classification==='INJECTED_SIMULATED_FAULT_NOT_AUTHORITY'));
+ efHold(r);
+});
+test('1EF falsely CLOSED, GO, approved or verified applicant case is rejected',()=>{
+ for(const [field,value] of [
+  ['caseStatus','CLOSED'],['releaseDecision','GO'],
+  ['reviewerAuthenticated',true],['remoteEvidenceVerified',true],
+  ['issuerOrLegalApprovalVerified',true],
+  ['closurePolicy','AUTOMATIC_APPROVAL']
+ ]){
+  const f=efFixture();f.args.cases[0][field]=value;
+  const r=efAssess(f);
+  has(r,'EF_QUARANTINE_SCOPE_REPLAY_FALSE_CLOSURE_OR_AUTHORITY');efHold(r);
+ }
+});
+test('1EF auto-retry, nonzero external IO and fake independent custodian rejected',()=>{
+ for(const [field,value] of [
+  ['retryPolicy','AUTO_RETRY'],['networkRequests',1],['sideEffects',1],
+  ['requiredIndependentAuthorityRole','SELF_APPROVED_APP_AUTHOR'],
+  ['classification','VERIFIED_EXTERNAL_APPROVAL']
+ ]){
+  const f=efFixture();f.args.cases[4][field]=value;
+  has(efAssess(f),'EF_QUARANTINE_SCOPE_REPLAY_FALSE_CLOSURE_OR_AUTHORITY');
+ }
+});
+test('1EF wrong incident source, plan, event, previous case or transcript root denied',()=>{
+ for(const field of [
+  'sourceBundleSha256','failureTranscriptSha256','versionPlanSha256',
+  'faultEventSha256','previousCaseSha256'
+ ]){
+  const f=efFixture();f.args.cases[3][field]='f'.repeat(64);
+  has(efAssess(f),'EF_QUARANTINE_SCOPE_REPLAY_FALSE_CLOSURE_OR_AUTHORITY');
+ }
+});
+test('1EF gate swap, missing/duplicate case, reorder or changed sequence denied',()=>{
+ for(const edit of [
+  c=>c[2].gate=c[1].gate,c=>c.pop(),
+  c=>c.push(clone(c[0])),c=>c.reverse(),
+  c=>{c[7]=clone(c[6]);},c=>{c[5].sequence=3;}
+ ]){
+  const f=efFixture();edit(f.args.cases);
+  const r=efAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EF_')));efHold(r);
+ }
+});
+test('1EF rehashing a fabricated locally consistent case cannot bypass original source binding',()=>{
+ const f=efFixture();f.args.cases[0].faultCode='SIMULATED_PROVIDER_LICENSE_ABSENT';
+ let prior=quarantineCaseDigestEf(f.args.cases[0]);
+ for(let i=1;i<12;i++){
+  f.args.cases[i].previousCaseSha256=prior;
+  prior=quarantineCaseDigestEf(f.args.cases[i]);
+ }
+ has(efAssess(f),'EF_QUARANTINE_SCOPE_REPLAY_FALSE_CLOSURE_OR_AUTHORITY');
+});
+test('1EF previous EE v0/GO or forged ED real issuer VERIFIED never passes upstream check',()=>{
+ for(const edit of [
+  ee=>{ee.plans[0].requestedVersion=0;},
+  ee=>{ee.failureEvents[0].releaseDecision='GO';},
+  ee=>{ee.previousPortCandidate.receipts[3].status='VERIFIED';}
+ ]){
+  const f=efFixture();edit(f.args.previousFailureCandidate);
+  const r=efAssess(f);has(r,'EF_ORIGINAL_EE_HISTORY_NOT_REVERIFIED');
+  efHold(r);
+ }
+});
+test('1EF independent case generator rejects altered original signed source and 1EE negotiation',()=>{
+ const f=eeFixture();
+ f.args.previousPortCandidate.handoffCandidate.manifest.decision='GO';
+ assert.throws(()=>createOfflineQuarantineCasesEf(f.args),
+  /EF_FULL_ORIGINAL_EE_HISTORY_NOT_REVERIFIED/);
+ const g=eeFixture();g.args.plans[0].fallbackPolicy='ALLOW_LEGACY';
+ assert.throws(()=>createOfflineQuarantineCasesEf(g.args),
+  /EF_FULL_ORIGINAL_EE_HISTORY_NOT_REVERIFIED/);
+});
+test('1EF exact schema rejects extra production approval fields and root-time disagreement',()=>{
+ let f=efFixture();f.args.cases[0].approved=true;
+ has(efAssess(f),'EF_QUARANTINE_SCOPE_REPLAY_FALSE_CLOSURE_OR_AUTHORITY');
+ f=efFixture();f.args.authorized=true;
+ has(efAssess(f),'EF_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=efFixture();f.args.now='2026-11-21T00:00:01.000Z';
+ has(efAssess(f),'EF_ORIGINAL_EE_HISTORY_NOT_REVERIFIED');
+});
+test('1EF malformed, cyclic or oversized object fails closed without uncaught exception',()=>{
+ let f=efFixture();f.args.cases[0].self=f.args;
+ has(efAssess(f),'EF_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=efFixture();f.args.cases[0].extra='x'.repeat(4800*1024);
+ has(efAssess(f),'EF_EXACT_BOUNDED_INPUT_REQUIRED');
+ assert.throws(()=>quarantineCaseDigestEf({approved:true}),
+  /EF_EXACT_QUARANTINE_CASE_REQUIRED/);
+});
+test('1EF generated quarantine tickets and redacted report are frozen and do not expose source identifiers',()=>{
+ const ee=eeFixture(),cases=createOfflineQuarantineCasesEf(ee.args);
+ assert.equal(Object.isFrozen(cases),true);
+ assert.ok(cases.every(Object.isFrozen));
+ assert.match(failureTranscriptDigestEf(ee.args),/^[0-9a-f]{64}$/);
+ const r=assessOfflineQuarantineEscalationEf({
+  previousFailureCandidate:ee.args,cases,now:NOW});
+ const s=JSON.stringify(r);
+ for(const secret of [
+  cases[0].sourceBundleSha256,cases[0].failureTranscriptSha256,
+  cases[3].faultEventSha256,ee.args.failureEvents[0].planSha256,
+  ee.args.previousPortCandidate.receipts[0].adapterId
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ efHold(r);
+});
