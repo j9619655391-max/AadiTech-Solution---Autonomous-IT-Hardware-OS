@@ -3077,9 +3077,11 @@ test('1ED signed origin replay attempt from one work order to another is rejecte
   ['requestNonce','f'.repeat(64)],
   ['gate','PROVIDER_WRITTEN_AGREEMENT'],
   ['observedEvidenceSha256','e'.repeat(64)],
-  ['portType','ISSUER_CHAIN']
+  ['portType','REVOCATION_STATUS']
  ]){
-  const f=edFixture();f.args.receipts[2][field]=value;
+  const f=edFixture();
+  assert.notEqual(f.args.receipts[2][field],value);
+  f.args.receipts[2][field]=value;
   const r=edAssess(f);
   has(r,'ED_DISCONNECTED_RESPONSE_SCOPE_OR_FALSE_AUTHORITY');edHold(r);
  }
