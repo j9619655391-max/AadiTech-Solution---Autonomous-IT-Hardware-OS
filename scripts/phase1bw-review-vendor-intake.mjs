@@ -49,6 +49,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/phase1dr-offline-keyid-bound-witness-v2.mjs',
  'scripts/phase1ds-offline-witness-key-rollover.mjs',
  'scripts/phase1dt-offline-rollover-checkpoint-continuity.mjs',
+ 'scripts/phase1du-offline-multi-epoch-rollover-chain.mjs',
  'scripts/phase1by-github-governance-observer.mjs',
  'scripts/phase1cs-push-head-governance.mjs',
  'scripts/phase1ck-picomatch-worker.cjs',
