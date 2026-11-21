@@ -266,7 +266,8 @@ export function assessOfflineAdmissionUnfreezePreconditionsDy(args={}){
   sourceSet=evidenceSetDigestDx(statements);
   ledger=recoveryStepDigestDx(dx.recoverySteps.at(-1));
  }catch{errors.add('DY_PRECEDING_EVIDENCE_DIGEST_UNAVAILABLE');}
- const incident=dx?.incident,freeze=dx?.recoverySteps?.at?.(-1);
+ const incident=dx?.incident,freeze=Array.isArray(dx?.recoverySteps)?
+  dx.recoverySteps.at(-1):null;
  const caseOK=EXACT(c,CASE)&&bounded(c,8192)&&
   c.schemaVersion===1&&
   c.kind==='UNTRUSTED_INDEPENDENT_UNFREEZE_REVIEW_CASE'&&
