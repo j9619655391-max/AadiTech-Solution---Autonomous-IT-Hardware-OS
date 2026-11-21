@@ -14,7 +14,7 @@ The report contains bounded counts, boolean mathematical result and anomaly code
 
 ## Verification scope and adversarial coverage
 
-Twelve synthetic 1DU adversarial tests share the real Ed25519 fixture generation in `tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs`; the pre-existing fifteen 1DT groups remain unchanged. Tests exercise a correct two-epoch chain, swapped history, duplicate signed epochs/nonce reuse, wrong predecessor digest, previous key-ID drift, altered later signature bytes, partial packet sets, no skip after first-epoch failure, added approval fields, missing/stale clock, malformed/over-bounded history and response redaction/HOLD. These are **generated test keys**, never government-issued or independently entrusted witnesses.
+Fifteen synthetic 1DU adversarial tests share the real Ed25519 fixture generation in `tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs`; the pre-existing fifteen 1DT groups remain unchanged. Tests exercise a correct two-epoch chain, swapped history, fully signed rogue predecessor keys, validly signed repeated cross-epoch nonces and time-order drift, duplicate signed epochs, wrong predecessor digest, previous key-ID drift, altered later signature bytes, partial packet sets, no skip after first-epoch failure, added approval fields, missing/stale clock, malformed/over-bounded history and response redaction/HOLD. These are **generated test keys**, never government-issued or independently entrusted witnesses.
 
 Both Phase 1BV build-input and Phase 1BW reviewer source-custody inventories include the Phase 1DU verifier. Run local regression with:
 
