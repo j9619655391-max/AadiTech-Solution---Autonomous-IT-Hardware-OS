@@ -578,3 +578,258 @@ test('1DV no observer signature, PEM, key ID, raw archive or nonce leaks in froz
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);dvHold(r);
 });
+
+/* Phase 1DW: applicant-controlled synthetic enrollment & revocation source
+ * signatures. Mathematically consistent fixtures confer NO external authority. */
+import {DW_ENROLLMENT_ROLES,DW_REVOCATION_ROLES,signingBytesDw,
+ observerPinDigestDw,revocationStatusDigestDw,
+ assessOfflineObserverEnrollmentRevocationCandidate}
+ from '../scripts/phase1dw-offline-observer-enrollment-revocation.mjs';
+
+const DW_SCOPE=['organizationId','sourceHeadSha','mainBaseSha',
+ 'checkpointSha256','archiveSha256','legalMandateDigestSha256',
+ 'revocationDigestSha256','challengeNonce'];
+const dwScope=e=>Object.fromEntries(DW_SCOPE.map(k=>[k,e[k]]));
+function dwFixture(){
+ const dv=dvFixture();
+ const previousAnchor={version:6,digestSha256:'6'.repeat(64)};
+ const revocationState={
+  version:7,previousVersion:6,previousDigestSha256:previousAnchor.digestSha256,
+  revokedKeyIds:[],observedAt:NOW
+ };
+ dv.args.expected.revocationDigestSha256=
+  revocationStatusDigestDw(dv.args.expected,revocationState);
+ dv.args.observations.forEach((p,i)=>{
+  p.statement.revocationDigestSha256=
+   dv.args.expected.revocationDigestSha256;
+  dvResign(dv,i);
+ });
+ const enrollmentPins={},revocationPins={},privateKeys={};
+ const pins={...enrollmentPins,...revocationPins};
+ const make=(roles,pins,kind,more)=>{
+  return roles.map((role,index)=>{
+   const kp=pair(),prefix=role.startsWith('LEGAL_')?'leg':
+    role.startsWith('SECURITY_')?'sec':
+    role.startsWith('CORPORATE_')?'reg':'prov';
+   privateKeys[role]=kp.privateKey;
+   const pin={keyId:'key_'+prefix+'_dw01',
+    operatorId:'operator_'+prefix+'_dw01',
+    organizationId:'org_'+prefix+'_dw01',
+    spkiSha256:kp.spkiSha256};
+   pins[role]=pin;
+   const statement={schemaVersion:1,kind,role,repository:REPO,
+    ...dwScope(dv.args.expected),...pin,
+    observedAt:NOW,expiresAt:'2026-11-21T00:10:00.000Z',
+    decision:'HOLD',...more()};
+   return {statement,publicKeyPem:kp.publicKeyPem,
+    signature:sign(null,signingBytesDw(role,statement),
+     kp.privateKey).toString('base64')};
+  });
+ };
+ const enrollmentPackets=make(DW_ENROLLMENT_ROLES,enrollmentPins,
+  'UNTRUSTED_OFFLINE_OBSERVER_ENROLLMENT_CANDIDATE',
+  ()=>({observerPinDigestSha256:
+   observerPinDigestDw(dv.args.comparisonPins)}));
+ const revocationPackets=make(DW_REVOCATION_ROLES,revocationPins,
+  'UNTRUSTED_OFFLINE_REVOCATION_SOURCE_CANDIDATE',
+  ()=>({currentVersion:revocationState.version,
+   previousVersion:revocationState.previousVersion,
+   previousDigestSha256:revocationState.previousDigestSha256,
+   revokedKeyIds:[...revocationState.revokedKeyIds]}));
+ return {args:{publicationCandidate:dv.args,
+  enrollmentPackets,enrollmentPins,revocationPackets,
+  revocationPins,revocationState,previousAnchor,now:NOW},
+  privateKeys,dv};
+}
+function dwResign(f,kind,index){
+ const packet=f.args[kind+'Packets'][index],role=packet.statement.role;
+ packet.signature=sign(null,signingBytesDw(role,packet.statement),
+  f.privateKeys[role]).toString('base64');
+}
+function dwRefreshState(f){
+ const a=f.args,e=a.publicationCandidate.expected,s=a.revocationState;
+ e.revocationDigestSha256=revocationStatusDigestDw(e,s);
+ f.dv.args.observations.forEach((packet,i)=>{
+  packet.statement.revocationDigestSha256=e.revocationDigestSha256;
+  dvResign(f.dv,i);
+ });
+ for(const kind of ['enrollment','revocation']){
+  a[kind+'Packets'].forEach((packet,i)=>{
+   packet.statement.revocationDigestSha256=e.revocationDigestSha256;
+   if(kind==='revocation'){
+    packet.statement.currentVersion=s.version;
+    packet.statement.previousVersion=s.previousVersion;
+    packet.statement.previousDigestSha256=s.previousDigestSha256;
+    packet.statement.revokedKeyIds=[...s.revokedKeyIds];
+    packet.statement.observedAt=s.observedAt;
+   }
+   dwResign(f,kind,i);
+  });
+ }
+}
+const dwAssess=f=>assessOfflineObserverEnrollmentRevocationCandidate(f.args);
+const dwHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.productionMutationOrCredentialEnrollmentPossible,false);
+ assert.equal(r.observerKeyEnrollmentExternallyAuthenticated,false);
+ assert.equal(r.externalArchiveRetrievalAndTlsChainAuthenticated,false);
+ assert.equal(r.approvedProviderTrustChainAndLiveCrlOcspAuthenticated,false);
+};
+test('1DW two custody and two revocation signatures correlate mathematically but never authorize',()=>{
+ const r=dwAssess(dwFixture());
+ assert.equal(r.dvSignedHistoryAndDualObserverCandidateReverifiedOnly,true);
+ assert.equal(r.twoEnrollmentSignaturesMathematicallyVerifiedOnly,2);
+ assert.equal(r.twoRevocationSignaturesMathematicallyVerifiedOnly,2);
+ assert.equal(r.candidateEnrollmentAndRevocationClaimsCorrelatedMathematicallyOnly,true);
+ assert.deepEqual(r.anomalyCodes,[]);dwHold(r);
+});
+test('1DW a duplicate custodian or revocation role is not an independent quorum',()=>{
+ for(const kind of ['enrollment','revocation']){
+  const f=dwFixture();
+  f.args[kind+'Packets'][1]=clone(f.args[kind+'Packets'][0]);
+  const r=dwAssess(f);
+  has(r,'DW_'+kind.toUpperCase()+'_ROLE_PACKET_INVALID');
+  has(r,'DW_'+kind.toUpperCase()+'_SIGNER_QUORUM_INCOMPLETE');dwHold(r);
+ }
+});
+test('1DW signed same-operator or signer-SPKI across roles cannot impersonate independence',()=>{
+ for(const attr of ['keyId','operatorId','spkiSha256']){
+  const f=dwFixture();
+  const from=f.args.enrollmentPins[DW_ENROLLMENT_ROLES[0]];
+  const to=f.args.revocationPins[DW_REVOCATION_ROLES[0]];
+  to[attr]=from[attr];
+  const entry=f.args.revocationPackets[0];
+  entry.statement[attr]=from[attr];dwResign(f,'revocation',0);
+  const r=dwAssess(f);
+  has(r,'DW_INDEPENDENT_CUSTODY_REVOCATION_KEYS_UNPROVEN');dwHold(r);
+ }
+});
+test('1DW valid signature made by old witness key still cannot inherit independent custody',()=>{
+ const f=dwFixture(),role=DW_ENROLLMENT_ROLES[0];
+ const old=keys.LEGAL_WITNESS.next;
+ f.args.enrollmentPins[role].spkiSha256=old.spkiSha256;
+ f.args.enrollmentPackets[0].statement.spkiSha256=old.spkiSha256;
+ f.args.enrollmentPackets[0].publicKeyPem=old.publicKeyPem;
+ f.privateKeys[role]=old.privateKey;dwResign(f,'enrollment',0);
+ const r=dwAssess(f);
+ has(r,'DW_INDEPENDENT_CUSTODY_REVOCATION_KEYS_UNPROVEN');dwHold(r);
+});
+test('1DW signed revoked observer cannot be accepted even with four valid refreshed signatures',()=>{
+ const f=dwFixture();
+ const key=f.args.publicationCandidate.comparisonPins.CHECKPOINT_PUBLISHER.keyId;
+ f.args.revocationState.revokedKeyIds=[key];
+ dwRefreshState(f);
+ const r=dwAssess(f);
+ assert.equal(r.dvSignedHistoryAndDualObserverCandidateReverifiedOnly,true);
+ assert.equal(r.twoEnrollmentSignaturesMathematicallyVerifiedOnly,2);
+ assert.equal(r.twoRevocationSignaturesMathematicallyVerifiedOnly,2);
+ has(r,'DW_REVOKED_ACTIVE_SIGNER_OR_OBSERVER_KEY');dwHold(r);
+});
+test('1DW signed revoked legal witness also quarantines nominally fresh candidate',()=>{
+ const f=dwFixture();
+ f.args.revocationState.revokedKeyIds=[ids.LEGAL_WITNESS.next];
+ dwRefreshState(f);
+ const r=dwAssess(f);
+ has(r,'DW_REVOKED_ACTIVE_SIGNER_OR_OBSERVER_KEY');dwHold(r);
+});
+test('1DW previous revocation high-watermark rollback, gap and substitution denied',()=>{
+ for(const modify of [
+  f=>f.args.previousAnchor.version=5,
+  f=>f.args.previousAnchor.digestSha256='a'.repeat(64),
+  f=>f.args.revocationState.version=9,
+  f=>f.args.revocationState.previousDigestSha256='a'.repeat(64)
+ ]){
+  const f=dwFixture();modify(f);
+  const r=dwAssess(f);
+  has(r,'DW_REVOCATION_MONOTONIC_ANCHOR_OR_CLOCK_INVALID');dwHold(r);
+ }
+});
+test('1DW independently re-signed revocation fork cannot claim same digest/anchor',()=>{
+ const f=dwFixture();
+ f.args.revocationPackets[1].statement.revokedKeyIds=['former_signer_01'];
+ dwResign(f,'revocation',1);
+ const r=dwAssess(f);
+ has(r,'DW_REVOCATION_SIGNED_STATE_OR_HISTORY_MISMATCH');dwHold(r);
+});
+test('1DW enrolled observer key digest mismatch cannot be repaired by re-signing',()=>{
+ const f=dwFixture();
+ f.args.enrollmentPackets[1].statement.observerPinDigestSha256='f'.repeat(64);
+ dwResign(f,'enrollment',1);
+ const r=dwAssess(f);
+ has(r,'DW_ENROLLMENT_SIGNED_STATE_OR_HISTORY_MISMATCH');dwHold(r);
+});
+test('1DW signed GO, fake legal role, forged source SHA or deadline cannot authorize',()=>{
+ for(const [key,value] of [['decision','GO'],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['kind','REAL_LEGAL_AUTHORITY'],
+  ['expiresAt','2026-11-20T23:59:59.000Z']]){
+  const f=dwFixture();
+  f.args.enrollmentPackets[0].statement[key]=value;
+  dwResign(f,'enrollment',0);
+  const r=dwAssess(f);
+  if(key==='expiresAt')has(r,'DW_ENROLLMENT_STALE_OR_EXPIRED_SIGNATURE');
+  else has(r,'DW_ENROLLMENT_SOURCE_OR_HOLD_SCOPE_MISMATCH');
+  dwHold(r);
+ }
+});
+test('1DW public key substitution and copied signature cannot pass',()=>{
+ for(const kind of ['enrollment','revocation']){
+  const f=dwFixture();
+  f.args[kind+'Packets'][0].publicKeyPem=
+   f.args[kind+'Packets'][1].publicKeyPem;
+  const r=dwAssess(f);
+  has(r,'DW_'+kind.toUpperCase()+'_ED25519_OR_SPKI_UNVERIFIED');
+  dwHold(r);
+ }
+});
+test('1DW fake release metadata and malformed status or extra revoked IDs fail closed',()=>{
+ let f=dwFixture();
+ let r=assessOfflineObserverEnrollmentRevocationCandidate({
+  ...f.args,providerApproved:true});
+ has(r,'DW_EXACT_BOUNDED_INPUT_REQUIRED');dwHold(r);
+ f=dwFixture();f.args.revocationState.revokedKeyIds=['duplicat_01','duplicat_01'];
+ r=dwAssess(f);
+ has(r,'DW_REVOCATION_MONOTONIC_ANCHOR_OR_CLOCK_INVALID');dwHold(r);
+ f=dwFixture();f.args.revocationState.revokedKeyIds=['zzz','aaa'];
+ r=dwAssess(f);
+ has(r,'DW_REVOCATION_MONOTONIC_ANCHOR_OR_CLOCK_INVALID');dwHold(r);
+});
+test('1DW independent past DU signed checkpoint fork cannot be saved by four new signatures',()=>{
+ const f=dwFixture();
+ f.args.publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=dwAssess(f);
+ has(r,'DW_DV_CANDIDATE_NOT_REVERIFIED');dwHold(r);
+});
+test('1DW missing clock, mismatched DV clock and stale revocation status all fail',()=>{
+ let f=dwFixture();f.args.now=null;
+ let r=dwAssess(f);
+ has(r,'DW_EXPLICIT_TRUSTED_CLOCK_ABSENT');
+ has(r,'DW_DV_CANDIDATE_NOT_REVERIFIED');dwHold(r);
+ f=dwFixture();
+ f.args.revocationState.observedAt='2026-11-20T00:00:00.000Z';
+ r=dwAssess(f);
+ has(r,'DW_REVOCATION_MONOTONIC_ANCHOR_OR_CLOCK_INVALID');dwHold(r);
+});
+test('1DW duplicate two-party source receipts never equal actually live CRL or OCSP',()=>{
+ const r=dwAssess(dwFixture());
+ assert.equal(r.approvedProviderTrustChainAndLiveCrlOcspAuthenticated,false);
+ assert.equal(r.persistentExternalRevocationAnchorWormCasAndDrVerified,false);
+ assert.equal(r.corporateRegistryLegalMandateIndependentlyAuthenticated,false);
+ assert.equal(r.independentOperatorGitHubStagingAndProductionApprovalVerified,false);
+ dwHold(r);
+});
+test('1DW bounded frozen decision has no raw private evidence, signers, revocation list or nonce',()=>{
+ const f=dwFixture(),r=dwAssess(f),s=JSON.stringify(r);
+ for(const secret of [f.args.revocationPackets[0].signature,
+  f.args.enrollmentPackets[1].publicKeyPem,
+  f.args.enrollmentPins[DW_ENROLLMENT_ROLES[0]].keyId,
+  f.args.publicationCandidate.expected.challengeNonce,
+  'former_signer_01'])
+  assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ dwHold(r);
+});
