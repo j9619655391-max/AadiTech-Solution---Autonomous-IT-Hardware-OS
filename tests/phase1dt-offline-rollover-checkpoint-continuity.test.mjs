@@ -833,3 +833,332 @@ test('1DW bounded frozen decision has no raw private evidence, signers, revocati
  assert.equal(Object.isFrozen(r.anomalyCodes),true);
  dwHold(r);
 });
+
+/* Phase 1DX: 3 locally supplied retrieval byte sources, linked frozen
+ * incident ledger and two recovery-custodian signatures. Zero external trust. */
+import {DX_SOURCES,DX_RECOVERY_ROLES,DX_STAGES,
+ sourceSigningBytesDx,evidenceSetDigestDx,recoveryStepDigestDx,
+ recoverySigningBytesDx,assessOfflineEvidenceIncidentRecoveryCandidate}
+ from '../scripts/phase1dx-offline-evidence-incident-recovery.mjs';
+import {canonical} from '../scripts/phase1cx-pinned-external-source-highwatermark.mjs';
+
+const DX_SCOPE=['organizationId','sourceHeadSha','mainBaseSha',
+ 'checkpointSha256','archiveSha256','revocationDigestSha256','challengeNonce'];
+const dxScope=e=>Object.fromEntries(DX_SCOPE.map(k=>[k,e[k]]));
+function dxFixture(){
+ const dw=dwFixture(),e=dw.args.publicationCandidate.expected;
+ const sourcePins={},sourceBytes={},recoveryPins={},privateKeys={};
+ const prior=dw.args.previousAnchor,status=dw.args.revocationState;
+ const archive=dw.args.publicationCandidate.archivePayloadBase64;
+ const revoked=Buffer.from(canonical({
+  previousAnchor:prior,revocationState:status
+ }),'utf8').toString('base64');
+ const sourceReceipts=DX_SOURCES.map((role,index)=>{
+  const code=['pub','arc','rev'][index],kp=pair();
+  privateKeys[role]=kp.privateKey;
+  const pin={keyId:'key_dx_'+code+'01',
+   spkiSha256:kp.spkiSha256,operatorId:'operator_dx_'+code+'01',
+   operatorOrganizationId:'org_dx_'+code+'01',
+   endpointHost:'fetch'+code+'.example.invalid',
+   tlsPeerSpkiSha256:['7','8','9'][index].repeat(64)};
+  sourcePins[role]=pin;
+  sourceBytes[role]=index===2?revoked:archive;
+  const statement={schemaVersion:1,kind:'UNTRUSTED_OFFLINE_SOURCE_RETRIEVAL',
+   role,repository:REPO,...dxScope(e),
+   contentSha256:hash(Buffer.from(sourceBytes[role],'base64')),
+   ...pin,httpStatus:200,redirectCount:0,
+   observedAt:NOW,expiresAt:'2026-11-21T00:10:00.000Z',
+   decision:'HOLD'};
+  return {statement,publicKeyPem:kp.publicKeyPem,
+   signature:sign(null,sourceSigningBytesDx(role,statement),
+    kp.privateKey).toString('base64')};
+ });
+ const evidenceSetDigestSha256=evidenceSetDigestDx(
+  sourceReceipts.map(packet=>packet.statement));
+ const previousRecoveryAnchor={sequence:10,digestSha256:'d'.repeat(64)};
+ const incident={schemaVersion:1,
+  kind:'UNTRUSTED_SOURCE_FORK_FREEZE_REHEARSAL',incidentId:'incident_dx001',
+  repository:REPO,...dxScope(e),evidenceSetDigestSha256,
+  observedAt:'2026-11-20T23:59:55.000Z',decision:'FREEZE'};
+ let nextDigest=previousRecoveryAnchor.digestSha256;
+ const recoverySteps=DX_STAGES.map((stage,index)=>{
+  const step={schemaVersion:1,kind:'UNTRUSTED_READ_ONLY_INCIDENT_STEP',
+   incidentId:incident.incidentId,sequence:previousRecoveryAnchor.sequence+1+index,
+   previousDigestSha256:nextDigest,stage,evidenceSetDigestSha256,
+   challengeNonce:['a','b','c'][index].repeat(64),
+   observedAt:'2026-11-20T23:59:'+String(56+index).padStart(2,'0')+'.000Z',
+   decision:'HOLD'};
+  nextDigest=recoveryStepDigestDx(step);
+  return step;
+ });
+ const recoverySigners=DX_RECOVERY_ROLES.map((role,index)=>{
+  const name=index===0?'legal':'security',kp=pair();
+  privateKeys[role]=kp.privateKey;
+  const pin={keyId:'key_dx_'+name+'01',
+   spkiSha256:kp.spkiSha256,operatorId:'operator_dx_'+name+'01',
+   operatorOrganizationId:'org_dx_'+name+'01'};
+  recoveryPins[role]=pin;
+  const statement={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_RECOVERY_REHEARSAL_ATTESTATION',
+   role,repository:REPO,organizationId:e.organizationId,
+   sourceHeadSha:e.sourceHeadSha,mainBaseSha:e.mainBaseSha,
+   incidentId:incident.incidentId,evidenceSetDigestSha256,
+   recoveryLedgerDigestSha256:nextDigest,
+   previousRecoveryDigestSha256:previousRecoveryAnchor.digestSha256,
+   recoverySequence:recoverySteps.at(-1).sequence,
+   revocationDigestSha256:e.revocationDigestSha256,
+   challengeNonce:e.challengeNonce,...pin,observedAt:NOW,
+   expiresAt:'2026-11-21T00:10:00.000Z',decision:'REHEARSAL_ONLY_HOLD'};
+  return {statement,publicKeyPem:kp.publicKeyPem,
+   signature:sign(null,recoverySigningBytesDx(role,statement),
+    kp.privateKey).toString('base64')};
+ });
+ return {args:{custodyCandidate:dw.args,sourceReceipts,sourcePins,sourceBytes,
+  previousRecoveryAnchor,incident,recoverySteps,recoverySigners,
+  recoveryPins,now:NOW},privateKeys,dw};
+}
+function dxResign(f,kind,index){
+ const source=kind==='source',packet=f.args[source?'sourceReceipts':'recoverySigners'][index],
+  role=packet.statement.role;
+ packet.signature=sign(null,(source?sourceSigningBytesDx:recoverySigningBytesDx)(
+  role,packet.statement),f.privateKeys[role]).toString('base64');
+}
+const dxAssess=f=>assessOfflineEvidenceIncidentRecoveryCandidate(f.args);
+const dxHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.recoveryWasDryRunOnlyAndCannotThawRelease,true);
+ assert.equal(r.productionMutationOrExternalEnrollmentPossible,false);
+ assert.equal(r.independentlyAuthenticatedMcaLegalRegistryAndProviderAuthority,false);
+ assert.equal(r.liveIssuerSignedCrLOrOcspAndCertificatePolicyAuthenticated,false);
+};
+test('1DX three locally supplied signed sources and two recovery signers agree mathematically under HOLD',()=>{
+ const r=dxAssess(dxFixture());
+ assert.equal(r.precedingDwSignatureHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.threeCandidateSourceRetrievalSignaturesMathematicallyVerifiedOnly,3);
+ assert.equal(r.sourceByteHashesComparedToSubmittedSignedClaimsOnly,true);
+ assert.equal(r.frozenRecoverySequenceLinkedMathematicallyOnly,true);
+ assert.equal(r.twoRecoveryCustodianSignaturesMathematicallyVerifiedOnly,2);
+ assert.equal(r.candidateEvidenceAndFrozenRehearsalInternallyConsistentOnly,true);
+ assert.deepEqual(r.anomalyCodes,[]);dxHold(r);
+});
+test('1DX each supplied primary/archive/revocation byte substitution is quarantined',()=>{
+ for(const role of DX_SOURCES){
+  const f=dxFixture();
+  f.args.sourceBytes[role]=Buffer.from('forged data').toString('base64');
+  const r=dxAssess(f);
+  has(r,'DX_CANDIDATE_RETRIEVED_BYTES_MISMATCH');
+  assert.equal(r.sourceByteHashesComparedToSubmittedSignedClaimsOnly,false);
+  dxHold(r);
+ }
+});
+test('1DX archive with valid hash but non-canonical claimed revocation bytes is rejected',()=>{
+ const f=dxFixture(),role=DX_SOURCES[2],p=f.args.sourceReceipts[2];
+ const original=Buffer.from(f.args.sourceBytes[role],'base64').toString('utf8');
+ f.args.sourceBytes[role]=Buffer.from(original+'\n').toString('base64');
+ p.statement.contentSha256=hash(Buffer.from(f.args.sourceBytes[role],'base64'));
+ dxResign(f,'source',2);
+ const r=dxAssess(f);
+ assert.equal(r.threeCandidateSourceRetrievalSignaturesMathematicallyVerifiedOnly,3);
+ has(r,'DX_CANDIDATE_RETRIEVED_BYTES_MISMATCH');dxHold(r);
+});
+test('1DX duplicated source signer or missing role cannot count as three independent receipts',()=>{
+ const f=dxFixture();f.args.sourceReceipts[1]=clone(f.args.sourceReceipts[0]);
+ const r=dxAssess(f);
+ has(r,'DX_RETRIEVAL_ROLE_PACKET_INVALID');
+ has(r,'DX_INCOMPLETE_SOURCE_ROLE_QUORUM');dxHold(r);
+});
+test('1DX correctly signed source GO, redirects or error HTTP status cannot be accepted',()=>{
+ for(const [k,v] of [['decision','GO'],['redirectCount',1],
+  ['httpStatus',302],['kind','AUTHENTICATED_EXTERNAL_SOURCE']]){
+  const f=dxFixture();f.args.sourceReceipts[0].statement[k]=v;
+  dxResign(f,'source',0);
+  const r=dxAssess(f);
+  has(r,'DX_SIGNED_RETRIEVAL_SCOPE_OR_HTTP_INVALID');dxHold(r);
+ }
+});
+test('1DX source key ID, signed endpoint, TLS and operator must equal detached candidate pins',()=>{
+ for(const [k,v] of [['keyId','counterfeit_id01'],
+  ['endpointHost','evil.example.invalid'],
+  ['tlsPeerSpkiSha256','f'.repeat(64)],
+  ['operatorId','operator_spoof01']]){
+  const f=dxFixture();f.args.sourceReceipts[0].statement[k]=v;
+  dxResign(f,'source',0);
+  const r=dxAssess(f);
+  has(r,'DX_RETRIEVAL_DETACHED_PIN_MISMATCH');dxHold(r);
+ }
+});
+test('1DX detached source signer SPKI and Ed25519 signature cannot be substituted',()=>{
+ for(const change of ['signature','publicKeyPem']){
+  const f=dxFixture();
+  f.args.sourceReceipts[0][change]=f.args.sourceReceipts[1][change];
+  const r=dxAssess(f);
+  has(r,'DX_RETRIEVAL_SIGNATURE_OR_SPKI_INVALID');dxHold(r);
+ }
+});
+test('1DX two source roles sharing operator, organization, TLS or endpoint remain untrusted',()=>{
+ for(const attr of ['operatorId','operatorOrganizationId','spkiSha256',
+  'keyId','endpointHost','tlsPeerSpkiSha256']){
+  const f=dxFixture(),one=f.args.sourcePins[DX_SOURCES[0]];
+  const two=f.args.sourcePins[DX_SOURCES[1]];
+  two[attr]=one[attr];
+  f.args.sourceReceipts[1].statement[attr]=one[attr];
+  dxResign(f,'source',1);
+  const r=dxAssess(f);
+  has(r,'DX_INDEPENDENT_SOURCE_RECOVERY_PINS_UNPROVEN');dxHold(r);
+ }
+});
+test('1DX endpoint or signer reused from old DV observer cannot be treated as new source',()=>{
+ for(const attr of ['endpointHost','tlsPeerSpkiSha256','keyId','operatorId']){
+  const f=dxFixture();
+  const old=f.args.custodyCandidate.publicationCandidate.comparisonPins.CHECKPOINT_PUBLISHER;
+  f.args.sourcePins[DX_SOURCES[0]][attr]=old[attr];
+  f.args.sourceReceipts[0].statement[attr]=old[attr];dxResign(f,'source',0);
+  const r=dxAssess(f);
+  has(r,'DX_INDEPENDENT_SOURCE_RECOVERY_PINS_UNPROVEN');dxHold(r);
+ }
+});
+test('1DX a previous custody private key cannot independently attest new source receipts',()=>{
+ const f=dxFixture(),old=f.args.custodyCandidate.enrollmentPackets[0],
+  pin=f.args.custodyCandidate.enrollmentPins[DW_ENROLLMENT_ROLES[0]];
+ f.args.sourcePins[DX_SOURCES[0]].spkiSha256=pin.spkiSha256;
+ f.args.sourceReceipts[0].statement.spkiSha256=pin.spkiSha256;
+ f.args.sourceReceipts[0].publicKeyPem=old.publicKeyPem;
+ f.privateKeys[DX_SOURCES[0]]=f.dw.privateKeys[DW_ENROLLMENT_ROLES[0]];
+ dxResign(f,'source',0);
+ const r=dxAssess(f);
+ has(r,'DX_INDEPENDENT_SOURCE_RECOVERY_PINS_UNPROVEN');dxHold(r);
+});
+test('1DX a changed original 1DU/1DV/1DW history cannot be saved by new source signatures',()=>{
+ const f=dxFixture();
+ f.args.custodyCandidate.publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=dxAssess(f);
+ has(r,'DX_PRECEDING_DW_NOT_REVERIFIED');dxHold(r);
+});
+test('1DX fake incident GO or signed evidence-set substitution is quarantined',()=>{
+ for(const [key,value] of [['decision','GO'],
+  ['evidenceSetDigestSha256','f'.repeat(64)],
+  ['kind','AUTHORIZED_RECOVERY']]){
+  const f=dxFixture();f.args.incident[key]=value;
+  const r=dxAssess(f);
+  has(r,'DX_INCIDENT_OR_PREVIOUS_RECOVERY_ANCHOR_INVALID');dxHold(r);
+ }
+});
+test('1DX recovery chain cannot change historical predecessor high-watermark',()=>{
+ for(const [key,value] of [['sequence',9],['digestSha256','e'.repeat(64)]]){
+  const f=dxFixture();f.args.previousRecoveryAnchor[key]=value;
+  const r=dxAssess(f);
+  has(r,'DX_RECOVERY_STEP_REORDER_FORK_OR_UNFREEZE');
+  has(r,'DX_READ_ONLY_RECOVERY_CHAIN_INVALID');dxHold(r);
+ }
+});
+test('1DX broken, skipped, repeated or reversed recovery stages and nonces are rejected',()=>{
+ for(const mutate of [
+  f=>{f.args.recoverySteps.reverse();},
+  f=>{f.args.recoverySteps[1].sequence+=1;},
+  f=>{f.args.recoverySteps[1].stage='PRODUCTION_UNFREEZE';},
+  f=>{f.args.recoverySteps[1].decision='GO';},
+  f=>{f.args.recoverySteps[1].challengeNonce=f.args.recoverySteps[0].challengeNonce;},
+  f=>{f.args.recoverySteps[1].observedAt=f.args.recoverySteps[0].observedAt;},
+  f=>{f.args.recoverySteps[2].previousDigestSha256='f'.repeat(64);}
+ ]){
+  const f=dxFixture();mutate(f);
+  const r=dxAssess(f);
+  has(r,'DX_RECOVERY_STEP_REORDER_FORK_OR_UNFREEZE');dxHold(r);
+ }
+});
+test('1DX fresh valid signature cannot approve rekeyed final ledger or a fake release GO',()=>{
+ for(const [key,value] of [
+  ['recoveryLedgerDigestSha256','f'.repeat(64)],
+  ['decision','GO'],
+  ['recoverySequence',100],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['revocationDigestSha256','f'.repeat(64)],
+  ['kind','EXTERNAL_INCIDENT_APPROVAL']
+ ]){
+  const f=dxFixture();f.args.recoverySigners[0].statement[key]=value;
+  dxResign(f,'recovery',0);
+  const r=dxAssess(f);
+  has(r,'DX_SIGNED_REHEARSAL_SCOPE_OR_FORBIDDEN_THAW');dxHold(r);
+ }
+});
+test('1DX duplicated or absent recovery custodian is not a two-party signature quorum',()=>{
+ const f=dxFixture();
+ f.args.recoverySigners[1]=clone(f.args.recoverySigners[0]);
+ const r=dxAssess(f);
+ has(r,'DX_RECOVERY_CUSTODIAN_ROLE_PACKET_INVALID');
+ has(r,'DX_RECOVERY_SIGNER_QUORUM_INCOMPLETE');dxHold(r);
+ const g=dxFixture();g.args.recoverySigners.pop();
+ const b=dxAssess(g);has(b,'DX_TWO_EXACT_RECOVERY_CUSTODIANS_REQUIRED');dxHold(b);
+});
+test('1DX recovery signer key and detached pin drift remain denied despite re-signing',()=>{
+ for(const key of ['keyId','operatorId','operatorOrganizationId','spkiSha256']){
+  const f=dxFixture();
+  f.args.recoverySigners[1].statement[key]=key==='spkiSha256'?
+   'f'.repeat(64):'rogue_recovery01';
+  dxResign(f,'recovery',1);
+  const r=dxAssess(f);
+  has(r,'DX_RECOVERY_CUSTODIAN_PIN_MISMATCH');dxHold(r);
+ }
+});
+test('1DX a valid signature reused from another recovery role cannot pass',()=>{
+ const f=dxFixture();
+ f.args.recoverySigners[0].signature=f.args.recoverySigners[1].signature;
+ const r=dxAssess(f);
+ has(r,'DX_RECOVERY_SIGNATURE_OR_SPKI_INVALID');dxHold(r);
+});
+test('1DX expired or signed-before-rehearsal approval is not valid current custodian evidence',()=>{
+ for(const [k,v] of [
+  ['expiresAt','2026-11-20T23:59:59.000Z'],
+  ['observedAt','2026-11-20T23:59:57.000Z']
+ ]){
+  const f=dxFixture();f.args.recoverySigners[1].statement[k]=v;
+  dxResign(f,'recovery',1);
+  const r=dxAssess(f);
+  has(r,'DX_SIGNED_RECOVERY_STALE_OR_REORDERED');dxHold(r);
+ }
+});
+test('1DX missing UTC clock or extra applicant claimed approvals are rejected early',()=>{
+ let f=dxFixture();f.args.now=null;
+ let r=dxAssess(f);
+ has(r,'DX_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'DX_PRECEDING_DW_NOT_REVERIFIED');dxHold(r);
+ f=dxFixture();
+ r=assessOfflineEvidenceIncidentRecoveryCandidate({...f.args,approvedExternally:true});
+ has(r,'DX_EXACT_BOUNDED_INPUT_REQUIRED');dxHold(r);
+});
+test('1DX source packets and recovery steps must have bounded exact schemata',()=>{
+ const f=dxFixture();
+ f.args.sourceReceipts[0].statement.isAuthenticatedExternal=true;
+ const r=dxAssess(f);
+ has(r,'DX_RETRIEVAL_ROLE_PACKET_INVALID');dxHold(r);
+ const g=dxFixture();g.args.recoverySteps[0].objectLockAccepted=true;
+ const b=dxAssess(g);
+ has(b,'DX_RECOVERY_STEP_REORDER_FORK_OR_UNFREEZE');dxHold(b);
+});
+test('1DX synthetic authority cannot promote live CRL, MCA, TLS, WORM/DR or real staging acceptance',()=>{
+ const r=dxAssess(dxFixture());
+ assert.equal(r.independentlyEnrolledObserverOrRecoveryKeysAuthenticated,false);
+ assert.equal(r.actualExternalPublicationAndTlsRetrievalAuthenticated,false);
+ assert.equal(r.independentlyAuthenticatedMcaLegalRegistryAndProviderAuthority,false);
+ assert.equal(r.liveIssuerSignedCrLOrOcspAndCertificatePolicyAuthenticated,false);
+ assert.equal(r.independentWormCasDurableHighwatermarkAndDrRestoreAuthenticated,false);
+ assert.equal(r.independentGithubNonauthorStagingAndIncidentApprovalVerified,false);
+ dxHold(r);
+});
+test('1DX immutable redacted dry-run response excludes key IDs, nonces, private evidence and signatures',()=>{
+ const f=dxFixture(),r=dxAssess(f),serialized=JSON.stringify(r);
+ for(const sensitive of [
+  f.args.sourceReceipts[0].signature,
+  f.args.recoverySigners[0].publicKeyPem,
+  f.args.sourcePins[DX_SOURCES[1]].keyId,
+  f.args.incident.incidentId,
+  f.args.recoverySteps[0].challengeNonce,
+  f.args.sourceBytes[DX_SOURCES[0]],
+  f.args.sourceBytes[DX_SOURCES[2]]
+ ])assert.equal(serialized.includes(sensitive),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);dxHold(r);
+});
