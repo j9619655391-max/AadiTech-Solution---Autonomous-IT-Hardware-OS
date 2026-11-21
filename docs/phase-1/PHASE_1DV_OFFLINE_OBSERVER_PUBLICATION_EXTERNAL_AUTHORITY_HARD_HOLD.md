@@ -25,7 +25,7 @@ Both Phase 1BV build-input and Phase 1BW independent reviewer source custody inv
 node --test tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs
 ```
 
-After code and documentation commit, **independently inspect both exact-final-HEAD GitHub-hosted push and PR checks**. Do not count an older SHA as completion. Any intermediate failed workflow is historical evidence; fix it and record it rather than retroactively declaring green. Hosted CI is engineering testing, never independent legal/staging acceptance.
+**Phase 1DV initial docs-inclusive engineering HEAD** `1eb799b179c5884ad603aec301a1c4b54e9cdfa2`: [push Actions 44885773106](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44885773106) **COMPLETED/SUCCESS** with 7 executed jobs success and one expected PR-only source-merge-lineage skip; [PR Actions 44885776966](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44885776966) **COMPLETED/SUCCESS** with 8/8 jobs success. Both exact head source SHA. This includes Node baseline, source/reviewer custody, governance, disposable MySQL and isolated Chromium smoke. Neither external TLS retrieval nor legally enrolled observer/mandate key can be inferred from CI. Following this documentation-only receipt, exact latest HEAD push/PR CI must be verified again; do not substitute prior SHA. Hosted tests never grant legal/staging release authority.
 
 ## Explicit real-world evidence admission prerequisites (NOT SATISFIED)
 
