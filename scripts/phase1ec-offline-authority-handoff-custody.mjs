@@ -43,7 +43,7 @@ const MANIFEST=['schemaVersion','kind','repository','incidentId',
  'authorityClaimsSha256','previousHandoffSequence','previousHandoffSha256',
  'sequence','challengeNonce','observedAt','decision'];
 const REVIEW=[...MANIFEST,'role',...PIN,'manifestSha256',
- 'expiresAt','disposition'];
+ 'reviewObservedAt','expiresAt','disposition'];
 const CUSTODY=[...MANIFEST,'role',...PIN,'manifestSha256',
  'reviewSetSha256','observedAtCustody','expiresAt','retentionUntil',
  'disposition'];
@@ -324,7 +324,7 @@ export function assessOfflineExternalAuthorityHandoffEc(args={}){
    s.manifestSha256!==manifestSha||
    s.disposition!=='REVIEW_UNVERIFIED_HOLD_ONLY')
    errors.add('EC_REVIEW_SIGNED_SCOPE_OR_FALSE_APPROVAL');
-  if(!fresh(s.observedAt,s.expiresAt,clock,utc(m?.observedAt)))
+  if(!fresh(s.reviewObservedAt,s.expiresAt,clock,utc(m?.observedAt)))
    errors.add('EC_REVIEW_CLOCK_OR_EXPIRY_INVALID');
   if(!signed(packet,role,reviewSigningBytesEc))
    errors.add('EC_REVIEW_SIGNATURE_OR_SPKI_INVALID');
@@ -336,7 +336,7 @@ export function assessOfflineExternalAuthorityHandoffEc(args={}){
  if(reviewShape&&reviews.size===2)try{
   const ordered=EC_REVIEW_ROLES.map(role=>reviews.get(role).statement);
   reviewSetSha=reviewSetDigestEc(ordered);
-  latestReview=Math.max(...ordered.map(s=>utc(s.observedAt)));
+  latestReview=Math.max(...ordered.map(s=>utc(s.reviewObservedAt)));
  }catch{errors.add('EC_REVIEW_SET_DIGEST_INVALID');}
  const custodyShape=Array.isArray(custodyPackets)&&
   custodyPackets.length===2&&EXACT(custodyPins,EC_CUSTODY_ROLES);
