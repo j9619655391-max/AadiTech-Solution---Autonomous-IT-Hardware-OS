@@ -61,26 +61,14 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
   const totalDeadStockValue = deadStock.reduce((acc, item) => acc + item.totalBookValue, 0);
   const totalHoldingCost = deadStock.reduce((acc, item) => acc + item.monthlyHoldingCost, 0);
 
-  const handleLiquidate = (id: string, actionType: string) => {
-    const updated = deadStock.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          status: 'LIQUIDATED' as const,
-          recommendationNote: `${item.recommendationNote} [Executed: ${actionType} at ${new Date().toLocaleTimeString()}]`
-        };
-      }
-      return item;
-    });
-    onUpdateDeadStock(updated);
-    setActionSuccessMsg(`Liquidation order initiated for item ${id}. Channel discount dispatched.`);
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+  // Forecasts and dead-stock items are browser previews, not a posted
+  // inventory ledger or validated model. No local mutation may claim that a
+  // discount was sent, stock liquidated, or agent event triggered.
+  const handleLiquidate = (_id: string, _actionType: string) => {
+    setActionSuccessMsg('HARD HOLD: No liquidation, price discount, inventory mutation or customer dispatch occurred. Server-verified stock title, pricing review and consent are required.');
   };
-
-  const handleActionClick = (id: string, title: string) => {
-    onTriggerAction(id);
-    setActionSuccessMsg(`Autonomous action executed: "${title}". Notification dispatched via suggested channel.`);
-    setTimeout(() => setActionSuccessMsg(null), 4000);
+  const handleActionClick = (_id: string, _title: string) => {
+    setActionSuccessMsg('HARD HOLD: No agent action executed or notification sent. Independently approved server-side workflows are required.');
   };
 
   const filteredDemandForecasts = selectedHorizon === 'ALL'
@@ -105,7 +93,7 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-100">Predictive Intelligence & Forecasting</h1>
               <p className="text-xs text-slate-400">
-                Hardware demand simulation, dead stock liquidation, cash runway modeling, and AI next-best actions.
+                Browser-local model previews only. No verified historical forecast, stock ownership or automated actions.
               </p>
             </div>
           </div>
@@ -175,7 +163,11 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
         </div>
       </div>
 
-      {/* Action Success Toast */}
+      <div role="note" className="p-3 rounded-lg border border-amber-700 bg-amber-950/40 text-amber-200 text-xs">
+        NOT VERIFIED — Figures come from browser-local forecast/scenario data, not an approved source ledger. There is no authority to sell, reserve, liquidate, dispatch, or post any stock or finance transaction.
+      </div>
+
+      {/* Action hold notice */}
       {actionSuccessMsg && (
         <div className="flex items-center gap-2 p-3.5 bg-emerald-950/80 border border-emerald-700/60 text-emerald-200 rounded-lg text-xs animate-fadeIn">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -201,7 +193,7 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
 
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="text-xs font-medium uppercase tracking-wider">Projected 30D Revenue</span>
+                <span className="text-xs font-medium uppercase tracking-wider">Unverified 30D Revenue Scenario</span>
                 <Target className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-xl font-bold text-emerald-700">{formatINR(salesForecast.weightedProjectedRevenue)}</div>
@@ -212,7 +204,7 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
 
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="text-xs font-medium uppercase tracking-wider">Projected Gross Profit</span>
+                <span className="text-xs font-medium uppercase tracking-wider">Unverified Gross Profit Scenario</span>
                 <ShieldCheck className="w-4 h-4 text-blue-600" />
               </div>
               <div className="text-xl font-bold text-blue-700">{formatINR(salesForecast.projectedGrossProfit)}</div>
@@ -330,7 +322,7 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
             <div className="p-4 border-b border-slate-100 bg-slate-50/70">
               <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-blue-600" />
-                Autonomous Cash Flow & Working Capital Forecast (Next 4 Months)
+                Browser-Only Cash Flow Scenarios (NOT VERIFIED)
               </h2>
               <p className="text-xs text-slate-500">
                 Synchronized with customer payment terms (30D/60D PDC), distributor credit cycles (Savex/Ingram), and GST compliance liabilities.
@@ -474,19 +466,21 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
                     {item.status === 'LIQUIDATED' ? (
                       <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        Offer Executed
+                        Browser Claim Only — NOT VERIFIED
                       </span>
                     ) : (
                       <>
                         <button
-                          onClick={() => handleLiquidate(item.id, '25% Special Promo Liquidation')}
+                          disabled
+                          title="Cannot send offers without source-verified stock title, pricing and consent"
                           className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
                         >
                           <Send className="w-3.5 h-3.5" />
-                          <span>Dispatch Liquidation Offer</span>
+                          <span>Liquidation HOLD</span>
                         </button>
                         <button
-                          onClick={() => handleLiquidate(item.id, 'Bundle at Zero Margin with Server Quotes')}
+                          disabled
+                          title="Cannot bundle unverified stock into an issued quotation"
                           className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors"
                         >
                           Bundle with Server BOM
@@ -508,14 +502,14 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
             <div>
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-amber-400" />
-                <h2 className="text-sm font-bold tracking-tight">Autonomous Revenue Next-Best Actions</h2>
+                <h2 className="text-sm font-bold tracking-tight">Next-Best Action Preview — No Autonomous Dispatch</h2>
               </div>
               <p className="text-xs text-indigo-200 mt-1">
-                Real-time decision engine analyzing lead engagement, quote stalling, and expiring warranties to trigger revenue captures.
+                Unvalidated browser suggestions. No real order, invoice, campaign, margin or lead conversion may be inferred.
               </p>
             </div>
             <div className="text-xs bg-indigo-800/80 px-3 py-1.5 rounded-lg text-indigo-100 font-medium">
-              4 high-impact triggers available
+              No verified triggers / dispatch disabled
             </div>
           </div>
 
@@ -563,15 +557,16 @@ export const PredictiveAnalyticsView: React.FC<PredictiveAnalyticsViewProps> = (
                   {nba.status === 'TRIGGERED' ? (
                     <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Triggered
+                      Unverified Browser Status
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleActionClick(nba.id, nba.actionTitle)}
+                      disabled
+                      title="Agent execution requires authorized server-side approval"
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
                     >
                       <Send className="w-3 h-3" />
-                      <span>Execute Action</span>
+                      <span>Action HOLD</span>
                     </button>
                   )}
                 </div>

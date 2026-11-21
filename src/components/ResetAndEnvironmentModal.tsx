@@ -28,6 +28,7 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
   const [currentMode, setCurrentMode] = useState<'TESTING' | 'PRODUCTION'>(() => storageService.getEnvironmentMode());
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [confirmWipeModal, setConfirmWipeModal] = useState(false);
+  const [confirmDemoModal,setConfirmDemoModal]=useState(false);
 
   if (!isOpen) return null;
 
@@ -45,24 +46,20 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
   };
 
   const handleExecuteWipeToProduction = () => {
-    storageService.wipeToCleanProductionState();
-    setCurrentMode('PRODUCTION');
     setConfirmWipeModal(false);
-    setActionStatus('All test records wiped! System successfully initialized in Clean Production Mode.');
-    setTimeout(() => {
-      onDataReload();
-      onClose();
-    }, 1500);
+    setActionStatus('BLOCKED: Browser-local reset cannot authorize production. Existing records were preserved.');
   };
 
   const handleExecuteLoadTesting = () => {
-    storageService.loadTestingDemoState();
-    setCurrentMode('TESTING');
-    setActionStatus('Comprehensive testing dataset loaded! All 88 blueprint scenarios ready for evaluation.');
-    setTimeout(() => {
-      onDataReload();
-      onClose();
-    }, 1500);
+    setConfirmDemoModal(false);
+    try {
+      storageService.loadTestingDemoState('OVERWRITE_BROWSER_DATA');
+      setCurrentMode('TESTING');
+      setActionStatus('Demo fixtures loaded into browser storage only — not production data.');
+      setTimeout(()=>{onDataReload();onClose();},1500);
+    }catch(e){
+      setActionStatus(e instanceof Error?e.message:'Demo fixture import blocked');
+    }
   };
 
   return (
@@ -76,7 +73,7 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
             </div>
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>System Reset &amp; Production Slate Controller</span>
+                <span>Browser Demo Data &amp; Safety Controls</span>
                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
                   currentMode === 'PRODUCTION'
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -86,7 +83,7 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Wipe simulated test artifacts or switch between Testing Evaluation and Clean Production
+                Browser-local fixture management only. No button here enables real production.
               </p>
             </div>
           </div>
@@ -129,14 +126,14 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
             <div className="space-y-1">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Trash2 className="w-4 h-4 text-rose-400" />
-                <span>Wipe All Test Data &amp; Start Fresh (Production Slate)</span>
+                <span>Production Reset Blocked (requires authorized staging and backup)</span>
               </h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Use this once you have verified the system. Wipes all simulated leads, quotes, orders, RMAs, and tickets, leaving an empty, pristine slate ready for live operations.
+                Disabled: browser storage is not the authoritative MySQL database. Destructive reset cannot prove live deployment readiness.
               </p>
             </div>
             <span className="text-[10px] font-semibold text-rose-400 uppercase tracking-wider bg-rose-950 px-2 py-0.5 rounded border border-rose-800/60 whitespace-nowrap">
-              Production Start
+              RELEASE HOLD
             </span>
           </div>
 
@@ -154,22 +151,24 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
               Empty sales order ledger
             </div>
             <div className="p-2 rounded-lg bg-slate-900/80 border border-slate-800">
-              <strong className="text-emerald-300 block">Real Catalog</strong>
-              AadiTech Master Products
+              <strong className="text-emerald-300 block">Unverified Catalog</strong>
+              Verify supplier source
             </div>
           </div>
 
           <div className="pt-2 flex items-center justify-between">
             <span className="text-[11px] text-slate-400">
-              Preserves legal company profile, GSTIN &amp; bank parameters.
+              No destructive wipe is performed; preserve existing browser-local records.
             </span>
             <button
               id="btn-confirm-wipe-fresh"
+              disabled
+              title="Requires independently verified staging and authorized backup"
               onClick={() => setConfirmWipeModal(true)}
               className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-md shadow-rose-600/20 flex items-center gap-1.5 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Complete Reset to Fresh Slate</span>
+              <span>Production Reset Disabled</span>
             </button>
           </div>
         </div>
@@ -197,7 +196,7 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
             </span>
             <button
               id="btn-load-testing-dataset"
-              onClick={handleExecuteLoadTesting}
+              onClick={() => setConfirmDemoModal(true)}
               className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-colors"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -206,6 +205,16 @@ export const ResetAndEnvironmentModal: React.FC<ResetAndEnvironmentModalProps> =
           </div>
         </div>
 
+        {confirmDemoModal && (
+          <div role="alertdialog" aria-label="Confirm demo data overwrite" className="p-4 rounded-xl bg-amber-950 border border-amber-800 text-xs space-y-3">
+            <strong className="text-amber-200">Demo import will overwrite existing browser-local records.</strong>
+            <p className="text-slate-300">Export a browser-only JSON copy first. This is not a MySQL backup and does not certify production state.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmDemoModal(false)} className="px-3 py-1.5 rounded-lg bg-slate-700 text-white">Cancel</button>
+              <button onClick={handleExecuteLoadTesting} className="px-3 py-1.5 rounded-lg bg-amber-700 text-white">Confirm overwrite browser demo data</button>
+            </div>
+          </div>
+        )}
         {/* Confirmation Sub-Modal */}
         {confirmWipeModal && (
           <div className="p-4 rounded-xl bg-rose-950 border border-rose-800 text-xs space-y-3 animate-in fade-in">

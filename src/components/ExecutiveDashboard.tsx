@@ -38,29 +38,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   onOpenTelegram,
   onNavigateToTab
 }) => {
-  // Dynamic financial metrics derived from Quotations & Products
-  const approvedQuotes = quotations.filter(q => q.status === 'APPROVED');
-  const todayRevenue = approvedQuotes.length > 0 
-    ? approvedQuotes.reduce((sum, q) => sum + q.totalAmount, 0)
-    : 842500;
-  
-  const calculatedCost = approvedQuotes.reduce((sum, q) => {
-    return sum + q.items.reduce((iSum, it) => iSum + ((it.unitCost || it.unitSell * 0.82) * it.qty), 0);
-  }, 0);
-  const todayProfit = approvedQuotes.length > 0 && calculatedCost > 0
-    ? Math.max(0, todayRevenue - calculatedCost)
-    : 145600;
-
-  const grossMargin = todayRevenue > 0
-    ? Number(((todayProfit / todayRevenue) * 100).toFixed(2))
-    : 17.28;
-
-  const calculatedStockValue = products.reduce((sum, p) => {
-    return sum + (p.unitCost * (p.stockBhiwandi + p.stockDelhi + p.stockBangalore));
-  }, 0);
-  const totalStockValue = calculatedStockValue > 0 ? calculatedStockValue : 14200000;
-  const overdueReceivables = 420000;
-  const lowStockCount = products.filter(p => (p.stockBhiwandi + p.stockDelhi + p.stockBangalore) <= 3).length;
+  // Browser-local previews are NOT authoritative accounting, stock, orders,
+  // tax or approved supplier/Telegram operations. Never infer invoicing from
+  // quotation status, or a margin from estimated/default SKU costs.
+  const localLeadPreviewCount = leads.length;
+  const localQuotePreviewCount = quotations.length;
+  const localCatalogPreviewCount = products.length;
 
   // Section 77: AI Business Command Center Interactive State
   const [nlQuery, setNlQuery] = useState('');
@@ -70,12 +53,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
     text: string;
     suggestedTab?: string;
     suggestedTabLabel?: string;
-  } | null>({
-    query: 'Aaj ki sales aur gross profit batao.',
-    text: `📊 **AadiTech Financial Performance (Today)**:\n• Invoiced Revenue: ₹${todayRevenue.toLocaleString('en-IN')}\n• Net Gross Profit: ₹${todayProfit.toLocaleString('en-IN')} (${grossMargin}% margin, comfortably exceeding 15% threshold)\n• Top Revenue Driver: Enterprise Server & Workstation deployment\n• GST Invoicing: 100% compliant with e-Invoice IRN & e-Way bills.`,
-    suggestedTab: 'quotes',
-    suggestedTabLabel: 'View Quotations'
-  });
+  } | null>(null);
 
   const section77Queries = [
     { label: '📊 Aaj ki sales batao', q: 'Aaj ki sales batao.', tab: 'quotes', tabLabel: 'Quotes & Pricing' },
@@ -91,84 +69,35 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   ];
 
   const handleRunNLQuery = async (queryText: string, suggestedTab?: string, suggestedTabLabel?: string) => {
-    if (!queryText.trim()) return;
+    const query = queryText.trim();
+    if (!query || nlLoading) return;
     setNlLoading(true);
-    const q = queryText.trim();
-    const qLower = q.toLowerCase();
-
     try {
+      // The server currently returns 501 for non-authoritative business queries.
+      // Do NOT supply browser-local fake financial context, nor manufacture
+      // a successful answer when the service rejects or cannot be reached.
       const res = await fetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: q,
-          context: {
-            revenueToday: `₹${todayRevenue.toLocaleString('en-IN')}`,
-            profitToday: `₹${todayProfit.toLocaleString('en-IN')}`,
-            margin: `${grossMargin}%`,
-            pendingApprovalsCount: pendingApprovals.length,
-            lowStockCount
-          }
-        })
+        body: JSON.stringify({ query })
       });
-      const data = await res.json();
+      if (!res.ok) throw new Error('Business command not enabled');
+      const data: unknown = await res.json();
+      if (!data || typeof data !== 'object' || !('text' in data) ||
+          typeof data.text !== 'string' || !data.text.trim())
+        throw new Error('No verified business answer available');
       setNlResponse({
-        query: q,
-        text: data.text || 'Query answered successfully.',
-        suggestedTab: suggestedTab || 'analytics',
-        suggestedTabLabel: suggestedTabLabel || 'Explore Module'
+        query,
+        text: data.text,
+        suggestedTab: suggestedTab || 'system',
+        suggestedTabLabel: suggestedTabLabel || 'View Status'
       });
     } catch {
-      // Deterministic fallback matching Section 77
-      let fallbackText = '';
-      let targetTab = suggestedTab || 'crm';
-      let targetLabel = suggestedTabLabel || 'View Details';
-
-      if (qLower.includes('sales') || qLower.includes('revenue')) {
-        fallbackText = `📊 **Sales Today**: ₹${todayRevenue.toLocaleString('en-IN')} across active orders.\n14 quotations generated autonomously, 3 orders dispatched from Bhiwandi Central.`;
-        targetTab = 'orders';
-        targetLabel = 'Orders & Logistics';
-      } else if (qLower.includes('profit')) {
-        fallbackText = `💰 **Gross Profit Summary**: ₹${todayProfit.toLocaleString('en-IN')} achieved today (${grossMargin}% margin). Target baseline threshold is ≥15.0%.`;
-        targetTab = 'analytics';
-        targetLabel = 'Predictive Analytics';
-      } else if (qLower.includes('follow-up') || qLower.includes('customers')) {
-        fallbackText = `📞 **AI Follow-up Priority**: 3 Hot Leads require contact today:\n1. Tata Motors Supply Hub (₹18.5L budget, 30 ThinkPads)\n2. Reliance Retail IT Vendor (Quote sent 24h ago, no reply yet)\n3. Wipro Infrastructure Subcontractor (AMC renewal proposal).`;
-        targetTab = 'crm';
-        targetLabel = 'Open CRM Leads';
-      } else if (qLower.includes('dead')) {
-        fallbackText = `⚠️ **Dead Stock Intelligence**: 8x Cisco WS-C2960X-24TD-L switches (>120 days old, ₹1,84,000 capital trapped). Recommendation: Apply 18% bundle liquidation discount with server orders.`;
-        targetTab = 'analytics';
-        targetLabel = 'Dead Stock Liquidation';
-      } else if (qLower.includes('supplier')) {
-        fallbackText = `🏢 **Supplier Performance Scorecard**:\n• #1 Ingram Micro India: Score 94/100 (Lead time 2.1 days, 99.1% fill rate)\n• #2 Redington India: Score 91/100 (Lead time 2.4 days, best server memory pricing)\n• #3 Savex Technologies: Score 88/100.`;
-        targetTab = 'procurement';
-        targetLabel = 'Procurement Hub';
-      } else if (qLower.includes('purchase') || qLower.includes('30 days')) {
-        fallbackText = `📦 **30-Day Demand & PO Requirement**: Estimated ₹28.5 Lakh procurement required across Kingston DDR5 ECC (40 units), Fortinet FG-60F (10 units), and Dell 24" P2422H monitors (50 units).`;
-        targetTab = 'analytics';
-        targetLabel = 'Demand Forecasting';
-      } else if (qLower.includes('probability') || qLower.includes('quote')) {
-        fallbackText = `🎯 **High Probability Quotes (>80% Win Rate)**:\n1. QT-2026-089 (TechCorp India): ₹11,40,000 (Win Probability: 88%)\n2. QT-2026-091 (L&T Defense Vendor): ₹7,20,000 (Win Probability: 92%).`;
-        targetTab = 'quotes';
-        targetLabel = 'Quotes & Pricing';
-      } else if (qLower.includes('warranty') || qLower.includes('amc')) {
-        fallbackText = `🛡️ **Warranty Expirations**: 18 workstations & servers across Reliance Retail and Zomato Tech crossing warranty in next 30 days. AI Marketing Campaign auto-queued.`;
-        targetTab = 'finance';
-        targetLabel = 'Finance & Warranties';
-      } else if (qLower.includes('10 lakh') || qLower.includes('opportunities')) {
-        fallbackText = `💎 **High-Value Opportunities (> ₹10 Lakh)**:\n1. Tata Motors Supply Hub: ₹18,50,000 (30x Laptops + Networking Stack)\n2. TechCorp India: ₹11,40,000 (Hybrid Cloud Cluster Server).`;
-        targetTab = 'crm';
-        targetLabel = 'CRM Pipeline';
-      } else {
-        fallbackText = `🤖 **Autonomous AI Query Answer**: "${q}" processed against real-time operational data. All systems operating within Section 51 Guardrails.`;
-      }
-
       setNlResponse({
-        query: q,
-        text: fallbackText,
-        suggestedTab: targetTab,
-        suggestedTabLabel: targetLabel
+        query,
+        text: 'NOT VERIFIED: The server has not supplied an authoritative answer. No revenue, margin, inventory, lead, order, GST or dispatch figures have been inferred. Review the relevant server-backed module and its release HOLD.',
+        suggestedTab: suggestedTab || 'system',
+        suggestedTabLabel: suggestedTabLabel || 'View Status'
       });
     } finally {
       setNlLoading(false);
@@ -190,19 +119,19 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
               </span>
               <span className="text-xs uppercase font-bold tracking-wider text-indigo-300">
-                Today's Autonomous Business Brief &bull; AI Orchestrator
+                Engineering Status &bull; Nonproduction Preview
               </span>
               <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
-                Live Pulse
+                RELEASE HOLD
               </span>
             </div>
             
             <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-              Revenue ↑ 18.4% | ₹8.42L Cleared &bull; 3 Telegram Margin Gates Active
+              Financial posting, inventory availability and external dispatch NOT VERIFIED
             </h2>
             
             <p className="text-sm text-slate-300 max-w-3xl leading-relaxed">
-              System autonomously qualified <strong className="text-white">42 B2B leads</strong>, compiled <strong className="text-white">14 technical BOM solutions</strong>, and placed automatic stock reservations. 1 quotation requires owner Telegram authorization due to <strong className="text-amber-300">14.1% margin exception</strong>.
+              Browser-local preview counts are not sales, official invoices, supplier acknowledgments, stock reservations or production authorization. Server-backed approval evidence and genuine independent provider acceptance remain required.
             </p>
           </div>
 
@@ -213,7 +142,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-semibold text-xs transition-all shadow-lg shadow-sky-500/25 hover:scale-[1.02]"
             >
               <Send className="w-4 h-4" />
-              <span>Telegram Command Center</span>
+              <span>Telegram Preview (No Send)</span>
               {pendingApprovals.length > 0 && (
                 <span className="w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-bold">
                   {pendingApprovals.length}
@@ -227,27 +156,27 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
         <div className="mt-4 pt-3 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
             <span className="text-[10px] text-slate-400 block">High-Value Leads</span>
-            <strong className="text-emerald-400 font-bold text-sm">3 Hot Accounts</strong>
+            <strong className="text-emerald-400 font-bold text-sm">{localLeadPreviewCount} Local Leads</strong>
           </div>
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">Pending Telegram</span>
-            <strong className="text-amber-400 font-bold text-sm">{pendingApprovals.length} Approvals</strong>
+            <span className="text-[10px] text-slate-400 block">Local Approval Previews</span>
+            <strong className="text-amber-400 font-bold text-sm">{pendingApprovals.length} Held Previews</strong>
           </div>
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">Stock Depletion</span>
-            <strong className="text-rose-400 font-bold text-sm">{lowStockCount} SKUs Low</strong>
+            <span className="text-[10px] text-slate-400 block">Catalog Previews</span>
+            <strong className="text-rose-400 font-bold text-sm">{localCatalogPreviewCount} Local SKUs</strong>
           </div>
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">Overdue Receivables</span>
-            <strong className="text-slate-200 font-bold text-sm">₹4.20 Lakh</strong>
+            <span className="text-[10px] text-slate-400 block">Receivables (Authoritative)</span>
+            <strong className="text-slate-200 font-bold text-sm">NOT VERIFIED</strong>
           </div>
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">AMC Renewals (30D)</span>
-            <strong className="text-sky-300 font-bold text-sm">3 Contracts Due</strong>
+            <span className="text-[10px] text-slate-400 block">Quotation Previews</span>
+            <strong className="text-sky-300 font-bold text-sm">{localQuotePreviewCount} Local Drafts</strong>
           </div>
           <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">Warranties Expiring</span>
-            <strong className="text-amber-300 font-bold text-sm">18 Serials Alert</strong>
+            <span className="text-[10px] text-slate-400 block">Warranty Ledger</span>
+            <strong className="text-amber-300 font-bold text-sm">NOT VERIFIED</strong>
           </div>
         </div>
       </div>
@@ -256,65 +185,65 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Today's Invoiced Revenue</span>
+            <span>Invoiced Revenue (Server Ledger)</span>
             <span className="text-emerald-400 font-semibold flex items-center gap-0.5">
-              <TrendingUp className="w-3.5 h-3.5" /> +18.4%
+              <ShieldCheck className="w-3.5 h-3.5" /> HELD
             </span>
           </div>
           <div className="text-2xl font-bold text-white tracking-tight">
-            ₹{todayRevenue.toLocaleString('en-IN')}
+            NOT VERIFIED
           </div>
           <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-            <span>GST Collected (18%):</span>
-            <span className="text-slate-300 font-medium">₹1,51,650</span>
+            <span>GST IRN / collection evidence:</span>
+            <span className="text-slate-300 font-medium">NOT VERIFIED</span>
           </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Net Gross Profit (Today)</span>
+            <span>Posted Gross Profit (Server Ledger)</span>
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">
-              {grossMargin}% Margin
+              NOT VERIFIED
             </span>
           </div>
           <div className="text-2xl font-bold text-emerald-400 tracking-tight">
-            ₹{todayProfit.toLocaleString('en-IN')}
+            NOT VERIFIED
           </div>
           <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-            <span>Target Operating Threshold:</span>
-            <span className="text-slate-300 font-medium">15.0% Min</span>
+            <span>Pricing & posting:</span>
+            <span className="text-slate-300 font-medium">Independent approval required</span>
           </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Inventory Valuation</span>
-            <span className="text-blue-400 font-semibold">3 Hubs</span>
+            <span>Authoritative Inventory Valuation</span>
+            <span className="text-blue-400 font-semibold">UNPOSTED</span>
           </div>
           <div className="text-2xl font-bold text-white tracking-tight">
-            ₹{(totalStockValue / 10000000).toFixed(2)} Cr
+            NOT VERIFIED
           </div>
           <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-            <span>Dead Stock Flag (&gt;120D):</span>
-            <span className="text-amber-400 font-medium">₹1.84L (Cisco 2960)</span>
+            <span>Stock ownership / costing:</span>
+            <span className="text-amber-400 font-medium">NOT VERIFIED</span>
           </div>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Autonomous Execution</span>
-            <span className="text-emerald-400 font-semibold">Ratio 9:1</span>
+            <span>Autonomous Execution Authority</span>
+            <span className="text-emerald-400 font-semibold">HELD</span>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-white">90%</span>
-            <span className="text-xs text-slate-400">Auto</span>
-            <span className="text-slate-600">/</span>
-            <span className="text-2xl font-bold text-sky-400">10%</span>
-            <span className="text-xs text-slate-400">Telegram</span>
+            <span className="text-2xl font-bold text-white">DISABLED</span>
+            <span className="text-xs text-slate-400">Pending verified authority</span>
+            
+            
+            
           </div>
           <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-            <span>Zero Rule Violations:</span>
-            <span className="text-emerald-400 font-medium">Verified</span>
+            <span>Independent compliance assessment:</span>
+            <span className="text-amber-400 font-medium">NOT VERIFIED</span>
           </div>
         </div>
       </div>
@@ -330,7 +259,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 <span>Pending Owner Approvals Queue</span>
               </h3>
               <p className="text-xs text-slate-400">
-                10% exception boundary: Sub-15% margins, &gt;₹10L orders, or credit limit overrides
+                Browser-local queue is a preview; only server-authorized reviews can affect status. External dispatch disabled.
               </p>
             </div>
             <button
@@ -344,7 +273,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           {pendingApprovals.length === 0 ? (
             <div className="p-8 text-center bg-slate-950/60 rounded-xl border border-slate-800/80 text-slate-400 text-xs">
               <CheckCircle className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-              All business operations running inside autonomous boundaries. Zero pending exceptions.
+              No local preview approval cards. This does not mean verified compliance, approvals, or operating authority.
             </div>
           ) : (
             <div className="space-y-3">
@@ -372,14 +301,14 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                   </div>
 
                   <div className="text-xs text-slate-300 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800/60">
-                    <strong className="text-amber-400 text-[10px] uppercase block mb-0.5">AI Risk & Deal Context:</strong>
+                    <strong className="text-amber-400 text-[10px] uppercase block mb-0.5">Unverified Preview Context:</strong>
                     {appr.reason}
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <span className="text-[11px] text-amber-400 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 animate-spin" />
-                      Telegram timer: {appr.timeoutMinutes} min to reminder
+                      Local preview timer: {appr.timeoutMinutes} min to reminder
                     </span>
 
                     <div className="flex items-center gap-2">
@@ -388,7 +317,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                         className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                       >
                         <Send className="w-3 h-3" />
-                        Act in Telegram
+                        Open Telegram Preview
                       </button>
                     </div>
                   </div>
@@ -403,14 +332,14 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Repeat className="w-5 h-5 text-sky-400 animate-spin" />
-              <span>AI Business Learning Loop</span>
+              <span>Business Workflow Status (Preview)</span>
             </h3>
             <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
-              Self-Optimizing
+              NOT ACTIVE
             </span>
           </div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Section 82: Continuous data feedback from actual order margins and supplier fulfillment automatically calibrates future sales and procurement.
+            No verified production learning loop or automatic price/stock changes. Workflow cards below describe planned modules, not executed business events.
           </p>
 
           <div className="space-y-2.5 pt-1">
@@ -422,7 +351,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                   <span className="text-[10px] text-slate-400">WhatsApp, IndiaMART, Web chat</span>
                 </div>
               </div>
-              <span className="text-emerald-400 text-xs font-semibold">42 Leads</span>
+              <span className="text-emerald-400 text-xs font-semibold">{localLeadPreviewCount} Local Leads</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
@@ -433,7 +362,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                   <span className="text-[10px] text-slate-400">Cost + Freight + Risk + Margin</span>
                 </div>
               </div>
-              <span className="text-sky-300 text-xs font-semibold">17.2% Avg Margin</span>
+              <span className="text-sky-300 text-xs font-semibold">NOT VERIFIED</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
@@ -441,10 +370,10 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 <div className="w-6 h-6 rounded-md bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold text-xs">3</div>
                 <div>
                   <span className="text-white font-medium block">Multi-Supplier RFQ Optimization</span>
-                  <span className="text-[10px] text-slate-400">Redington vs Ingram vs Savex</span>
+                  <span className="text-[10px] text-slate-400">Vendor data requires confirmation</span>
                 </div>
               </div>
-              <span className="text-emerald-400 text-xs font-semibold">Saved ₹34,200</span>
+              <span className="text-emerald-400 text-xs font-semibold">NOT MEASURED</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs">
@@ -455,13 +384,13 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                   <span className="text-[10px] text-slate-400">Serial tracking & proactive renewals</span>
                 </div>
               </div>
-              <span className="text-amber-300 text-xs font-semibold">3 Renewals Due</span>
+              <span className="text-amber-300 text-xs font-semibold">NOT VERIFIED</span>
             </div>
           </div>
 
           <div className="p-3 rounded-xl bg-gradient-to-r from-blue-950/40 to-indigo-950/40 border border-blue-900/40 text-[11px] text-slate-300">
-            <strong className="text-blue-300 font-semibold block mb-0.5">Autonomous Recommendation:</strong>
-            Increase Kingston DDR5 ECC server memory order by 16 units in next PO to capture 3.5% distributor volume rebate before month-end.
+            <strong className="text-blue-300 font-semibold block mb-0.5">Production Action: DISABLED</strong>
+            Do not order stock or revise supplier terms without approved PO, independent pricing evidence, available-to-sell/ownership validation and explicit authorized release.
           </div>
         </div>
       </div>
@@ -481,7 +410,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Ask any strategic question in Hindi/English; AI synthesizes real-time pipeline, inventory, margins and cash flow
+                Ask any strategic question in Hindi/English; Server-backed answer only; figures are unavailable until independently verified
               </p>
             </div>
           </div>
@@ -491,7 +420,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1.5 self-start sm:self-auto"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>Open in Telegram Bot</span>
+            <span>Open Telegram Preview</span>
           </button>
         </div>
 
@@ -549,7 +478,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
                 Query: <strong className="text-slate-200">"{nlResponse.query}"</strong>
               </span>
               <span className="text-[10px] text-sky-300 font-mono bg-sky-950 px-2 py-0.5 rounded border border-sky-800">
-                AadiTech Business Intelligence v4.2
+                Business answer / release HOLD
               </span>
             </div>
 
@@ -560,7 +489,7 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             {nlResponse.suggestedTab && (
               <div className="pt-2 flex items-center justify-between border-t border-slate-800/80 text-xs">
                 <span className="text-[11px] text-slate-400">
-                  Recommended action: Investigate relevant business module
+                  Navigation only: review evidence and release HOLD
                 </span>
                 <button
                   onClick={() => onNavigateToTab(nlResponse.suggestedTab!)}

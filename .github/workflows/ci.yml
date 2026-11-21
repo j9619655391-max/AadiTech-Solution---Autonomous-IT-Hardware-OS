@@ -1,0 +1,628 @@
+name: Phase 0 baseline
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run lint
+      - name: Phase 1AP provider authority HARD HOLD (no secrets or network)
+        run: node scripts/provider-authority-preflight.mjs --ci-hold
+      - name: Phase 1AQ updated eMudhra WebPKI incident HARD HOLD (no network)
+        run: node scripts/phase1aq-trust-incident-preflight.mjs --ci-hold
+      - name: Phase 1AU deny-only policy drift and revocation expiry HARD HOLD
+        run: node scripts/phase1au-policy-drift-preflight.mjs --ci-hold
+      - name: Phase 1AV external authority incident and anchor governance HARD HOLD
+        run: node scripts/phase1av-incident-preflight.mjs --ci-hold
+      - name: Phase 1AW signed checkpoint and recovery governance HARD HOLD (no keys or network)
+        run: node scripts/phase1aw-checkpoint-preflight.mjs --ci-hold
+      - name: Phase 1AY transparency witness and disaster recovery zero-input HARD HOLD
+        run: node scripts/phase1ay-witness-recovery-preflight.mjs --ci-hold
+      - name: Phase 1AZ external witness, WORM archive, and encrypted DR readiness HARD HOLD
+        run: node scripts/phase1az-external-readiness-preflight.mjs --ci-hold
+      - name: Phase 1BA cross-bound independent acceptance zero-input HARD HOLD
+        run: node scripts/phase1ba-independent-acceptance-preflight.mjs --ci-hold
+      - name: Phase 1BA independent witness and Object Lock/DR acceptance HARD HOLD
+        run: node scripts/phase1ba-acceptance-preflight.mjs --ci-hold
+      - name: Phase 1BB digest-only evidence intake and independent key custody HARD HOLD
+        run: node scripts/phase1bb-evidence-intake-preflight.mjs --ci-hold
+      - name: Phase 1BB RFC6962 append-only cross-witness consistency HARD HOLD
+        run: node scripts/phase1bb-consistency-preflight.mjs --ci-hold
+      - name: Phase 1BC provider challenge, Object Lock and witnessed DR HARD HOLD
+        run: node scripts/phase1bc-external-adapter-preflight.mjs --ci-hold
+      - name: Phase 1BD independent evidence review, key custody and DR telemetry HARD HOLD
+        run: node scripts/phase1bd-evidence-review-preflight.mjs --ci-hold
+      - name: Phase 1BD old/new witness dual-signed key rotation HARD HOLD
+        run: node scripts/phase1bd-authority-rotation-preflight.mjs --ci-hold
+      - name: Phase 1BE emergency witness revocation and independent source-of-truth HARD HOLD
+        run: node scripts/phase1be-revocation-freeze-preflight.mjs --ci-hold
+      - name: Phase 1BF cross-source revocation publication and WORM/DR acceptance HARD HOLD
+        run: node scripts/phase1bf-publication-preflight.mjs --ci-hold
+      - name: Phase 1BG independently claimed CRL/OCSP, WORM and recovery auditor HARD HOLD
+        run: node scripts/phase1bg-cross-source-preflight.mjs --ci-hold
+      - name: All remaining M01-M30 acceptance coverage and no false production GO
+        run: node scripts/project-completion-preflight.mjs --ci-hold
+      - name: Phase 1BC Merkle witness key-custody and append-only HEAD HARD HOLD
+        run: node scripts/phase1bc-witness-custody-preflight.mjs --ci-hold
+      - name: Baseline tests
+        run: bun run test
+      - name: Build
+        run: bun run build
+      - name: Phase 1AT staging acceptance zero-input HARD HOLD (no private evidence)
+        run: bun run staging:acceptance-review --ci-hold
+      - name: Test private staging evidence integrity manifest (synthetic files only)
+        run: bun run test:staging-security
+      - name: Validate fail-closed production configuration with synthetic values
+        env:
+          DEPLOYMENT_PREFLIGHT: '1'
+          NODE_ENV: production
+          APP_URL: https://staging.example.invalid
+          APP_TRUSTED_PROXY_CIDRS: 127.0.0.1/32
+          APP_REQUIRE_HTTPS: 'true'
+          MFA_REQUIRE_PRIVILEGED: 'true'
+          MFA_ENCRYPTION_KEY: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
+          DB_HOST: ci-mysql.example.invalid
+          DB_PORT: '3306'
+          DB_USER: ci_preflight
+          DB_PASSWORD: CI_ONLY_PLACEHOLDER
+          DB_NAME: aaditech_staging_ci
+          DB_SSL: 'true'
+        run: bun run deployment:preflight
+      - name: Audit dependency advisories (non-gating, no auto-upgrades)
+        if: always()
+        run: |
+          set +e
+          bun audit --json > dependency-audit.json
+          exit_code=$?
+          echo "Dependency advisory audit exit status: $exit_code"
+          exit 0
+      - name: Generate machine-readable dependency risk triage
+        run: node scripts/triage-dependencies.mjs dependency-audit.json dependency-triage.json
+      - name: Phase 1CK isolate real Picomatch tiny advisory patterns and corroborate entire frozen-lock audit (HARD HOLD)
+        run: node scripts/phase1ck-picomatch-bounded-adjudication.mjs --ci-hold
+      - name: Block unreviewed new or escalated dependency advisories
+        run: node scripts/check-dependency-baseline.mjs dependency-audit.json dependency-triage.json docs/security/dependency-advisory-baseline.json
+      - name: Verify patched dependency versions and zero critical/high advisory matches
+        run: node scripts/verify-patched-dependencies.mjs
+      - name: Record held Phase 1Z release build provenance (no deployment)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/chore/phase0-foundation-20261106'
+        env:
+          RELEASE_CANDIDATE_CI: '1'
+        run: bun run release:candidate
+      - name: Upload held release candidate hash inventory
+        if: github.event_name == 'push' && github.ref == 'refs/heads/chore/phase0-foundation-20261106'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: held-phase1z-release-candidate
+          path: release-candidate-manifest.json
+          if-no-files-found: error
+      - name: Upload dependency audit for human triage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dependency-audit
+          path: |
+            dependency-audit.json
+            dependency-triage.json
+            dependency-baseline-status.json
+            phase1ck-real-picomatch-bounded-worker-hold.json
+          if-no-files-found: warn
+      - name: Record architecture blockers (non-gating)
+        if: always()
+        run: node scripts/audit-baseline.mjs
+      - name: Upload baseline audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase0-audit
+          path: phase0-audit-report.json
+          if-no-files-found: warn
+
+  build-input-provenance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1BV verify frozen build command, local glob inputs, CI runner and token boundary
+        run: node scripts/phase1bv-build-input-provenance.mjs
+      - name: Phase 1BZ verify immutable action SHA refs and exact workflow inventory (HARD HOLD)
+        run: node scripts/phase1bz-actions-pin-preflight.mjs --ci-hold
+      - name: Phase 1CC bind unsigned build/action reports to actual CI checkout and Git parent graph (HARD HOLD)
+        run: node scripts/phase1cc-ci-evidence-envelope.mjs --ci-hold
+      - name: Phase 1CD detached independent signer WORM/DR anti-rollback prerequisites zero-input HARD HOLD
+        run: node scripts/phase1cd-external-custody-preflight.mjs --ci-hold
+      - name: Phase 1CE two-witness RFC6962 fork and retrieved archive byte verification zero-input HARD HOLD
+        run: node scripts/phase1ce-cross-witness-retrieval-preflight.mjs --ci-hold
+      - name: Phase 1CF two-epoch published checkpoint/reviewer signature zero-input HARD HOLD
+        run: node scripts/phase1cf-checkpoint-publication-review-preflight.mjs --ci-hold
+      - name: Phase 1CG signed cross-source CAS and exact-head GitHub reviewer evidence zero-input HARD HOLD
+        run: node scripts/phase1cg-external-source-reconciliation-preflight.mjs --ci-hold
+      - name: Upload UNSIGNED selected CI build control SHA-256 custody (not independent attestation)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1bv-held-unsigned-build-input-inventory
+          path: |
+            phase1bv-held-build-input-report.json
+            phase1bz-actions-pin-hold.json
+            phase1cc-unsigned-source-receipt-hold.json
+            phase1cd-zero-input-external-custody-hold.json
+            phase1ce-zero-input-cross-witness-hold.json
+            phase1cf-zero-input-review-history-hold.json
+            phase1cg-zero-input-external-reconciliation-hold.json
+          if-no-files-found: warn
+
+  review-vendor-intake-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1BW independent reviewer/ruleset and genuine vendor patch intake HARD HOLD
+        run: node scripts/phase1bw-review-vendor-intake.mjs --ci-hold
+      - name: Phase 1CM validate UNINSTALLED main two-reviewer ruleset API handoff, no admin write (HARD HOLD)
+        run: node scripts/phase1cm-admin-ruleset-reviewer-handoff.mjs --ci-hold
+      - name: Phase 1CB observe public GHSA and OSV advisory disagreement (deny release, no credentials)
+        run: node scripts/phase1cb-public-advisory-observer.mjs --ci-hold
+      - name: Phase 1CH compare official npm published package and Github vendor release against GHSA OSV unpatched HOLD
+        run: node scripts/phase1ch-upstream-patch-publication-preflight.mjs --ci-hold
+      - name: Phase 1CJ quarantine withdrawn/disputed GitHub advisory without patch or security waiver (HARD HOLD)
+        run: node scripts/phase1cj-advisory-withdrawal-quarantine.mjs --ci-hold
+      - name: Archive unsigned blocked review and vendor patch intake (NOT approval)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1bw-blocked-review-vendor-intake
+          path: |
+            phase1bw-held-review-vendor-report.json
+            phase1cb-public-advisory-hold.json
+            phase1ch-publisher-remediation-hold.json
+            phase1cj-withdrawn-advisory-quarantine-hold.json
+            phase1cm-uninstalled-main-ruleset-admin-handoff-hold.json
+          if-no-files-found: warn
+
+  independent-evidence-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1BX exact-head detached Ed25519 reviewer, ruleset and WORM/CI prerequisites HARD HOLD
+        run: node scripts/phase1bx-external-governance-proof.mjs --ci-hold
+      - name: Upload only ZERO-INPUT held independent-evidence prerequisites (not signed acceptance)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1bx-zero-input-independent-evidence-hold
+          path: phase1bx-zero-input-independent-hold-report.json
+          if-no-files-found: warn
+
+  live-github-governance-hold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      checks: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1CS exact current push ref, PR head and workflow identity HARD HOLD
+        if: github.event_name == 'push'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1cs-push-head-governance.mjs --ci-hold
+      - name: Phase 1BY official GitHub PR reviews and effective branch rules read-only observation (HARD HOLD)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+          GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_EXPECTED_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/phase1by-github-governance-observer.mjs --ci-hold
+      - name: Phase 1CL live main-branch CODEOWNERS and PR requested reviewer actual API state (HARD HOLD)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+          GITHUB_EXPECTED_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/phase1cl-live-codeowners-reviewer-onboarding.mjs --ci-hold
+      - name: Phase 1CN actual GitHub main ruleset inventory and hidden bypass actor visibility (HARD HOLD)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1cn-ruleset-bypass-reconciliation.mjs --ci-hold
+      - name: Phase 1CO exact-head real submitted reviewer evidence and independent mandate prerequisite (HARD HOLD)
+        if: github.event_name == 'pull_request'
+        run: node scripts/phase1co-live-exact-head-reviewer-quorum.mjs --ci-hold
+      - name: Phase 1CP bound real Github Actions check app and exact current run suite (HARD HOLD)
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_READ_TOKEN: ${{ github.token }}
+        run: node scripts/phase1cp-github-actions-check-app-source.mjs --ci-hold
+      - name: Upload source-bound UNSIGNED read-only GitHub governance observation; NOT release approval
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1by-readonly-github-governance-hold
+          path: |
+            phase1by-github-readonly-governance-hold.json
+            phase1cl-live-codeowners-reviewer-onboarding-hold.json
+            phase1cn-official-ruleset-bypass-reconciliation-hold.json
+            phase1co-live-exact-head-independent-reviewer-hold.json
+            phase1cp-github-actions-app-check-source-hold.json
+          if-no-files-found: warn
+
+      - name: Upload UNSIGNED exact push-source governance receipt (never release approval)
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1cs-push-ref-pr-head-held-unsigned
+          path: phase1cs-push-governance-hold.json
+          if-no-files-found: error
+
+  source-merge-lineage-hold:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Phase 1BY corroborate actual Git test-merge parent objects with PR source/base SHA
+        run: node scripts/phase1by-pr-merge-lineage.mjs --ci-hold
+      - name: Archive source graph parent verification HOLD (not Security/production approval)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1by-pr-merge-parent-lineage-hold
+          path: phase1by-pr-merge-lineage-hold.json
+          if-no-files-found: warn
+
+  production-runtime-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - name: Install exact frozen production-only dependency closure
+        run: bun install --frozen-lockfile --production
+      - name: Verify locked production graph and dev-only Vite server import
+        run: node scripts/phase1bt-production-scope.mjs
+      - name: Phase 1CI enumerate actual Picomatch inbound Bun lock edges and unsafe dev exposure (HARD HOLD)
+        run: node scripts/phase1ci-picomatch-exposure-preflight.mjs --ci-hold
+      - name: Prove unpatched picomatch and Vite were not installed in production-only tree
+        run: |
+          for directory in node_modules/picomatch node_modules/vite node_modules/@vitejs/plugin-react node_modules/@tailwindcss/vite; do
+            if test -e "$directory"; then
+              echo "BLOCKED: build-only package present in production install: $directory"
+              exit 1
+            fi
+          done
+          echo "Only the production dependency scope is isolated; global advisory GHSA-fc5q-39xc-vjpf remains unresolved."
+      - name: Upload held production dependency closure (not a release approval)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1bt-held-production-dependency-closure
+          path: |
+            phase1bt-production-closure-report.json
+            phase1ci-locked-matchers-exposure-hold.json
+          if-no-files-found: warn
+
+  mysql-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: aaditech_ci
+          MYSQL_ROOT_PASSWORD: ci_only_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_only_password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASSWORD: ci_only_password
+      DB_NAME: aaditech_ci
+      DB_SSL: 'false'
+      CRM_TEST_DB: '1'
+      MFA_ENCRYPTION_KEY: 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+      - run: bun install --frozen-lockfile
+      - name: Apply non-destructive authentication migration
+        run: bun run db:migrate:auth
+      - name: Apply CRM migration
+        run: bun run db:migrate:crm
+      - name: Verify CRM migration rerun is idempotent
+        run: bun run db:migrate:crm
+      - name: Apply quotation draft migration
+        run: bun run db:migrate:quotes
+      - name: Verify quotation draft migration is idempotent
+        run: bun run db:migrate:quotes
+      - name: Apply quote idempotency migration
+        run: bun run db:migrate:quote-idempotency
+      - name: Verify quote idempotency migration rerun
+        run: bun run db:migrate:quote-idempotency
+      - name: Apply quote revisions migration
+        run: bun run db:migrate:quote-revisions
+      - name: Verify quote revisions migration rerun
+        run: bun run db:migrate:quote-revisions
+      - name: Apply quote review migration
+        run: bun run db:migrate:quote-reviews
+      - name: Verify quote review migration rerun
+        run: bun run db:migrate:quote-reviews
+      - name: Apply release hold migration
+        run: bun run db:migrate:release-holds
+      - name: Verify release hold migration rerun
+        run: bun run db:migrate:release-holds
+      - name: Apply reviewer role migration
+        run: bun run db:migrate:reviewer-roles
+      - name: Verify reviewer role migration rerun
+        run: bun run db:migrate:reviewer-roles
+      - name: Apply security event migration
+        run: bun run db:migrate:security-events
+      - name: Verify security event migration rerun
+        run: bun run db:migrate:security-events
+      - name: Apply durable login security migration
+        run: bun run db:migrate:login-security
+      - name: Verify login security migration rerun
+        run: bun run db:migrate:login-security
+      - name: Apply MFA migration
+        run: bun run db:migrate:mfa
+      - name: Verify MFA migration rerun
+        run: bun run db:migrate:mfa
+      - name: Apply MFA event audit migration
+        run: bun run db:migrate:mfa-audit
+      - name: Verify MFA audit migration rerun
+        run: bun run db:migrate:mfa-audit
+      - name: Apply MFA recovery migration
+        run: bun run db:migrate:mfa-recovery
+      - name: Verify MFA recovery migration rerun
+        run: bun run db:migrate:mfa-recovery
+      - name: Apply inventory opening-count migration (CI-only guard)
+        run: bun run db:migrate:inventory
+      - name: Verify inventory migration checksum and idempotent rerun
+        run: bun run db:migrate:inventory
+      - name: Apply procurement migration on disposable CI only
+        run: bun run db:migrate:procurement
+      - name: Verify procurement migration checksum and idempotent rerun
+        run: bun run db:migrate:procurement
+      - name: Apply quarantine intake migration on disposable CI only
+        run: bun run db:migrate:intake
+      - name: Verify quarantine intake migration checksum and idempotent rerun
+        run: bun run db:migrate:intake
+      - name: Apply internal supplier dispatch HOLD migration to disposable CI
+        run: bun run db:migrate:dispatch-holds
+      - name: Verify supplier dispatch HOLD migration checksum and rerun
+        run: bun run db:migrate:dispatch-holds
+      - name: Apply internal acknowledgment/GRN evidence migration on disposable CI
+        run: bun run db:migrate:evidence-chain
+      - name: Verify evidence chain migration checksum and idempotent rerun
+        run: bun run db:migrate:evidence-chain
+      - name: Apply hard-zero stock foundation schema on disposable CI
+        run: bun run db:migrate:stock-foundation
+      - name: Verify stock foundation schema checksum and idempotent rerun
+        run: bun run db:migrate:stock-foundation
+      - name: Apply unposted double-entry journal foundation schema on disposable CI
+        run: bun run db:migrate:journal-foundation
+      - name: Verify unposted journal migration checksum and idempotent rerun
+        run: bun run db:migrate:journal-foundation
+      - name: Apply untrusted signed-proof prerequisites to disposable CI
+        run: bun run db:migrate:signed-proof
+      - name: Verify signed proof migration checksum/idempotent rerun
+        run: bun run db:migrate:signed-proof
+      - name: Apply one-time possession and irrevocable key lifecycle schema on disposable CI
+        run: bun run db:migrate:key-lifecycle
+      - name: Verify key lifecycle migration idempotent checksum rerun
+        run: bun run db:migrate:key-lifecycle
+      - name: Apply external issuer/authority/revocation HELD prerequisites on disposable CI
+        run: bun run db:migrate:external-trust
+      - name: Verify external trust prerequisite migration checksum and idempotent rerun
+        run: bun run db:migrate:external-trust
+      - name: Apply preprovisioned pinned provider bridge migration on disposable CI
+        run: bun run db:migrate:provider-bridge
+      - name: Verify provider bridge migration checksum/idempotent rerun
+        run: bun run db:migrate:provider-bridge
+      - name: Apply corporate/sandbox certificate evidence migration in disposable CI
+        run: bun run db:migrate:provider-sandbox
+      - name: Verify Phase 1AM migration checksum and idempotent rerun
+        run: bun run db:migrate:provider-sandbox
+      - name: Apply named provider nomination/policy HOLD migration on disposable CI
+        run: bun run db:migrate:provider-selection
+      - name: Verify named provider schema checksum and idempotent rerun
+        run: bun run db:migrate:provider-selection
+      - name: Apply Phase 1AO signed offline CRL/OCSP and dual review HELD migration on disposable CI
+        run: bun run db:migrate:provider-onboarding
+      - name: Verify Phase 1AO migration checksum and idempotent rerun
+        run: bun run db:migrate:provider-onboarding
+      - name: Apply Phase 1AX held checkpoint ledger migration in disposable CI
+        run: bun run db:migrate:ax-checkpoints
+      - name: Verify Phase 1AX migration checksum and idempotent rerun
+        run: bun run db:migrate:ax-checkpoints
+      - name: Phase 1AX real MySQL concurrency, forks, replay and restore-reconstruction drill
+        run: bun run test:ax-checkpoint-mysql
+      - name: Apply Phase 1AZ digest-only external readiness HOLD migration in disposable CI
+        run: bun run db:migrate:az-readiness
+      - name: Verify Phase 1AZ migration checksum and idempotent rerun
+        run: bun run db:migrate:az-readiness
+      - name: Apply Phase 1BB isolated six-source receipt/nonces schema in disposable MySQL
+        run: bun run db:migrate:bb-evidence
+      - name: Verify Phase 1BB checksum and idempotent schema rerun
+        run: bun run db:migrate:bb-evidence
+      - name: Apply Phase 1BC held witness custody continuity schema on disposable MySQL
+        run: bun run db:migrate:bc-witness
+      - name: Verify Phase 1BC migration checksum and idempotent rerun
+        run: bun run db:migrate:bc-witness
+      - name: Apply Phase 1BC guarded witness continuity schema on disposable CI
+        run: bun run db:migrate:bc-witness
+      - name: Verify Phase 1BC schema checksum and idempotent rerun
+        run: bun run db:migrate:bc-witness
+      - name: Apply Phase 1BD offline witness/storage/DR review HOLD schema on disposable CI
+        run: bun run db:migrate:bd-evidence-review
+      - name: Verify Phase 1BD migration checksum and idempotent rerun
+        run: bun run db:migrate:bd-evidence-review
+      - name: Apply Phase 1BE emergency witness-key freeze schema on isolated disposable MySQL
+        run: bun run db:migrate:be-freeze
+      - name: Verify Phase 1BE migration checksum and idempotent rerun
+        run: bun run db:migrate:be-freeze
+      - name: Phase 1AZ real MySQL witness/archive/DR packet revision and anti-rollback tests
+        run: bun run test:az-readiness-mysql
+      - name: Phase 1BB transactional nonce, fork, replay and tamper adversarial MySQL tests
+        run: bun run test:bb-evidence-mysql
+      - name: Phase 1BC AZ-bound MySQL head continuity, fork, rollback and key-change suite
+        run: bun run test:bc-witness-mysql
+      - name: Phase 1BD real MySQL evidence quorum, replay, fork and predecessor-gate tests
+        run: bun run test:bd-review-mysql
+      - name: Phase 1BE real MySQL freeze, quarantine, rollback and blocked BC/BD signing tests
+        run: bun run test:be-freeze-mysql
+      - name: Apply Phase 1BF isolated revocation publisher schema 0034
+        run: bun run db:migrate:bf-publication
+      - name: Verify Phase 1BF 0034 schema checksum and idempotent rerun
+        run: bun run db:migrate:bf-publication
+      - name: Phase 1BF real MySQL publisher history, fork, rollback, issuer-key substitution and tamper suite
+        run: bun run test:bf-publication-mysql
+      - name: Apply Phase 1BG isolated three-source audit quorum schema 0035
+        run: bun run db:migrate:bg-cross-source
+      - name: Verify Phase 1BG migration checksum and idempotent rerun
+        run: bun run db:migrate:bg-cross-source
+      - name: Phase 1BG real MySQL auditor signoff, CRL/OCSP lineage, issuer/role substitution and rollback suite
+        run: bun run test:bg-cross-source-mysql
+      - name: Apply Phase 1BM quotation candidate witness checkpoint custody (disposable MySQL only)
+        run: bun run db:migrate:bm-quote-checkpoints
+      - name: Verify Phase 1BM checksum-locked migration idempotent rerun
+        run: bun run db:migrate:bm-quote-checkpoints
+      - name: Apply Phase 1BN isolated dual-witness reconciliation schema 0037
+        run: bun run db:migrate:bn-quote-reconciliation
+      - name: Verify Phase 1BN immutable checksum schema rerun on disposable MySQL
+        run: bun run db:migrate:bn-quote-reconciliation
+      - name: Apply Phase 1BO candidate-only authority dossier schema 0038
+        run: bun run db:migrate:bo-authority-dossiers
+      - name: Verify Phase 1BO migration checksum and idempotent rerun
+        run: bun run db:migrate:bo-authority-dossiers
+      - name: Apply Phase 1BP strictly held four-role evidence intake and challenge schema 0039
+        run: bun run db:migrate:bp-evidence-intake
+      - name: Verify Phase 1BP immutable-checksum migration idempotent rerun
+        run: bun run db:migrate:bp-evidence-intake
+      - name: Apply Phase 1BQ isolated registrar and offline remote candidate schema 0040
+        run: bun run db:migrate:bq-remote-evidence
+      - name: Verify Phase 1BQ immutable checksum and idempotent migration rerun
+        run: bun run db:migrate:bq-remote-evidence
+      - name: Apply Phase 1BR strict offline byte-evidence X509 custody schema 0041
+        run: bun run db:migrate:br-provider-bytes
+      - name: Verify Phase 1BR checksum locked 0041 idempotent rerun
+        run: bun run db:migrate:br-provider-bytes
+      - name: Apply Phase 1BS CRL and OCSP signed candidate status custody 0042
+        run: bun run db:migrate:bs-signed-revocation
+      - name: Verify Phase 1BS strict migration SHA checksum and idempotent rerun
+        run: bun run db:migrate:bs-signed-revocation
+      - name: Run real MySQL integration tests
+        run: bun run test:mysql
+      - name: Verify owner-only inventory opening counts on disposable MySQL
+        run: bun run test:inventory-mysql
+      - name: Verify supplier attestation, independent purchase review and held PO
+        run: bun run test:procurement-mysql
+      - name: Verify immutable intake, independent quarantine witness and serial uniqueness
+        run: bun run test:intake-mysql
+      - name: Verify separated supplier destination and disabled dispatch outbox on MySQL
+        run: bun run test:dispatch-mysql
+      - name: Verify claimed supplier acknowledgment and GRN evidence HOLD on MySQL
+        run: bun run test:evidence-chain-mysql
+      - name: Verify zero-only stock gates, independent HELD release and nonallocating plans on MySQL
+        run: bun run test:stock-foundation-mysql
+      - name: Verify balanced, unposted journal proposals and unverified serial candidates on MySQL
+        run: bun run test:journal-foundation-mysql
+      - name: Verify Ed25519 self-registered key signatures and hard-denied supplier/warehouse trust
+        run: bun run test:signed-proof-mysql
+      - name: Verify one-time Ed25519 possession, expiry, rotation, emergency revocation, no external trust
+        run: bun run test:key-lifecycle-mysql
+      - name: Verify signed issuer/organization claims, monotonic revocations, freeze and no stock authority
+        run: bun run test:external-trust-mysql
+      - name: Verify configured root pins, signed organization credentials, feed rollback, freeze and no production trust
+        run: bun run test:provider-bridge-mysql
+      - name: Verify corporate/signer evidence holds, one-hop X509 CA, independent review, revocation and no real KYC
+        run: bun run test:provider-sandbox-mysql
+      - name: Verify named CCA, dual legal/security reviews, sandbox CA/CRL/OCSP, MCA and revocation HARD HOLD
+        run: bun run test:provider-selection-mysql
+      - name: Verify bounded authentication retention on disposable MySQL
+        run: bun run test:retention-mysql
+      - name: Retention report defaults to read-only dry run
+        run: bun run auth:retention
+      - name: Isolated HTTP authentication and MFA smoke
+        run: bun run test:auth-smoke
+      - name: Phase 1BM real MySQL candidate witness concurrency, rollback, incident and key revocation HOLD tests
+        run: bun run test:bm-quote-checkpoint-mysql
+      - name: Phase 1BN real MySQL dual-witness freshness, revocation, rollover and DR rollback simulation
+        run: bun run test:bn-quote-reconciliation-mysql
+      - name: Phase 1BO real MySQL candidate authority dossier, upstream tamper and quorum segregation HOLD tests
+        run: bun run test:bo-authority-mysql
+      - name: Phase 1BP disposable MySQL one-use challenge replay, pin substitution, issuer/head/DR fork and quarantine tests
+        run: bun run test:bp-evidence-intake-mysql
+      - name: Phase 1BQ real MySQL registrar spoof, dual-source remote fork, revocation and recovery HOLD
+        run: bun run test:bq-remote-mysql
+      - name: Phase 1BR raw signed bytes, ephemeral X509, CRL/OCSP binding and MySQL DR/HOLD
+        run: bun run test:br-provider-bytes-mysql
+      - name: Phase 1BS real MySQL issuer signed CRL/OCSP serial, nonce, revoked status and rollback HOLD
+        run: bun run test:bs-signed-revocation-mysql
+      - name: Chromium browser MFA / role smoke (isolated CI only)
+        env:
+          BROWSER_E2E_CI: '1'
+          BROWSER_E2E_BASE_URL: 'http://127.0.0.1:3000'
+          BROWSER_E2E_CHROME_CHANNEL: 'chrome'
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.56.1
+          # ubuntu-24.04 GitHub runner provides Google Chrome; avoid flaky external apt mirrors.
+          # Still run the real browser MFA/role smoke, never skip or mock it.
+          command -v google-chrome
+          google-chrome --version
+          bun run dev > "$RUNNER_TEMP/aaditech-browser-server.log" 2>&1 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:3000/api/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Local CI app failed to start"
+            tail -n 60 "$RUNNER_TEMP/aaditech-browser-server.log"
+            exit 1
+          fi
+          # Phase 1BU: exercise the actual dev listener against Host/Origin
+          # rebinding and forwarded-host spoofing before the full MFA browser.
+          for header in \
+            "Host: attacker.invalid" \
+            "Origin: http://attacker.invalid" \
+            "X-Forwarded-Host: attacker.invalid" \
+            "X-Forwarded-For: 203.0.113.8" \
+            "X-Forwarded-Proto: https"; do
+            code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --header "$header" http://127.0.0.1:3000/api/health)"
+            if [ "$code" != "403" ]; then
+              echo "Phase 1BU local-only runtime listener refused to deny: $header (HTTP $code)"
+              exit 1
+            fi
+          done
+          node --import tsx scripts/browser-smoke.mjs
+      - name: Read-only disposable staging readiness preflight
+        env:
+          STAGING_PREFLIGHT: '1'
+        run: bun run staging:preflight
