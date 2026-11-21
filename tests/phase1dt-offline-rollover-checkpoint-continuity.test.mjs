@@ -2614,3 +2614,327 @@ test('1EB output redacts original gossip bytes, signer IDs, nonce, evidence and 
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);ebHold(r);
 });
+
+/* Phase 1EC — offline 12-gate authority handoff to claimed reviewers and
+ * incident custodians. EVERY identity, evidence, clock, lock is synthetic. */
+import {EC_AUTHORITY_GATES,EC_REVIEW_ROLES,EC_CUSTODY_ROLES,
+ sourceReceiptDigestEc,authorityClaimsDigestEc,manifestDigestEc,
+ reviewSigningBytesEc,reviewSetDigestEc,custodySigningBytesEc,
+ assessOfflineExternalAuthorityHandoffEc}
+ from '../scripts/phase1ec-offline-authority-handoff-custody.mjs';
+
+function ecFixture(){
+ const eb=ebFixture(),x=eb.args,
+  dy=x.gossipCandidate.anchorCandidate.admissionCandidate,
+  c=dy.decisionCase,original=dy.rehearsalCandidate.custodyCandidate
+   .publicationCandidate.expected,run=x.runs.at(-1).record;
+ const previousHandoffAnchor={sequence:run.sequence,
+  digestSha256:sourceReceiptDigestEc(x),
+  observedAt:'2026-11-21T00:00:19.000Z'};
+ const authorityClaims=Object.fromEntries(EC_AUTHORITY_GATES.map(role=>[
+  role,{state:'MISSING',evidenceSha256:'0'.repeat(64),
+   issuerOrganizationClaim:null,submittedAt:null,validUntil:null}
+ ]));
+ const manifest={schemaVersion:1,kind:'APPLICANT_UNVERIFIED_AUTHORITY_HANDOFF_HOLD',
+  repository:REPO,incidentId:c.incidentId,organizationId:original.organizationId,
+  sourceHeadSha:original.sourceHeadSha,mainBaseSha:original.mainBaseSha,
+  finalRunSequence:run.sequence,finalRunSha256:runDigestEb(run),
+  ebCustodySourceSha256:previousHandoffAnchor.digestSha256,
+  priorGossipHandoffSha256:x.previousRunAnchor.digestSha256,
+  authorityClaimsSha256:authorityClaimsDigestEc(authorityClaims),
+  previousHandoffSequence:previousHandoffAnchor.sequence,
+  previousHandoffSha256:previousHandoffAnchor.digestSha256,
+  sequence:previousHandoffAnchor.sequence+1,
+  challengeNonce:hash('ec_application_handoff_challenge'),
+  observedAt:'2026-11-21T00:00:20.000Z',decision:'HOLD'};
+ const reviewPins={},custodyPins={},privateKeys={},publicPems={};
+ const pinFor=(role,index)=>{
+  const kp=pair();
+  privateKeys[role]=kp.privateKey;publicPems[role]=kp.publicKeyPem;
+  return {keyId:'key_ec_'+index+'_001',spkiSha256:kp.spkiSha256,
+   operatorId:'operator_ec_'+index+'_001',
+   custodianOrganizationId:'org_ec_'+index+'_001'};
+ };
+ const manifestSha256=manifestDigestEc(manifest);
+ const reviewPackets=EC_REVIEW_ROLES.map((role,index)=>{
+  const pin=pinFor(role,index);reviewPins[role]=pin;
+  const statement={...manifest,role,...pin,manifestSha256,
+   reviewObservedAt:'2026-11-21T00:00:'+(21+index)+'.000Z',
+   expiresAt:'2026-11-21T00:10:00.000Z',
+   disposition:'REVIEW_UNVERIFIED_HOLD_ONLY'};
+  return {statement,publicKeyPem:publicPems[role],
+   signature:sign(null,reviewSigningBytesEc(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ const reviewSetSha256=reviewSetDigestEc(reviewPackets.map(p=>p.statement));
+ const custodyPackets=EC_CUSTODY_ROLES.map((role,index)=>{
+  const pin=pinFor(role,index+2);custodyPins[role]=pin;
+  const statement={...manifest,role,...pin,manifestSha256,reviewSetSha256,
+   observedAtCustody:'2026-11-21T00:00:'+(23+index)+'.000Z',
+   expiresAt:'2026-11-21T00:10:00.000Z',
+   retentionUntil:x.custodyPackets[0].statement.retentionUntil,
+   disposition:'RETAIN_UNVERIFIED_HOLD_NO_UNFREEZE'};
+  return {statement,publicKeyPem:publicPems[role],
+   signature:sign(null,custodySigningBytesEc(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ return {args:{incidentCandidate:x,previousHandoffAnchor,authorityClaims,
+  manifest,reviewPins,reviewPackets,custodyPins,custodyPackets,now:NOW},
+  privateKeys,eb};
+}
+function ecResign(f,kind,index){
+ const packet=f.args[kind==='review'?'reviewPackets':'custodyPackets'][index],
+  role=packet.statement.role,bytes=kind==='review'?
+   reviewSigningBytesEc:custodySigningBytesEc;
+ packet.signature=sign(null,bytes(role,packet.statement),
+  f.privateKeys[role]).toString('base64');
+}
+function ecRebindReviewSet(f){
+ const digest=reviewSetDigestEc(EC_REVIEW_ROLES.map(r=>
+  f.args.reviewPackets.find(p=>p.statement.role===r).statement));
+ f.args.custodyPackets.forEach((packet,index)=>{
+  packet.statement.reviewSetSha256=digest;ecResign(f,'custody',index);
+ });
+}
+const ecAssess=f=>assessOfflineExternalAuthorityHandoffEc(f.args);
+const ecHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualExternalProviderOrMcaMandateVerified,false);
+ assert.equal(r.issuerSignedLiveCrlOcspOrCcaRcaiEmudhraVerified,false);
+ assert.equal(r.independentTlsEvidenceRetrievalOrSignedGossipPerformed,false);
+ assert.equal(r.durableWormCasObjectLockAndIndependentDrVerified,false);
+ assert.equal(r.productionSourceUnfreezeOrCredentialEnrollmentPossible,false);
+};
+test('1EC twelve absent authority gates and four synthetic HOLD signatures never approve',()=>{
+ const r=ecAssess(ecFixture());
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.precedingEbToDuOriginalHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.exactTwelveApplicantOnlyGateClaims,12);
+ assert.equal(r.mathematicallyVerifiedTwoReviewSignatures,2);
+ assert.equal(r.mathematicallyVerifiedTwoCustodySignatures,2);
+ assert.equal(r.candidateHandoffManifestCorrelatedMathematicallyOnly,true);
+ ecHold(r);
+});
+test('1EC gate status VERIFIED APPROVED and self-asserted signed authority fail schema',()=>{
+ for(const state of ['VERIFIED','APPROVED','PRODUCTION_READY']){
+  const f=ecFixture();
+  f.args.authorityClaims[EC_AUTHORITY_GATES[0]].state=state;
+  const r=ecAssess(f);
+  has(r,'EC_ORIGINAL_12_GATE_STATUS_OR_EVIDENCE_DRIFT');ecHold(r);
+ }
+});
+test('1EC forged applicant provider evidence contradicts original DY gate history',()=>{
+ const f=ecFixture(),g=EC_AUTHORITY_GATES[0];
+ f.args.authorityClaims[g]={state:'PRESENT_UNVERIFIED',
+  evidenceSha256:hash('synthetic-issuer-evidence'),issuerOrganizationClaim:'org_fixture_ca',
+  submittedAt:NOW,validUntil:'2026-11-25T00:00:00.000Z'};
+ const r=ecAssess(f);
+ has(r,'EC_ORIGINAL_12_GATE_STATUS_OR_EVIDENCE_DRIFT');ecHold(r);
+});
+test('1EC single changed evidence digest or inserted unknown gate is not admitted',()=>{
+ for(const edit of [
+  claims=>{claims[EC_AUTHORITY_GATES[0]].evidenceSha256='f'.repeat(64);},
+  claims=>{claims.UNLISTED_EXTERNAL_AUTHORITY={state:'MISSING',
+   evidenceSha256:'0'.repeat(64),issuerOrganizationClaim:null,
+   submittedAt:null,validUntil:null};},
+  claims=>{claims[EC_AUTHORITY_GATES[1]].authVerified=true;}
+ ]){
+  const f=ecFixture();edit(f.args.authorityClaims);
+  const r=ecAssess(f);
+  has(r,'EC_ORIGINAL_12_GATE_STATUS_OR_EVIDENCE_DRIFT');ecHold(r);
+ }
+});
+test('1EC handoff submitted claimant signer organization must be absent for missing evidence',()=>{
+ const f=ecFixture();
+ f.args.authorityClaims[EC_AUTHORITY_GATES[0]].issuerOrganizationClaim='org_forged_ca_001';
+ const r=ecAssess(f);
+ has(r,'EC_ORIGINAL_12_GATE_STATUS_OR_EVIDENCE_DRIFT');ecHold(r);
+});
+test('1EC previous source handoff anchor digest, sequence or clock substitution is rejected',()=>{
+ for(const [field,value] of [
+  ['sequence',1],['digestSha256','f'.repeat(64)],
+  ['observedAt','2026-11-21T00:00:17.000Z']
+ ]){
+  const f=ecFixture();f.args.previousHandoffAnchor[field]=value;
+  const r=ecAssess(f);
+  has(r,'EC_PREVIOUS_INCIDENT_SOURCE_ANCHOR_INVALID');ecHold(r);
+ }
+});
+test('1EC fake production GO or trusted source kind never yields approved handoff',()=>{
+ for(const [field,value] of [
+  ['decision','GO'],
+  ['kind','INDEPENDENTLY_VERIFIED_AUTHORITY'],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['ebCustodySourceSha256','f'.repeat(64)],
+  ['priorGossipHandoffSha256','f'.repeat(64)],
+  ['authorityClaimsSha256','f'.repeat(64)]
+ ]){
+  const f=ecFixture();f.args.manifest[field]=value;
+  const r=ecAssess(f);
+  has(r,'EC_HOLD_MANIFEST_SOURCE_OR_SEQUENCE_MISMATCH');ecHold(r);
+ }
+});
+test('1EC re-signed manifest sequence jump, rollback, nonce replay and forged final run',()=>{
+ for(const [field,value] of [
+  ['sequence',3],['previousHandoffSequence',1],
+  ['challengeNonce','0'.repeat(64)],
+  ['challengeNonce',hash('eb_run_nonce_1')],
+  ['finalRunSha256','f'.repeat(64)]
+ ]){
+  const f=ecFixture();f.args.manifest[field]=value;
+  const r=ecAssess(f);
+  has(r,'EC_HOLD_MANIFEST_SOURCE_OR_SEQUENCE_MISMATCH');ecHold(r);
+ }
+});
+test('1EC copied reviewer role or missing second reviewer fails exact quorum',()=>{
+ let f=ecFixture();
+ f.args.reviewPackets[1]=clone(f.args.reviewPackets[0]);
+ let r=ecAssess(f);
+ has(r,'EC_REVIEW_ROLE_PACKET_INVALID');has(r,'EC_REVIEW_QUORUM_INCOMPLETE');ecHold(r);
+ f=ecFixture();f.args.reviewPackets.pop();
+ r=ecAssess(f);has(r,'EC_EXACT_TWO_REVIEW_PACKETS_REQUIRED');ecHold(r);
+});
+test('1EC wrong reviewer signing key/SPKI or cloned detached PEM cannot verify',()=>{
+ for(const field of ['signature','publicKeyPem']){
+  const f=ecFixture();
+  f.args.reviewPackets[0][field]=f.args.reviewPackets[1][field];
+  const r=ecAssess(f);
+  has(r,'EC_REVIEW_SIGNATURE_OR_SPKI_INVALID');ecHold(r);
+ }
+});
+test('1EC signed reviewer can never promote applicant case to authenticated approval',()=>{
+ for(const [field,value] of [
+  ['disposition','APPROVE_PRODUCTION'],
+  ['manifestSha256','f'.repeat(64)],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['authorityClaimsSha256','f'.repeat(64)]
+ ]){
+  const f=ecFixture();
+  f.args.reviewPackets[1].statement[field]=value;
+  ecResign(f,'review',1);ecRebindReviewSet(f);
+  const r=ecAssess(f);
+  assert.equal(r.mathematicallyVerifiedTwoReviewSignatures,2);
+  has(r,'EC_REVIEW_SIGNED_SCOPE_OR_FALSE_APPROVAL');ecHold(r);
+ }
+});
+test('1EC reviewer signed too early, after expiry or in future fails chronology',()=>{
+ for(const [field,value] of [
+  ['reviewObservedAt','2026-11-21T00:00:19.000Z'],
+  ['reviewObservedAt','2026-11-21T00:10:00.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z']
+ ]){
+  const f=ecFixture();
+  f.args.reviewPackets[0].statement[field]=value;
+  ecResign(f,'review',0);ecRebindReviewSet(f);
+  const r=ecAssess(f);
+  has(r,'EC_REVIEW_CLOCK_OR_EXPIRY_INVALID');ecHold(r);
+ }
+});
+test('1EC key ID SPKI operator and claimed organization cannot collide across reviewers',()=>{
+ for(const field of ['keyId','spkiSha256','operatorId','custodianOrganizationId']){
+  const f=ecFixture(),from=f.args.reviewPins[EC_REVIEW_ROLES[0]],
+   role=EC_CUSTODY_ROLES[0];
+  f.args.custodyPins[role][field]=from[field];
+  f.args.custodyPackets[0].statement[field]=from[field];
+  ecResign(f,'custody',0);
+  const r=ecAssess(f);
+  has(r,'EC_SIGNER_KEY_OPERATOR_OR_ORG_NOT_SEPARATED');ecHold(r);
+ }
+});
+test('1EC new legal handoff custodian cannot reuse old EB retention signing key',()=>{
+ const f=ecFixture(),from=EB_CUSTODY_ROLES[0],to=EC_CUSTODY_ROLES[0];
+ const old=f.args.incidentCandidate.custodyPins[from],
+  earlier=f.args.incidentCandidate.custodyPackets[0];
+ f.args.custodyPins[to].spkiSha256=old.spkiSha256;
+ f.args.custodyPackets[0].statement.spkiSha256=old.spkiSha256;
+ f.args.custodyPackets[0].publicKeyPem=earlier.publicKeyPem;
+ f.privateKeys[to]=f.eb.privateKeys[from];ecResign(f,'custody',0);
+ const r=ecAssess(f);
+ has(r,'EC_SIGNER_KEY_OPERATOR_OR_ORG_NOT_SEPARATED');ecHold(r);
+});
+test('1EC cloned or missing Legal/Security handoff custody is not a quorum',()=>{
+ let f=ecFixture();
+ f.args.custodyPackets[1]=clone(f.args.custodyPackets[0]);
+ let r=ecAssess(f);
+ has(r,'EC_CUSTODY_ROLE_PACKET_INVALID');has(r,'EC_CUSTODY_QUORUM_INCOMPLETE');ecHold(r);
+ f=ecFixture();f.args.custodyPackets.pop();
+ r=ecAssess(f);has(r,'EC_EXACT_TWO_CUSTODY_PACKETS_REQUIRED');ecHold(r);
+});
+test('1EC signed custody GO/UNFREEZE, source substitution and review quorum fork denied',()=>{
+ for(const [field,value] of [
+  ['disposition','UNFREEZE_PRODUCTION'],
+  ['manifestSha256','f'.repeat(64)],
+  ['reviewSetSha256','f'.repeat(64)],
+  ['finalRunSha256','f'.repeat(64)],
+  ['ebCustodySourceSha256','f'.repeat(64)]
+ ]){
+  const f=ecFixture();
+  f.args.custodyPackets[0].statement[field]=value;ecResign(f,'custody',0);
+  const r=ecAssess(f);
+  has(r,'EC_CUSTODY_SIGNED_SOURCE_OR_UNFREEZE_FORBIDDEN');ecHold(r);
+ }
+});
+test('1EC re-signed shorter retention, split custody and pre-review custody fail',()=>{
+ for(const [field,value,code] of [
+  ['retentionUntil','2026-11-22T00:00:00.000Z','EC_CUSTODY_TIME_OR_RETENTION_INVALID'],
+  ['retentionUntil','2027-02-01T00:00:00.000Z','EC_CUSTODY_RETENTION_FORK'],
+  ['observedAtCustody','2026-11-21T00:00:21.000Z','EC_CUSTODY_TIME_OR_RETENTION_INVALID'],
+  ['expiresAt','2026-11-20T23:59:59.000Z','EC_CUSTODY_TIME_OR_RETENTION_INVALID']
+ ]){
+  const f=ecFixture();
+  f.args.custodyPackets[1].statement[field]=value;ecResign(f,'custody',1);
+  const r=ecAssess(f);
+  has(r,code);ecHold(r);
+ }
+});
+test('1EC signed custody stale signature and pin impersonation fail',()=>{
+ let f=ecFixture();
+ f.args.custodyPackets[0].signature=f.args.custodyPackets[1].signature;
+ let r=ecAssess(f);has(r,'EC_CUSTODY_SIGNATURE_OR_SPKI_INVALID');ecHold(r);
+ f=ecFixture();
+ f.args.custodyPackets[0].statement.operatorId='rogue_ec_operator';
+ ecResign(f,'custody',0);
+ r=ecAssess(f);has(r,'EC_CUSTODY_DETACHED_PIN_INVALID');ecHold(r);
+});
+test('1EC tampered original EA-EB incident witness history remains rejected',()=>{
+ const f=ecFixture();
+ f.args.incidentCandidate.gossipCandidate.anchorCandidate
+  .admissionCandidate.rehearsalCandidate.custodyCandidate
+  .publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=ecAssess(f);
+ has(r,'EC_ORIGINAL_EB_HISTORY_NOT_REVERIFIED');ecHold(r);
+});
+test('1EC user-supplied bogus authority flag, cyclic and oversized input fail closed',()=>{
+ let f=ecFixture();
+ let r=assessOfflineExternalAuthorityHandoffEc({...f.args,
+  externalAuthorityAuthenticated:true});
+ has(r,'EC_EXACT_BOUNDED_INPUT_REQUIRED');ecHold(r);
+ f=ecFixture();f.args.incidentCandidate.selfReference=f.args;
+ r=ecAssess(f);has(r,'EC_EXACT_BOUNDED_INPUT_REQUIRED');ecHold(r);
+ f=ecFixture();f.args.incidentCandidate.excess='x'.repeat(3584*1024);
+ r=ecAssess(f);has(r,'EC_EXACT_BOUNDED_INPUT_REQUIRED');ecHold(r);
+});
+test('1EC malformed original run vector and missing clock are denied without throwing',()=>{
+ let f=ecFixture();f.args.incidentCandidate.runs={at:123};
+ let r=ecAssess(f);
+ has(r,'EC_ORIGINAL_EB_HISTORY_NOT_REVERIFIED');ecHold(r);
+ f=ecFixture();f.args.now=null;
+ r=ecAssess(f);
+ has(r,'EC_EXPLICIT_UTC_CLOCK_REQUIRED');ecHold(r);
+});
+test('1EC redacted frozen result never returns private evidence source hashes, identities or keys',()=>{
+ const f=ecFixture(),r=ecAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.previousHandoffAnchor.digestSha256,
+  f.args.reviewPackets[0].signature,
+  f.args.custodyPackets[0].publicKeyPem,
+  f.args.manifest.challengeNonce,
+  f.args.reviewPins[EC_REVIEW_ROLES[0]].keyId,
+  f.args.incidentCandidate.runs[0].record.nonce
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);ecHold(r);
+});
