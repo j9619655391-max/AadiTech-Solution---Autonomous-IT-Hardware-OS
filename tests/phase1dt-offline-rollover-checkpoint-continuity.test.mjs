@@ -2261,3 +2261,356 @@ test('1EA mathematical agreement never exposes raw identities, keys, SHA, nonce 
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);eaHold(r);
 });
+
+/* Phase 1EB — original 1EA chain plus two linked, applicant-provided
+ * gossip runs with 6 independent-looking witnesses and two HOLD custodians.
+ * No real external identity, clock, gossip, storage or incident unfreeze. */
+import {EB_RUN_ROLES,EB_CUSTODY_ROLES,gossipHandoffDigestEb,
+ runDigestEb,runPeerSigningBytesEb,custodySigningBytesEb,
+ assessOfflineCrossRunGossipIncidentCustodyEb}
+ from '../scripts/phase1eb-offline-cross-run-gossip-incident-custody.mjs';
+
+function ebFixture(){
+ const ea=eaFixture(),x=ea.args,dz=x.anchorCandidate,
+  dy=dz.admissionCandidate,c=dy.decisionCase,
+  e=dy.rehearsalCandidate.custodyCandidate.publicationCandidate.expected,
+  final=dz.epochs.at(-1).record;
+ const previousRunAnchor={sequence:final.sequence,
+  digestSha256:gossipHandoffDigestEb(x),
+  observedAt:'2026-11-21T00:00:09.000Z'};
+ const viewSha=epochViewDigestEa(candidateEpochViewEa(dz));
+ const peerPins={},custodyPins={},privateKeys={},publicPems={};
+ function makePin(role,n){
+  const kp=pair();privateKeys[role]=kp.privateKey;
+  publicPems[role]=kp.publicKeyPem;
+  return {keyId:'key_eb_'+n+'_001',spkiSha256:kp.spkiSha256,
+   operatorId:'operator_eb_'+n+'_001',
+   custodianOrganizationId:'org_eb_'+n+'_001'};
+ }
+ EB_RUN_ROLES.forEach((role,i)=>peerPins[role]=makePin(role,i));
+ EB_CUSTODY_ROLES.forEach((role,i)=>custodyPins[role]=makePin(role,i+6));
+ let priorSha=previousRunAnchor.digestSha256,priorSeq=previousRunAnchor.sequence;
+ const runs=Array.from({length:2},(_,i)=>{
+  const record={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_GOSSIP_REPLAY_FREEZE',repository:REPO,
+   incidentId:c.incidentId,organizationId:e.organizationId,
+   sourceHeadSha:e.sourceHeadSha,mainBaseSha:e.mainBaseSha,
+   finalSequence:final.sequence,finalAnchorSha256:anchorDigestDz(final),
+   evidenceBundleSha256:final.evidenceBundleSha256,
+   epochViewSha256:viewSha,
+   priorGossipHandoffSha256:previousRunAnchor.digestSha256,
+   previousRunSequence:priorSeq,sequence:priorSeq+1,
+   previousDigestSha256:priorSha,
+   nonce:hash('eb_run_nonce_'+i),
+   observedAt:'2026-11-21T00:00:'+(i===0?'10':'14')+'.000Z',
+   decision:'HOLD'};
+  const recordSha256=runDigestEb(record);
+  const peerPackets=EB_RUN_ROLES.slice(i*3,i*3+3).map((role,j)=>{
+   const statement={...record,role,...peerPins[role],
+    recordSha256,expiresAt:'2026-11-21T00:10:00.000Z',
+    observedAtPeer:'2026-11-21T00:00:'+
+     String(i===0?11+j:15+j)+'.000Z',
+    disposition:'OBSERVE_FROZEN_ONLY'};
+   return {statement,publicKeyPem:publicPems[role],
+    signature:sign(null,runPeerSigningBytesEb(role,statement),
+     privateKeys[role]).toString('base64')};
+  });
+  priorSeq=record.sequence;priorSha=recordSha256;
+  return {record,peerPackets};
+ });
+ const custodyPackets=EB_CUSTODY_ROLES.map((role,j)=>{
+  const statement={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_INCIDENT_REPLAY_RETENTION',
+   role,repository:REPO,incidentId:c.incidentId,
+   organizationId:e.organizationId,sourceHeadSha:e.sourceHeadSha,
+   mainBaseSha:e.mainBaseSha,
+   priorGossipHandoffSha256:previousRunAnchor.digestSha256,
+   previousAnchorSha256:previousRunAnchor.digestSha256,
+   firstRunSha256:runDigestEb(runs[0].record),
+   finalRunSha256:runDigestEb(runs[1].record),
+   finalSequence:runs[1].record.sequence,
+   epochViewSha256:viewSha,evidenceBundleSha256:final.evidenceBundleSha256,
+   challengeNonce:c.reviewNonce,
+   ...custodyPins[role],
+   observedAt:'2026-11-21T00:00:'+(18+j)+'.000Z',
+   expiresAt:'2026-11-21T00:10:00.000Z',
+   retentionUntil:'2027-01-01T00:00:00.000Z',
+   disposition:'RETAIN_QUARANTINE_HOLD_NO_UNFREEZE'};
+  return {statement,publicKeyPem:publicPems[role],
+   signature:sign(null,custodySigningBytesEb(role,statement),
+    privateKeys[role]).toString('base64')};
+ });
+ return {args:{gossipCandidate:x,previousRunAnchor,runs,peerPins,
+  custodyPins,custodyPackets,now:NOW},ea,privateKeys};
+}
+function ebResign(f,kind,i,j=0){
+ const p=kind==='peer'?f.args.runs[i].peerPackets[j]:
+  f.args.custodyPackets[i];
+ const role=p.statement.role,bytes=kind==='peer'?
+  runPeerSigningBytesEb:custodySigningBytesEb;
+ p.signature=sign(null,bytes(role,p.statement),
+  f.privateKeys[role]).toString('base64');
+}
+const ebAssess=f=>assessOfflineCrossRunGossipIncidentCustodyEb(f.args);
+const ebHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.realRemoteGossipAndAntiEquivocationGossipPerformed,false);
+ assert.equal(r.externallyPersistedSignedHighwatermarkOrCasVerified,false);
+ assert.equal(r.actualDurableWormRetentionDeleteDenialOrDrRestoreVerified,false);
+ assert.equal(r.independentLegalSecurityProductionUnfreezeApproval,false);
+ assert.equal(r.productionSourceActivationOrExternalEnrollmentPossible,false);
+};
+test('1EB two synthetic linked runs, six witnesses and two incident custodians remain HOLD',()=>{
+ const r=ebAssess(ebFixture());
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.previousEaToDuFullCandidateReverifiedMathematicallyOnly,true);
+ assert.equal(r.locallyLinkedSecondRunCount,2);
+ assert.equal(r.mathematicallyVerifiedSixRunWitnessSignatures,6);
+ assert.equal(r.mathematicallyVerifiedTwoIncidentRetentionSignatures,2);
+ assert.equal(r.submittedCrossRunForkReplayAndCustodyInternallyConsistentOnly,true);
+ ebHold(r);
+});
+test('1EB re-signed RUN1 or RUN2 decision GO cannot authorize incident recovery',()=>{
+ for(const i of [0,1]){
+  const f=ebFixture(),run=f.args.runs[i];
+  run.record.decision='GO';
+  const sha=runDigestEb(run.record);
+  run.peerPackets.forEach((p,j)=>{
+   p.statement.decision='GO';p.statement.recordSha256=sha;
+   ebResign(f,'peer',i,j);
+  });
+  const r=ebAssess(f);
+  has(r,'EB_RUN_ROLLBACK_FORK_REPLAY_OR_SCOPE_MISMATCH');ebHold(r);
+ }
+});
+test('1EB signed second-run fork in final anchor or claimed source cannot pass',()=>{
+ for(const [field,value] of [
+  ['finalAnchorSha256','f'.repeat(64)],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['epochViewSha256','f'.repeat(64)],
+  ['evidenceBundleSha256','f'.repeat(64)],
+  ['priorGossipHandoffSha256','f'.repeat(64)]
+ ]){
+  const f=ebFixture(),run=f.args.runs[1];
+  run.record[field]=value;const digest=runDigestEb(run.record);
+  run.peerPackets.forEach((p,j)=>{
+   p.statement[field]=value;p.statement.recordSha256=digest;
+   ebResign(f,'peer',1,j);
+  });
+  const r=ebAssess(f);
+  has(r,'EB_RUN_ROLLBACK_FORK_REPLAY_OR_SCOPE_MISMATCH');ebHold(r);
+ }
+});
+test('1EB re-signed second-run rollback, jump, anchor predecessor fork denied',()=>{
+ for(const [field,value] of [
+  ['sequence',5],['sequence',900],
+  ['previousRunSequence',0],
+  ['previousDigestSha256','e'.repeat(64)]
+ ]){
+  const f=ebFixture(),run=f.args.runs[1];
+  run.record[field]=value;
+  const digest=runDigestEb(run.record);
+  run.peerPackets.forEach((p,j)=>{
+   p.statement[field]=value;p.statement.recordSha256=digest;
+   ebResign(f,'peer',1,j);
+  });
+  const r=ebAssess(f);
+  has(r,'EB_RUN_ROLLBACK_FORK_REPLAY_OR_SCOPE_MISMATCH');ebHold(r);
+ }
+});
+test('1EB re-ordered signed run packets or exact same run copied twice cannot pass',()=>{
+ for(const mutate of [
+  f=>f.args.runs.reverse(),
+  f=>{f.args.runs[1]=clone(f.args.runs[0]);}
+ ]){
+  const f=ebFixture();mutate(f);
+  const r=ebAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EB_')));ebHold(r);
+ }
+});
+test('1EB re-signed nonce reused from first run or old 1EA session denied',()=>{
+ for(const nonce of ['0'.repeat(64),
+  hash('eb_run_nonce_0'),
+  hash('ea_challenge_nonce_'+EA_PEER_ROLES[0])]){
+  const f=ebFixture(),run=f.args.runs[1];
+  run.record.nonce=nonce;
+  const digest=runDigestEb(run.record);
+  run.peerPackets.forEach((p,j)=>{
+   p.statement.nonce=nonce;p.statement.recordSha256=digest;
+   ebResign(f,'peer',1,j);
+  });
+  const r=ebAssess(f);
+  has(r,'EB_RUN_ROLLBACK_FORK_REPLAY_OR_SCOPE_MISMATCH');ebHold(r);
+ }
+});
+test('1EB previous run anchor digest, sequence and timestamp cannot be switched',()=>{
+ for(const [field,value] of [
+  ['sequence',1],['digestSha256','f'.repeat(64)],
+  ['observedAt','2026-11-21T00:00:07.000Z']]){
+  const f=ebFixture();f.args.previousRunAnchor[field]=value;
+  const r=ebAssess(f);
+  has(r,'EB_PREVIOUS_GOSSIP_HANDOFF_ROLLBACK_OR_DRIFT');ebHold(r);
+ }
+});
+test('1EB signed second-run observer can fork despite other two signatures',()=>{
+ const f=ebFixture(),p=f.args.runs[1].peerPackets[1];
+ p.statement.recordSha256='f'.repeat(64);ebResign(f,'peer',1,1);
+ const r=ebAssess(f);
+ assert.equal(r.mathematicallyVerifiedSixRunWitnessSignatures,6);
+ has(r,'EB_SIGNED_INTER_RUN_PEER_FORK');ebHold(r);
+});
+test('1EB missing third witness and copy-pasted role are not independent run quorum',()=>{
+ let f=ebFixture();f.args.runs[1].peerPackets.pop();
+ let r=ebAssess(f);has(r,'EB_EXACT_THREE_PEERS_PER_RUN_REQUIRED');ebHold(r);
+ f=ebFixture();f.args.runs[1].peerPackets[2]=
+  clone(f.args.runs[1].peerPackets[0]);
+ r=ebAssess(f);
+ has(r,'EB_RUN_PEER_ROLE_OR_SCHEMA_INVALID');
+ has(r,'EB_THREE_DISTINCT_PEERS_PER_RUN_REQUIRED');ebHold(r);
+});
+test('1EB synthetic old EA gossip key cannot become independently enrolled EB witness',()=>{
+ const f=ebFixture(),old=EA_PEER_ROLES[0],now=EB_RUN_ROLES[0],
+  prior=f.args.gossipCandidate.peerPins[old];
+ f.args.peerPins[now].spkiSha256=prior.spkiSha256;
+ const p=f.args.runs[0].peerPackets[0];
+ p.statement.spkiSha256=prior.spkiSha256;
+ p.publicKeyPem=f.args.gossipCandidate.peerPackets[0].publicKeyPem;
+ f.privateKeys[now]=f.ea.privateKeys[old];ebResign(f,'peer',0,0);
+ const r=ebAssess(f);
+ has(r,'EB_CROSS_RUN_SIGNER_KEY_OR_ORGANIZATION_REUSE');ebHold(r);
+});
+test('1EB distinct new signers cannot reuse operator identity or organization across two runs',()=>{
+ for(const field of ['keyId','spkiSha256','operatorId','custodianOrganizationId']){
+  const f=ebFixture(),from=f.args.peerPins[EB_RUN_ROLES[0]],
+   to=EB_RUN_ROLES[3];
+  f.args.peerPins[to][field]=from[field];
+  f.args.runs[1].peerPackets[0].statement[field]=from[field];
+  ebResign(f,'peer',1,0);
+  const r=ebAssess(f);
+  has(r,'EB_CROSS_RUN_SIGNER_KEY_OR_ORGANIZATION_REUSE');ebHold(r);
+ }
+});
+test('1EB signed peer key/pem or detached key pin substitution cannot be overlooked',()=>{
+ for(const field of ['signature','publicKeyPem']){
+  const f=ebFixture();
+  f.args.runs[0].peerPackets[0][field]=
+   f.args.runs[0].peerPackets[1][field];
+  const r=ebAssess(f);
+  has(r,'EB_RUN_PEER_SIGNATURE_OR_SPKI_INVALID');ebHold(r);
+ }
+ const f=ebFixture(),p=f.args.runs[0].peerPackets[0];
+ p.statement.operatorId='rogue_operator_0001';ebResign(f,'peer',0,0);
+ const r=ebAssess(f);has(r,'EB_RUN_PEER_DETACHED_PIN_MISMATCH');ebHold(r);
+});
+test('1EB witness signed GO and altered epoch nonce are never read as a consistent observation',()=>{
+ for(const [field,value] of [
+  ['disposition','UNFREEZE'],['nonce','f'.repeat(64)],
+  ['recordSha256','f'.repeat(64)]
+ ]){
+  const f=ebFixture(),p=f.args.runs[0].peerPackets[2];
+  p.statement[field]=value;ebResign(f,'peer',0,2);
+  const r=ebAssess(f);
+  has(r,'EB_SIGNED_INTER_RUN_PEER_FORK');ebHold(r);
+ }
+});
+test('1EB early, expired or future signed cross-run observation fails chronology',()=>{
+ for(const [field,value] of [
+  ['observedAtPeer','2026-11-21T00:00:09.000Z'],
+  ['observedAtPeer','2026-11-21T00:10:00.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z']
+ ]){
+  const f=ebFixture(),p=f.args.runs[0].peerPackets[0];
+  p.statement[field]=value;ebResign(f,'peer',0,0);
+  const r=ebAssess(f);
+  has(r,'EB_RUN_PEER_TIME_OR_EXPIRY_INVALID');ebHold(r);
+ }
+});
+test('1EB re-signed custody request to DELETE/GO or changed source anchor forbidden',()=>{
+ for(const [field,value] of [
+  ['disposition','PRODUCTION_UNFREEZE'],
+  ['finalRunSha256','f'.repeat(64)],
+  ['firstRunSha256','f'.repeat(64)],
+  ['finalSequence',1000],
+  ['previousAnchorSha256','f'.repeat(64)],
+  ['sourceHeadSha','f'.repeat(40)],
+  ['challengeNonce','f'.repeat(64)]
+ ]){
+  const f=ebFixture(),p=f.args.custodyPackets[0];
+  p.statement[field]=value;ebResign(f,'custody',0);
+  const r=ebAssess(f);
+  has(r,'EB_CUSTODY_RUN_HANDOFF_OR_UNFREEZE_MISMATCH');ebHold(r);
+ }
+});
+test('1EB signed shortened retention or conflicting second custody retention denied',()=>{
+ let f=ebFixture();
+ f.args.custodyPackets[0].statement.retentionUntil='2026-11-21T00:10:00.000Z';
+ ebResign(f,'custody',0);
+ let r=ebAssess(f);has(r,'EB_CUSTODY_TIME_OR_RETENTION_INVALID');ebHold(r);
+ f=ebFixture();
+ f.args.custodyPackets[1].statement.retentionUntil='2027-02-01T00:00:00.000Z';
+ ebResign(f,'custody',1);
+ r=ebAssess(f);
+ assert.equal(r.mathematicallyVerifiedTwoIncidentRetentionSignatures,2);
+ has(r,'EB_CUSTODY_RETENTION_SPLIT_VIEW');ebHold(r);
+});
+test('1EB cloned or missing Legal/Security custodians never count as both',()=>{
+ let f=ebFixture();
+ f.args.custodyPackets[1]=clone(f.args.custodyPackets[0]);
+ let r=ebAssess(f);
+ has(r,'EB_CUSTODY_ROLE_OR_SCHEMA_INVALID');
+ has(r,'EB_CUSTODY_ROLE_QUORUM_INCOMPLETE');ebHold(r);
+ f=ebFixture();f.args.custodyPackets.pop();
+ r=ebAssess(f);
+ has(r,'EB_EXACT_TWO_CUSTODY_HOLD_PACKETS_REQUIRED');ebHold(r);
+});
+test('1EB stale custody signature and copied Ed25519 key remain invalid',()=>{
+ let f=ebFixture(),p=f.args.custodyPackets[0];
+ p.statement.observedAt='2026-11-21T00:00:17.000Z';
+ ebResign(f,'custody',0);
+ let r=ebAssess(f);has(r,'EB_CUSTODY_TIME_OR_RETENTION_INVALID');ebHold(r);
+ f=ebFixture();
+ f.args.custodyPackets[0].signature=f.args.custodyPackets[1].signature;
+ r=ebAssess(f);has(r,'EB_CUSTODY_SIGNATURE_OR_SPKI_INVALID');ebHold(r);
+});
+test('1EB original signed EA/DZ gossip mutation cannot be legitimized by new sessions',()=>{
+ const f=ebFixture();
+ f.args.gossipCandidate.anchorCandidate.admissionCandidate.rehearsalCandidate
+  .custodyCandidate.publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=ebAssess(f);
+ has(r,'EB_PREVIOUS_EA_ORIGINAL_HISTORY_NOT_REVERIFIED');ebHold(r);
+});
+test('1EB unexpected approval metadata, malformed source array and cyclic input fail closed',()=>{
+ let f=ebFixture();
+ let r=assessOfflineCrossRunGossipIncidentCustodyEb({...f.args,verifiedByMca:true});
+ has(r,'EB_EXACT_BOUNDED_INPUT_REQUIRED');ebHold(r);
+ f=ebFixture();f.args.gossipCandidate.anchorCandidate.epochs={at:42};
+ r=ebAssess(f);
+ has(r,'EB_PREVIOUS_EA_ORIGINAL_HISTORY_NOT_REVERIFIED');ebHold(r);
+ f=ebFixture();f.args.gossipCandidate.cyclic=f.args;
+ r=ebAssess(f);has(r,'EB_EXACT_BOUNDED_INPUT_REQUIRED');ebHold(r);
+});
+test('1EB oversized packet, forged signed schema field and missing UTC cannot grant release',()=>{
+ let f=ebFixture();f.args.gossipCandidate.extra='x'.repeat(3072*1024);
+ let r=ebAssess(f);has(r,'EB_EXACT_BOUNDED_INPUT_REQUIRED');ebHold(r);
+ f=ebFixture();f.args.runs[0].record.externalGoVerified=true;
+ r=ebAssess(f);has(r,'EB_RUN_RECORD_SCHEMA_OR_SIZE_INVALID');ebHold(r);
+ f=ebFixture();f.args.now=null;
+ r=ebAssess(f);
+ has(r,'EB_EXPLICIT_UTC_CLOCK_REQUIRED');ebHold(r);
+});
+test('1EB output redacts original gossip bytes, signer IDs, nonce, evidence and PEM',()=>{
+ const f=ebFixture(),r=ebAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.previousRunAnchor.digestSha256,
+  f.args.runs[0].record.nonce,
+  f.args.runs[1].peerPackets[0].signature,
+  f.args.custodyPackets[0].publicKeyPem,
+  f.args.peerPins[EB_RUN_ROLES[0]].keyId,
+  f.args.gossipCandidate.anchorCandidate.evidenceBundleBase64
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);ebHold(r);
+});
