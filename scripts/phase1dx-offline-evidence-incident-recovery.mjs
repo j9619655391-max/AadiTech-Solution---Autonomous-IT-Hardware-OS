@@ -160,6 +160,14 @@ export function sourceSigningBytesDx(role,statement){
   throw Error('DX_SOURCE_STATEMENT_SCHEMA_INVALID');
  return Buffer.from(SRC_DOMAIN+canonical(statement),'utf8');
 }
+/** Exact three-role signed statement set, never externally sourced here. */
+export function evidenceSetDigestDx(statements){
+ if(!Array.isArray(statements)||statements.length!==3||
+  !statements.every((s,i)=>EXACT(s,SOURCE_STATEMENT)&&
+   s.role===DX_SOURCES[i])||!bounded(statements,36000))
+  throw Error('DX_EVIDENCE_SET_SCHEMA_INVALID');
+ return hash(SET_DOMAIN+canonical(statements));
+}
 /** Domain-separated recovery-step digest. Every subsequent step binds it. */
 export function recoveryStepDigestDx(step){
  if(!EXACT(step,STEP)||!bounded(step,8192))
@@ -279,8 +287,8 @@ export function assessOfflineEvidenceIncidentRecoveryCandidate(args={}){
   !['DX_RETRIEVAL_DETACHED_PIN_MISMATCH',
    'DX_SIGNED_RETRIEVAL_SCOPE_OR_HTTP_INVALID',
    'DX_SIGNED_RETRIEVAL_STALE_OR_EXPIRED'].some(c=>errors.has(c));
- const sourceSetDigest=sourceOK?hash(SET_DOMAIN+canonical(
-  DX_SOURCES.map(role=>packetByRole.get(role).statement))):null;
+ const sourceSetDigest=sourceOK?evidenceSetDigestDx(
+  DX_SOURCES.map(role=>packetByRole.get(role).statement)):null;
  const anchorOK=EXACT(previousRecoveryAnchor,ANCHOR)&&
   Number.isSafeInteger(previousRecoveryAnchor.sequence)&&
   previousRecoveryAnchor.sequence>=0&&
