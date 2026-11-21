@@ -614,7 +614,7 @@ function dwFixture(){
    privateKeys[role]=kp.privateKey;
    const pin={keyId:'key_'+prefix+'_dw01',
     operatorId:'operator_'+prefix+'_dw01',
-    organizationId:'org_'+prefix+'_dw01',
+    custodianOrganizationId:'org_'+prefix+'_dw01',
     spkiSha256:kp.spkiSha256};
    pins[role]=pin;
    const statement={schemaVersion:1,kind,role,repository:REPO,
@@ -695,7 +695,7 @@ test('1DW a duplicate custodian or revocation role is not an independent quorum'
  }
 });
 test('1DW signed same-operator or signer-SPKI across roles cannot impersonate independence',()=>{
- for(const attr of ['keyId','operatorId','spkiSha256']){
+ for(const attr of ['keyId','operatorId','spkiSha256','custodianOrganizationId']){
   const f=dwFixture();
   const from=f.args.enrollmentPins[DW_ENROLLMENT_ROLES[0]];
   const to=f.args.revocationPins[DW_REVOCATION_ROLES[0]];
