@@ -61,7 +61,7 @@ Run focused tests:
 node --test tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs
 ```
 
-**Engineering CI acceptance:** after the final code *and documentation* commit, independently confirm the exact HEAD source SHA matches both completed GitHub-hosted push and PR workflows; baseline, build/review source custody, governance, production runtime, disposable MySQL and isolated Chromium smoke all pass. The push-only `source-merge-lineage-hold` skip is expected. Do not substitute previous commits or call a failed intermediate workflow green. See the PR #1 and Issue #2 final external trace for the final HEAD and run IDs.
+**Verified initial code-and-docs engineering HEAD:** `835daad0e2768814236e9efbd9ea09f63129b400`: [push 44889567142](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44889567142) COMPLETED/SUCCESS with seven successful executed jobs and one expected PR-only `source-merge-lineage-hold` skip; [PR 44889571276](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44889571276) COMPLETED/SUCCESS with 8/8 successful jobs. Baseline, source/review custody, governance, production runtime and disposable real MySQL/isolated Chromium smoke all passed. The GitHub Checks API yielded **16/16** matching job IDs, names, exact HEAD SHA, completed statuses and conclusions. This evidence establishes engineering CI only, never true external provider/legal/staging acceptance. Since adding this receipt is a new documentation-only commit, verify both new exact-final-SHA workflows; prior 835daad0 runs do not substitute for them.
 
 ## Real external authority prerequisite handoff — NOT COMPLETED
 
