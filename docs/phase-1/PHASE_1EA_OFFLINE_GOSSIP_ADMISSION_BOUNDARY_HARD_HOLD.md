@@ -50,7 +50,7 @@ The new verifier path is registered in both Phase 1BV `BUILD_INPUT_PATHS` and Ph
 node --test tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs
 ```
 
-Acceptance: GitHub-hosted **exact final code-and-docs HEAD** `push` and `pull_request` workflows must both complete SUCCESS; push has 7 executed successful jobs + expected PR-only lineage skipped; PR 8/8 jobs successful. Confirm all **16/16** GitHub Checks API exact HEAD/source SHA/check ID/job name/status/conclusion against the Actions jobs, including real disposable MySQL + isolated Chromium smoke. Intermediate/current engineering CI is not any independent provider, MCA legal evidence or production staging acceptance.
+**Verified initial code+docs engineering HEAD:** `5ecb7be6c307cc3dd730722e658bf46da4ab279b`; [push 44892739804](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44892739804) **COMPLETED/SUCCESS**, 7 successfully executed jobs and expected PR-only lineage skipped; [PR 44892743971](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/44892743971) **COMPLETED/SUCCESS**, all 8/8 including disposable MySQL, isolated Chromium, baseline, build/reviewer source custody and governance. GitHub Checks API **16/16** exact SHA/check ID/job name/status/conclusion matched Actions jobs. Hosted baseline logs executed **25 Phase 1EA synthetic tests, 0 full test failures**. This proves engineering mathematics only, never provider/Legal/CA approval or release. Writing this documentation-only receipt produces a **new SHA** whose own exact HEAD push/PR CI must be separately verified; these successful initial workflows cannot substitute for it.
 
 ## Permanent external blockers and release invariants
 
