@@ -1547,3 +1547,23 @@ test('1DY output redacts keys, signatures, roles identity strings, incident and 
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);dyHold(r);
 });
+
+test('1DY malformed upstream array methods cannot crash evaluator or grant release',()=>{
+ const f=dyFixture();
+ f.args.rehearsalCandidate={now:NOW,
+  recoverySteps:{at:42},custodyCandidate:{publicationCandidate:{}},
+  sourceReceipts:[]};
+ const r=dyAssess(f);
+ has(r,'DY_PRECEDING_DX_OR_HISTORY_NOT_REVERIFIED');
+ assert.equal(r.candidateFrozenCaseAndReviewScopesCorrelatedMathematicallyOnly,false);
+ dyHold(r);
+});
+test('1DY cyclical and oversized input never bypass exact bounded denial',()=>{
+ const f=dyFixture(),cyclic={...f.args};
+ cyclic.self=cyclic;
+ let r=assessOfflineAdmissionUnfreezePreconditionsDy(cyclic);
+ has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
+ r=assessOfflineAdmissionUnfreezePreconditionsDy({
+  ...f.args,untrustedDump:'x'.repeat(1536*1024)});
+ has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
+});
