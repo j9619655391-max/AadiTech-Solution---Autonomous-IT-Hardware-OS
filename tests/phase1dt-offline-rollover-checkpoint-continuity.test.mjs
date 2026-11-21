@@ -227,13 +227,21 @@ test('1DT response hides raw private evidence and remains immutable',()=>{
 import {assessOfflineMultiEpochRolloverChain}
  from '../scripts/phase1du-offline-multi-epoch-rollover-chain.mjs';
 
-function twoEpochFixture(){
+function twoEpochFixture(options={}){
  const fresh={LEGAL_WITNESS:pair(),REGISTRY_WITNESS:pair()};
  const newIds={LEGAL_WITNESS:'legal-third',
   REGISTRY_WITNESS:'registry-third'};
+ const oldKeys=options.roguePrevious?
+  {LEGAL_WITNESS:pair(),REGISTRY_WITNESS:pair()}:
+  Object.fromEntries(V2_ROLES.map(role=>[role,keys[role].next]));
+ const oldIds=options.roguePrevious?
+  {LEGAL_WITNESS:'rogue-legal-old',REGISTRY_WITNESS:'rogue-registry-old'}:
+  Object.fromEntries(V2_ROLES.map(role=>[role,ids[role].next]));
+ const issued=options.sameTimes?NOW:'2026-11-21T00:00:01.000Z';
  const m2={...baseV2,sequence:2,
   previousCheckpointSha256:defaultV2.claimedCheckpointSha256,
-  nonce:'f'.repeat(64),issuedAt:'2026-11-21T00:00:01.000Z',
+  nonce:options.reuseCheckpointNonce?baseV2.nonce:'f'.repeat(64),
+  issuedAt:issued,
   expiresAt:'2026-11-21T00:11:00.000Z'};
  const opts=Object.fromEntries(V2_ROLES.map(role=>[role,
   {key:fresh[role],keyId:newIds[role]}]));
@@ -241,16 +249,17 @@ function twoEpochFixture(){
  const rm2={...baseRotation,previousSequence:1,nextSequence:2,
   previousCheckpointSha256:defaultV2.claimedCheckpointSha256,
   nextCandidateCheckpointSha256:cp2.claimedCheckpointSha256,
-  rotationNonce:'8'.repeat(64),
-  issuedAt:'2026-11-21T00:00:01.000Z',
+  rotationNonce:options.reuseRotationNonce?baseRotation.rotationNonce:
+   '8'.repeat(64),
+  issuedAt:issued,
   expiresAt:'2026-11-21T00:11:00.000Z'};
  const identities=Object.fromEntries(V2_ROLES.map(role=>[
-  role,{previous:{keyId:ids[role].next,
-   spkiSha256:keys[role].next.spkiSha256},
+  role,{previous:{keyId:oldIds[role],
+   spkiSha256:oldKeys[role].spkiSha256},
    next:{keyId:newIds[role],spkiSha256:fresh[role].spkiSha256}}
  ]));
  const attestations=Object.fromEntries(V2_ROLES.map(role=>{
-  const old=keys[role].next,upcoming=fresh[role];
+  const old=oldKeys[role],upcoming=fresh[role];
   return [role,Object.fromEntries([
    ['previous',{publicKeyPem:old.publicKeyPem,
     signature:sign(null,rotationSigningBytes(
@@ -368,4 +377,24 @@ test('1DU redacts witness identities, signatures, nonce and raw PEM',()=>{
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);
  duHold(r);
+});
+
+test('1DU individually valid rogue predecessor keys cannot inherit prior epoch',()=>{
+ const r=du(twoEpochFixture({roguePrevious:true}));
+ assert.equal(r.independentlyReverifiedEpochsMathematicallyOnly,2);
+ has(r,'DU_PREDECESSOR_SIGNED_KEY_ID_OR_SPKI_MISMATCH');
+ assert.equal(r.consecutiveSignedRolloverCheckpointsLinkedMathematicallyOnly,false);
+ duHold(r);
+});
+test('1DU individually valid signatures with repeated cross-epoch nonces fail',()=>{
+ for(const opts of [{reuseCheckpointNonce:true},{reuseRotationNonce:true}]){
+  const r=du(twoEpochFixture(opts));
+  assert.equal(r.independentlyReverifiedEpochsMathematicallyOnly,2);
+  has(r,'DU_CROSS_EPOCH_SIGNED_NONCE_REUSE');duHold(r);
+ }
+});
+test('1DU fully verified but same-time successor fails strict signed chronology',()=>{
+ const r=du(twoEpochFixture({sameTimes:true}));
+ assert.equal(r.independentlyReverifiedEpochsMathematicallyOnly,2);
+ has(r,'DU_SIGNED_EPOCH_TIME_ORDER_INVALID');duHold(r);
 });
