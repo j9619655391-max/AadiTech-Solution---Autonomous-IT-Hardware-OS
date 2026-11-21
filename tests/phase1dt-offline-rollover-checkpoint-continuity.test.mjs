@@ -1560,7 +1560,8 @@ test('1DY malformed upstream array methods cannot crash evaluator or grant relea
 });
 test('1DY cyclical and oversized input never bypass exact bounded denial',()=>{
  const f=dyFixture(),cyclic={...f.args};
- cyclic.self=cyclic;
+ cyclic.rehearsalCandidate={...cyclic.rehearsalCandidate};
+ cyclic.rehearsalCandidate.selfReference=cyclic;
  let r=assessOfflineAdmissionUnfreezePreconditionsDy(cyclic);
  has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
  const oversized=dyFixture();
