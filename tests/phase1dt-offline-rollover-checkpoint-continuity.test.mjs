@@ -398,3 +398,183 @@ test('1DU fully verified but same-time successor fails strict signed chronology'
  assert.equal(r.independentlyReverifiedEpochsMathematicallyOnly,2);
  has(r,'DU_SIGNED_EPOCH_TIME_ORDER_INVALID');duHold(r);
 });
+
+/* Phase 1DV: synthetic candidate-only signatures; no independent source access. */
+import {DV_ROLES,observerSigningBytesDv,assessOfflineObserverPublicationCandidate}
+ from '../scripts/phase1dv-offline-observer-publication-candidate.mjs';
+
+function dvFixture(){
+ const history=twoEpochFixture();
+ const terminal=history.epochs.at(-1).checkpointObservations[0];
+ const archive=Buffer.from('synthetic offline archive bytes','utf8');
+ const expected={
+  organizationId:terminal.manifest.organizationId,
+  sourceHeadSha:terminal.manifest.sourceHeadSha,
+  mainBaseSha:terminal.manifest.mainBaseSha,
+  checkpointSha256:terminal.claimedCheckpointSha256,
+  previousCheckpointSha256:terminal.manifest.previousCheckpointSha256,
+  sequence:terminal.manifest.sequence,archiveVersion:'snapshot_01',
+  archiveSha256:hash(archive),legalMandateDigestSha256:'1'.repeat(64),
+  revocationDigestSha256:'2'.repeat(64),challengeNonce:'3'.repeat(64)
+ };
+ const comparisonPins={},privateKeys={};
+ const observations=DV_ROLES.map((role,index)=>{
+  const kp=pair(),n=index===0?'pub':'arc';
+  privateKeys[role]=kp.privateKey;
+  const pin={keyId:'observer_'+n+'01',observerId:'observer_'+n+'01',
+   operatorId:'operator_'+n+'01',spkiSha256:kp.spkiSha256,
+   endpointHost:n+'.example.invalid',
+   tlsPeerSpkiSha256:(index===0?'4':'5').repeat(64)};
+  comparisonPins[role]=pin;
+  const statement={schemaVersion:1,
+   kind:'UNTRUSTED_OFFLINE_OBSERVER_PUBLICATION_CANDIDATE',
+   role,repository:REPO,...expected,...pin,
+   httpStatus:200,redirectCount:0,observedAt:NOW,
+   expiresAt:'2026-11-21T00:10:00.000Z',decision:'HOLD'};
+  return {statement,publicKeyPem:kp.publicKeyPem,
+   signature:sign(null,observerSigningBytesDv(statement),
+    kp.privateKey).toString('base64')};
+ });
+ return {args:{history,observations,comparisonPins,expected,
+  archivePayloadBase64:archive.toString('base64'),now:NOW},privateKeys};
+}
+function dvResign(f,index){
+ const packet=f.args.observations[index];
+ packet.signature=sign(null,observerSigningBytesDv(packet.statement),
+  f.privateKeys[packet.statement.role]).toString('base64');
+}
+const dvHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.productionMutationOrKeyEnrollmentPossible,false);
+ assert.equal(r.externalIndependentPublicationAndRetrievalAuthenticated,false);
+ assert.equal(r.externalSignedLegalMandateAndMcaAuthorityAuthenticated,false);
+ assert.equal(r.liveSignedRevocationChainCrlOcspAuthenticated,false);
+};
+test('1DV two different Ed25519 observations corroborate untrusted archive bytes mathematically only',()=>{
+ const r=assessOfflineObserverPublicationCandidate(dvFixture().args);
+ assert.equal(r.fullSignedHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.roleSeparatedSignedObserverPacketsMathematicallyVerifiedOnly,2);
+ assert.equal(r.candidateObserverPublicationCorroboratedMathematicallyOnly,true);
+ assert.deepEqual(r.anomalyCodes,[]);dvHold(r);
+});
+test('1DV duplicate signed observer packet fails independent role quorum',()=>{
+ const f=dvFixture();f.args.observations[1]=clone(f.args.observations[0]);
+ const r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_OBSERVER_ROLE_PACKET_SCHEMA_OR_DUPLICATE');
+ has(r,'DV_INCOMPLETE_ROLE_QUORUM');dvHold(r);
+});
+test('1DV fully resigned wrong source, signed checkpoint or predecessor scope cannot pass',()=>{
+ for(const key of ['sourceHeadSha','checkpointSha256','previousCheckpointSha256']){
+  const f=dvFixture(),replacement=key==='sourceHeadSha'?'f'.repeat(40):
+   'f'.repeat(64);
+  f.args.expected[key]=replacement;
+  f.args.observations.forEach((o,i)=>{
+   o.statement[key]=replacement;dvResign(f,i);
+  });
+  const r=assessOfflineObserverPublicationCandidate(f.args);
+  has(r,'DV_TERMINAL_SIGNED_CHECKPOINT_SCOPE_MISMATCH');dvHold(r);
+ }
+});
+test('1DV applicant can change mandate or revocation digests but cannot authenticate authority',()=>{
+ const r=assessOfflineObserverPublicationCandidate(dvFixture().args);
+ assert.equal(r.externalSignedLegalMandateAndMcaAuthorityAuthenticated,false);
+ assert.equal(r.liveSignedRevocationChainCrlOcspAuthenticated,false);
+ for(const key of ['legalMandateDigestSha256','revocationDigestSha256']){
+  const f=dvFixture();f.args.expected[key]='f'.repeat(64);
+  const v=assessOfflineObserverPublicationCandidate(f.args);
+  has(v,'DV_SIGNED_SCOPE_RETRIEVAL_OR_HOLD_INVALID');dvHold(v);
+ }
+});
+test('1DV signed hash never overrides actual supplied archive bytes',()=>{
+ const f=dvFixture();
+ f.args.archivePayloadBase64=Buffer.from('counterfeit').toString('base64');
+ const r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_SUPPLIED_ARCHIVE_BYTES_OR_DIGEST_INVALID');dvHold(r);
+});
+test('1DV re-signed GO, HTTP redirect, or fake observer kind refused',()=>{
+ for(const [key,value] of [['decision','GO'],['httpStatus',302],
+  ['redirectCount',1],['kind','CLAIMED_AUTHORIZED']]){
+  const f=dvFixture();f.args.observations[0].statement[key]=value;
+  dvResign(f,0);
+  const r=assessOfflineObserverPublicationCandidate(f.args);
+  has(r,'DV_SIGNED_SCOPE_RETRIEVAL_OR_HOLD_INVALID');dvHold(r);
+ }
+});
+test('1DV invalid signatures and substituted Ed25519 public keys are rejected',()=>{
+ let f=dvFixture();
+ f.args.observations[0].signature=f.args.observations[1].signature;
+ let r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_OBSERVER_SIGNATURE_OR_SPKI_INVALID');dvHold(r);
+ f=dvFixture();
+ f.args.observations[1].publicKeyPem=f.args.observations[0].publicKeyPem;
+ r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_OBSERVER_SIGNATURE_OR_SPKI_INVALID');dvHold(r);
+});
+test('1DV correctly signed identity/endpoint/TLS pin drift is still quarantined',()=>{
+ for(const [key,val] of [['endpointHost','evil.example.invalid'],
+  ['operatorId','operator_spoof'],['tlsPeerSpkiSha256','f'.repeat(64)],
+  ['keyId','observer_spoof']]){
+  const f=dvFixture();f.args.observations[1].statement[key]=val;
+  dvResign(f,1);
+  const r=assessOfflineObserverPublicationCandidate(f.args);
+  has(r,'DV_OBSERVER_KEY_TLS_OR_OPERATOR_PIN_MISMATCH');dvHold(r);
+ }
+});
+test('1DV shared operator/endpoint/TLS and reused witness signer do not establish independence',()=>{
+ for(const k of ['operatorId','endpointHost','tlsPeerSpkiSha256']){
+  const f=dvFixture();
+  const value=f.args.comparisonPins.CHECKPOINT_PUBLISHER[k];
+  f.args.comparisonPins.INDEPENDENT_ARCHIVE_OBSERVER[k]=value;
+  f.args.observations[1].statement[k]=value;dvResign(f,1);
+  const r=assessOfflineObserverPublicationCandidate(f.args);
+  has(r,'DV_DISTINCT_DETACHED_OBSERVER_PINS_REQUIRED');dvHold(r);
+ }
+ const f=dvFixture(),role=DV_ROLES[0],old=keys.LEGAL_WITNESS.next;
+ f.args.comparisonPins[role].spkiSha256=old.spkiSha256;
+ f.args.observations[0].statement.spkiSha256=old.spkiSha256;
+ f.args.observations[0].publicKeyPem=old.publicKeyPem;
+ f.privateKeys[role]=old.privateKey;dvResign(f,0);
+ const r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_OBSERVER_REUSES_CHAIN_WITNESS_IDENTITY');dvHold(r);
+});
+test('1DV tampered prior signed history cannot be rehabilitated by new observer signatures',()=>{
+ const f=dvFixture();
+ f.args.history.epochs[0].checkpointObservations[0].manifest.decision='GO';
+ const r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_PRECEDING_DU_SIGNED_HISTORY_UNVERIFIED');dvHold(r);
+});
+test('1DV expired signed observer and missing verification clock are denied',()=>{
+ const f=dvFixture();
+ f.args.observations[0].statement.expiresAt='2026-11-20T23:59:59.000Z';
+ dvResign(f,0);
+ let r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_SIGNED_OBSERVER_TIME_OR_EXPIRY_INVALID');dvHold(r);
+ const x=dvFixture();x.args.now=null;
+ r=assessOfflineObserverPublicationCandidate(x.args);
+ has(r,'DV_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'DV_PRECEDING_DU_SIGNED_HISTORY_UNVERIFIED');dvHold(r);
+});
+test('1DV applicant GO extensions and invalid archive encoding fail exact schema',()=>{
+ const f=dvFixture();
+ let r=assessOfflineObserverPublicationCandidate({...f.args,externalAuthorityApproved:true});
+ has(r,'DV_EXACT_BOUNDED_INPUT_REQUIRED');dvHold(r);
+ f.args.comparisonPins.CHECKPOINT_PUBLISHER.externallyEnrolled=true;
+ r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_DISTINCT_DETACHED_OBSERVER_PINS_REQUIRED');dvHold(r);
+ f.args.archivePayloadBase64='bad?';
+ r=assessOfflineObserverPublicationCandidate(f.args);
+ has(r,'DV_SUPPLIED_ARCHIVE_BYTES_OR_DIGEST_INVALID');dvHold(r);
+});
+test('1DV no observer signature, PEM, key ID, raw archive or nonce leaks in frozen output',()=>{
+ const f=dvFixture(),r=assessOfflineObserverPublicationCandidate(f.args);
+ const s=JSON.stringify(r);
+ for(const hidden of [f.args.observations[0].signature,
+  f.args.observations[1].publicKeyPem,
+  f.args.comparisonPins.CHECKPOINT_PUBLISHER.keyId,
+  f.args.archivePayloadBase64,f.args.expected.challengeNonce])
+  assert.equal(s.includes(hidden),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);dvHold(r);
+});
