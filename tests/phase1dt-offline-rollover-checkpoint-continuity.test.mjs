@@ -1563,7 +1563,8 @@ test('1DY cyclical and oversized input never bypass exact bounded denial',()=>{
  cyclic.self=cyclic;
  let r=assessOfflineAdmissionUnfreezePreconditionsDy(cyclic);
  has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
- r=assessOfflineAdmissionUnfreezePreconditionsDy({
-  ...f.args,untrustedDump:'x'.repeat(1536*1024)});
+ const oversized=dyFixture();
+ oversized.args.rehearsalCandidate.oversizedNestedBlob='x'.repeat(1536*1024);
+ r=dyAssess(oversized);
  has(r,'DY_EXACT_BOUNDED_INPUT_REQUIRED');dyHold(r);
 });
