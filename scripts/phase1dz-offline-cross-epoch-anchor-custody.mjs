@@ -287,7 +287,9 @@ export function assessOfflineCrossEpochAnchorCustodyDz(args={}){
    UTC(record.observedAt)>=clock-900000;
   if(!scopeOK){errors.add('DZ_EPOCH_FORK_ROLLBACK_OR_SCOPE_MISMATCH');linked=false;}
   nonceSet.add(record.nonce);
-  const epochSha=anchorDigestDz(record);
+  let epochSha=null;
+  try{epochSha=anchorDigestDz(record);}
+  catch{errors.add('DZ_EPOCH_RECORD_SCHEMA_INVALID');linked=false;continue;}
   const packets=e.observerPackets;
   if(!Array.isArray(packets)||packets.length!==2){
    errors.add('DZ_TWO_SIGNED_EPOCH_VIEWS_REQUIRED');linked=false;
