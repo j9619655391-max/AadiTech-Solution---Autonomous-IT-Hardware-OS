@@ -3204,3 +3204,295 @@ test('1ED redacted frozen report contains no local signer, source hash, adapter 
  assert.equal(Object.isFrozen(r),true);
  assert.equal(Object.isFrozen(r.anomalyCodes),true);edHold(r);
 });
+
+/* Phase 1EE: pinned V1 ONLY / disconnected port-specific simulated faults.
+ * This is not a real provider call, authenticated CA status or release vote. */
+import {EE_SUPPORTED_PROTOCOL_VERSION,EE_PORT_FAILURE_CLASSES,
+ compatibilityDigestEe,receiptDigestEe,sourceBundleDigestEe,
+ createDisconnectedFailurePlansEe,planDigestEe,failureDigestEe,
+ assessDisconnectedVersionFailureTaxonomyEe}
+ from '../scripts/phase1ee-disconnected-version-failure-taxonomy.mjs';
+
+function eeFixture(){
+ const ed=edFixture(),p=ed.args,
+  plans=createDisconnectedFailurePlansEe(p);
+ let previousSha=sourceBundleDigestEe(p);
+ const failureEvents=plans.map((plan,i)=>{
+  const event={
+   schemaVersion:1,kind:'APPLICANT_SIMULATED_ADAPTER_FAULT_HOLD',
+   gate:plan.gate,planSha256:planDigestEe(plan),
+   sequence:i+1,previousFailureSha256:previousSha,
+   faultCode:'NOT_ATTEMPTED',simulated:true,
+   networkRequests:0,authoritiesAuthenticated:0,sideEffects:0,
+   retryPolicy:'HOLD_MANUAL_AUTH_REVIEW',
+   observedAt:'2026-11-21T00:00:'+String(i+38)+'.000Z',
+   expiresAt:'2026-11-21T00:10:00.000Z',
+   disposition:'REMAINS_QUARANTINED',releaseDecision:'HOLD'
+  };
+  previousSha=failureDigestEe(event);
+  return event;
+ });
+ return {args:{previousPortCandidate:p,plans:clone(plans),
+  failureEvents:clone(failureEvents),now:NOW},
+  source:ed,generatedPlans:plans};
+}
+const eeAssess=f=>assessDisconnectedVersionFailureTaxonomyEe(f.args);
+function eeResignSuffix(f,changedIndex){
+ let prev=changedIndex===0?sourceBundleDigestEe(f.args.previousPortCandidate):
+  failureDigestEe(f.args.failureEvents[changedIndex-1]);
+ for(let i=changedIndex;i<12;i++){
+  f.args.failureEvents[i].previousFailureSha256=prev;
+  prev=failureDigestEe(f.args.failureEvents[i]);
+ }
+}
+const eeHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.externalAdapterOrNetworkInvocationPerformed,false);
+ assert.equal(r.genuineExternalProviderMcaCcaRcaiEmudhraAuthorityVerified,false);
+ assert.equal(r.realIssuerSignedCrlOcspOrTlsSourceVerified,false);
+ assert.equal(r.independentDurableCasWormGossipOrDrAccepted,false);
+ assert.equal(r.independentLegalSecurityReviewerStagingReleaseAuthorized,false);
+ assert.equal(r.mockFailureDiagnosisCanNeverUnfreezeIncident,true);
+};
+test('1EE strict V1 plans and 12 chained NOT_ATTEMPTED mock failures remain release HOLD',()=>{
+ const f=eeFixture(),r=eeAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.precedingEdToDuOriginalHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.exactlyPinnedV1ProtocolPlans,12);
+ assert.equal(r.linkedMockFailureEventsMathematicallyConsistentOnly,12);
+ assert.equal(r.notAttemptedLocalAdapterCount,12);
+ assert.equal(r.syntheticVersionAndFailureTranscriptConsistentOnly,true);
+ assert.equal(EE_SUPPORTED_PROTOCOL_VERSION,1);
+ eeHold(r);
+});
+test('1EE all 12 gate-specific simulated failure categories are pinned and immutable',()=>{
+ const f=eeFixture();
+ assert.equal(Object.keys(EE_PORT_FAILURE_CLASSES).length,12);
+ assert.equal(Object.isFrozen(EE_PORT_FAILURE_CLASSES),true);
+ for(const p of f.args.plans){
+  const codes=EE_PORT_FAILURE_CLASSES[p.gate];
+  assert.equal(codes.length,2);assert.equal(Object.isFrozen(codes),true);
+  assert.equal(codes[0],'NOT_ATTEMPTED');
+  assert.ok(codes[1].startsWith('SIMULATED_'));
+  assert.equal(codes.includes('VERIFIED'),false);
+  assert.equal(codes.includes('PRODUCTION_RELEASE'),false);
+ }
+ assert.equal(Object.isFrozen(f.generatedPlans),true);
+});
+test('1EE 12 gate-specific locally injected failures may diagnose only, never grant GO',()=>{
+ const f=eeFixture();
+ f.args.failureEvents.forEach((r,i)=>
+  r.faultCode=EE_PORT_FAILURE_CLASSES[f.args.plans[i].gate][1]);
+ eeResignSuffix(f,0);
+ const r=eeAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.notAttemptedLocalAdapterCount,0);
+ assert.equal(r.syntheticVersionAndFailureTranscriptConsistentOnly,true);
+ eeHold(r);
+});
+test('1EE version negotiation rejects downgrade, upgrade, or broad negotiated range',()=>{
+ for(const [field,value] of [
+  ['requestedVersion',0],['requestedVersion',2],
+  ['minimumAcceptedVersion',0],['maximumAcceptedVersion',2]
+ ]){
+  const f=eeFixture();
+  assert.notEqual(f.args.plans[0][field],value);
+  f.args.plans[0][field]=value;
+  const r=eeAssess(f);
+  has(r,'EE_VERSION_DOWNGRADE_UPGRADE_OR_SCOPE_FORK');eeHold(r);
+ }
+});
+test('1EE silent fallback, alternate live adapter mode or fake compatibility V2 denied',()=>{
+ for(const [field,value] of [
+  ['fallbackPolicy','PREFER_LEGACY'],
+  ['negotiation','NEGOTIATE_LATEST'],
+  ['adapterExecution','HTTPS_PROVIDER_LIVE'],
+  ['compatibilitySha256','f'.repeat(64)]
+ ]){
+  const f=eeFixture();
+  assert.notEqual(f.args.plans[3][field],value);
+  f.args.plans[3][field]=value;
+  const r=eeAssess(f);
+  has(r,'EE_VERSION_DOWNGRADE_UPGRADE_OR_SCOPE_FORK');eeHold(r);
+ }
+});
+test('1EE source manifest, work order or ED receipt hash mismatch rejects plan handoff',()=>{
+ for(const [field,value] of [
+  ['sourceBundleSha256','f'.repeat(64)],
+  ['receiptSha256','f'.repeat(64)],
+  ['workOrderSha256','f'.repeat(64)]
+ ]){
+  const f=eeFixture();
+  assert.notEqual(f.args.plans[5][field],value);
+  f.args.plans[5][field]=value;
+  const r=eeAssess(f);
+  has(r,'EE_VERSION_DOWNGRADE_UPGRADE_OR_SCOPE_FORK');eeHold(r);
+ }
+});
+test('1EE re-ordered, duplicated, truncated or inserted future-version plan is denied',()=>{
+ for(const edit of [
+  x=>x.plans.reverse(),
+  x=>{x.plans[1]=clone(x.plans[0]);},
+  x=>x.plans.pop(),
+  x=>{x.plans.push(clone(x.plans[0]));}
+ ]){
+  const f=eeFixture();edit(f.args);
+  const r=eeAssess(f);
+  assert.ok(r.anomalyCodes.some(code=>code.startsWith('EE_')));eeHold(r);
+ }
+});
+test('1EE a locally simulated TLS failure is invalid on an unrelated CRL/OCSP port',()=>{
+ const f=eeFixture(),e=f.args.failureEvents[3];
+ e.faultCode='SIMULATED_TLS_SPKI_MISMATCH';
+ eeResignSuffix(f,3);
+ const r=eeAssess(f);
+ has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+});
+test('1EE generic network timeout, issuer authenticated and positive provider results denied',()=>{
+ for(const code of ['VERIFIED','GO','PROVIDER_LICENSE_APPROVED',
+  'SIMULATED_NETWORK_TIMEOUT','SIMULATED_ISSUER_VALID']){
+  const f=eeFixture(),e=f.args.failureEvents[0];
+  e.faultCode=code;eeResignSuffix(f,0);
+  const r=eeAssess(f);
+  has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+ }
+});
+test('1EE failure response cannot claim live calls, authority, side effects or source unfreeze',()=>{
+ for(const [field,value] of [
+  ['simulated',false],['networkRequests',1],
+  ['authoritiesAuthenticated',1],['sideEffects',1],
+  ['retryPolicy','AUTO_PROVIDER_RETRY'],
+  ['disposition','UNFREEZE_SOURCE'],['releaseDecision','GO']
+ ]){
+  const f=eeFixture(),e=f.args.failureEvents[0];
+  assert.notEqual(e[field],value);
+  e[field]=value;eeResignSuffix(f,0);
+  const r=eeAssess(f);
+  has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+ }
+});
+test('1EE copy/paste of a successful-looking failure event is detected as replay',()=>{
+ for(const edit of [
+  f=>{f.args.failureEvents[1]=clone(f.args.failureEvents[0]);},
+  f=>{f.args.failureEvents.reverse();},
+  f=>{f.args.failureEvents[2].sequence=3+1;},
+  f=>{f.args.failureEvents[4].previousFailureSha256='f'.repeat(64);}
+ ]){
+  const f=eeFixture();edit(f);
+  const r=eeAssess(f);
+  has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+ }
+});
+test('1EE attacker rehashes downstream events but cannot hide wrong source-root anchor',()=>{
+ const f=eeFixture();
+ f.args.failureEvents[0].previousFailureSha256='f'.repeat(64);
+ eeResignSuffix(f,1);
+ const r=eeAssess(f);
+ has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+});
+test('1EE changed fault transcript and recalculated full SHA suffix cannot spoof another gate',()=>{
+ const f=eeFixture();
+ f.args.failureEvents[4].gate=f.args.failureEvents[5].gate;
+ eeResignSuffix(f,4);
+ const r=eeAssess(f);
+ has(r,'EE_FAILURE_SCOPE_REPLAY_UNSUPPORTED_CLASS_OR_FALSE_AUTHORITY');eeHold(r);
+});
+test('1EE truncated and duplicated failure events fail exact 12-gate chain',()=>{
+ for(const edit of [
+  x=>x.failureEvents.pop(),
+  x=>x.failureEvents.push(clone(x.failureEvents[0]))
+ ]){
+  const f=eeFixture();edit(f.args);
+  const r=eeAssess(f);
+  has(r,'EE_EXACT_TWELVE_FAILURE_EVENTS_REQUIRED');eeHold(r);
+ }
+});
+test('1EE failed event later than expiry, earlier than receipt, future or nonmonotonic rejected',()=>{
+ for(const [field,value] of [
+  ['observedAt','2026-11-21T00:00:36.000Z'],
+  ['observedAt','2026-11-21T00:10:00.000Z'],
+  ['expiresAt','2026-11-20T23:59:59.000Z'],
+  ['expiresAt','2026-11-21T00:00:38.000Z'],
+  ['observedAt','2026-11-21T00:00:40.000Z']
+ ]){
+  const f=eeFixture(),e=f.args.failureEvents[0];
+  assert.notEqual(e[field],value);
+  e[field]=value;eeResignSuffix(f,0);
+  const r=eeAssess(f);
+  has(r,'EE_FAILURE_EVENT_ORDER_FRESHNESS_OR_EXPIRY_INVALID');eeHold(r);
+ }
+});
+test('1EE original 1ED fake VERIFIED status mutation invalidates every negotiation',()=>{
+ const f=eeFixture();
+ f.args.previousPortCandidate.receipts[0].status='VERIFIED';
+ const r=eeAssess(f);
+ has(r,'EE_ORIGINAL_ED_HISTORY_NOT_REVERIFIED');eeHold(r);
+});
+test('1EE old source work order with changed signer or evidence SHA cannot be reused',()=>{
+ for(const edit of [
+  ed=>{ed.workOrders[0].sourceHeadSha='f'.repeat(40);},
+  ed=>{ed.workOrders[2].manifestSha256='f'.repeat(64);},
+  ed=>{ed.handoffCandidate.manifest.decision='GO';}
+ ]){
+  const f=eeFixture();edit(f.args.previousPortCandidate);
+  const r=eeAssess(f);
+  has(r,'EE_ORIGINAL_ED_HISTORY_NOT_REVERIFIED');eeHold(r);
+ }
+});
+test('1EE signed original DU witness history tampering still fails closed in V1 layer',()=>{
+ const f=eeFixture();
+ f.args.previousPortCandidate.handoffCandidate.incidentCandidate
+  .gossipCandidate.anchorCandidate.admissionCandidate.rehearsalCandidate
+  .custodyCandidate.publicationCandidate.history.epochs[0]
+  .checkpointObservations[0].manifest.decision='GO';
+ const r=eeAssess(f);
+ has(r,'EE_ORIGINAL_ED_HISTORY_NOT_REVERIFIED');eeHold(r);
+});
+test('1EE extra approved flag and malformed failure packet never become compatible V1',()=>{
+ let f=eeFixture();
+ f.args.plans[0].productionReady=true;
+ let r=eeAssess(f);
+ has(r,'EE_VERSION_DOWNGRADE_UPGRADE_OR_SCOPE_FORK');eeHold(r);
+ f=eeFixture();f.args.failureEvents[0].issuerApproved=true;
+ r=eeAssess(f);has(r,'EE_FAILURE_EVENT_SCHEMA_INVALID');eeHold(r);
+});
+test('1EE cyclic, oversized, malformed ancestor, missing UTC and unexpected top flag fail',()=>{
+ let f=eeFixture();
+ let r=assessDisconnectedVersionFailureTaxonomyEe({...f.args,authenticated:true});
+ has(r,'EE_EXACT_BOUNDED_INPUT_REQUIRED');eeHold(r);
+ f=eeFixture();f.args.previousPortCandidate.self=f.args;
+ r=eeAssess(f);has(r,'EE_EXACT_BOUNDED_INPUT_REQUIRED');eeHold(r);
+ f=eeFixture();f.args.previousPortCandidate.extra='z'.repeat(4608*1024);
+ r=eeAssess(f);has(r,'EE_EXACT_BOUNDED_INPUT_REQUIRED');eeHold(r);
+ f=eeFixture();f.args.previousPortCandidate.receipts={notArray:1};
+ r=eeAssess(f);has(r,'EE_ORIGINAL_ED_HISTORY_NOT_REVERIFIED');eeHold(r);
+ f=eeFixture();f.args.now=null;
+ r=eeAssess(f);
+ has(r,'EE_EXPLICIT_UTC_CLOCK_REQUIRED');
+ has(r,'EE_ORIGINAL_ED_HISTORY_NOT_REVERIFIED');eeHold(r);
+});
+test('1EE protocol binding changes when actual original receipt record changes',()=>{
+ const f=eeFixture(),d=compatibilityDigestEe();
+ assert.match(d,/^[a-f0-9]{64}$/);
+ assert.equal(d,compatibilityDigestEe());
+ const first=receiptDigestEe(f.args.previousPortCandidate.receipts[0]);
+ const copy=clone(f.args.previousPortCandidate.receipts[0]);
+ copy.status='SIMULATED_MISSING';
+ assert.notEqual(receiptDigestEe(copy),first);
+ assert.equal(failureDigestEe(f.args.failureEvents[0]).length,64);
+ assert.equal(planDigestEe(f.args.plans[0]).length,64);
+});
+test('1EE report never leaks applicant adapter IDs, private signatures, source digest or nonce',()=>{
+ const f=eeFixture(),r=eeAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.previousPortCandidate.receipts[0].adapterId,
+  f.args.failureEvents[0].previousFailureSha256,
+  f.args.plans[0].sourceBundleSha256,
+  f.args.previousPortCandidate.handoffCandidate.reviewPackets[0].signature,
+  f.args.previousPortCandidate.workOrders[0].requestNonce
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);eeHold(r);
+});
