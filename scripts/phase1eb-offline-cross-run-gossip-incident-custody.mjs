@@ -220,7 +220,8 @@ export function assessOfflineCrossRunGossipIncidentCustodyEb(args={}){
  }catch{prior=false;}
  if(!prior)errors.add('EB_PREVIOUS_EA_ORIGINAL_HISTORY_NOT_REVERIFIED');
  const dz=ea?.anchorCandidate,dy=dz?.admissionCandidate,
-  original=dy?.decisionCase,first=dz?.epochs?.at?.(-1)?.record;
+  original=dy?.decisionCase,first=Array.isArray(dz?.epochs)?
+   dz.epochs.at(-1)?.record:null;
  const expected=dy?.rehearsalCandidate?.custodyCandidate?.
   publicationCandidate?.expected;
  let lastReview=-Infinity;
