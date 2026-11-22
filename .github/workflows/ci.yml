@@ -539,6 +539,10 @@ jobs:
         run: bun run db:migrate:en-reviewer-scopes
       - name: Phase 1EN verify schema checksum/idempotent rerun and no retroactive grants
         run: bun run db:migrate:en-reviewer-scopes
+      - name: Phase 1EO add scoped stock and journal review to disposable CI
+        run: bun run db:migrate:eo-reviewer-scopes
+      - name: Phase 1EO verify checksum/idempotency and no previous grant escalation
+        run: bun run db:migrate:eo-reviewer-scopes
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL

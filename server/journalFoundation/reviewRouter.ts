@@ -29,11 +29,26 @@ async function audit(c:PoolConnection,journalId:string,actor:string,
 router.get('/journals',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT id,release_intent_id AS releaseIntentId,
-   site_id AS siteId,prepared_by AS preparedBy,manifest_sha256 AS manifestSha256,
-   status,created_at AS createdAt
-   FROM inv_unposted_journal_headers WHERE prepared_by<>?
-   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId]);
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT j.id,j.release_intent_id AS releaseIntentId,
+   j.site_id AS siteId,j.prepared_by AS preparedBy,
+   j.manifest_sha256 AS manifestSha256,j.status,j.created_at AS createdAt
+   FROM inv_unposted_journal_headers j
+   JOIN inv_stock_release_intents release_intent ON release_intent.id=j.release_intent_id
+   JOIN inventory_sites site ON site.id=j.site_id
+   JOIN inv_grn_held_records h ON h.id=release_intent.held_grn_id
+   JOIN inv_grn_reconciliation_packs pack ON pack.id=h.pack_id
+   JOIN proc_ack_claims claim ON claim.id=pack.claim_id
+   JOIN proc_dispatch_preparations prep ON prep.id=claim.preparation_id
+   JOIN proc_po_holds po ON po.id=prep.hold_id
+   JOIN proc_requests request_record ON request_record.id=po.request_id
+   WHERE j.prepared_by<>? AND j.prepared_by=release_intent.prepared_by
+    AND j.prepared_by=pack.prepared_by AND j.prepared_by=site.created_by
+    AND j.prepared_by=request_record.created_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=j.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='JOURNAL' AND g.state='ACTIVE')
+   ORDER BY j.created_at DESC,j.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,actualStockLedger:false,realGrnVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -45,6 +60,12 @@ router.get('/journals/:id',async(req,res)=>{
   conn=await db.getConnection();await conn.beginTransaction();
   const state=await checkJournal(conn,req.params.id);
   if(state.release.source.ownerId===res.locals.auth.userId){
+   await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;
+  }
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+     AND workflow_scope='JOURNAL'`,[state.release.source.ownerId,res.locals.auth.userId]);
+  if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;
   }
   await conn.commit();
@@ -67,6 +88,14 @@ router.post('/journals/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
   const state=await checkJournal(conn,req.params.id);
   if(state.release.source.ownerId===actor){
    await conn.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  }
+  // Re-validate exact scope under lock in the decision transaction, so a
+  // revoked reviewer cannot write an unposted journal HOLD from stale UI.
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+     AND workflow_scope='JOURNAL' FOR UPDATE`,[state.release.source.ownerId,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
+   await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;
   }
   if(state.status!=='PENDING_INTERNAL')
    throw new ChainConflictError('Journal review decision already recorded');

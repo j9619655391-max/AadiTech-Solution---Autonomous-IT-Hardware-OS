@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/journalFoundation/ownerRouter';
 import reviewRouter from '../server/journalFoundation/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import {readHeldGrnSource} from '../server/stockFoundation/integrity';
 import {releaseSnapshot,releaseHoldSnapshot} from '../server/stockFoundation/validation';
 import {claimDigest,heldGrnSnapshot} from '../server/evidenceChain/validation';
@@ -250,11 +251,13 @@ test('CI: establish complete synthetic HELD-only 1AC–1AG provenance, no suppli
    VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'JOURNAL')",[owner,reviewer]);
  main=await withHeldSource(await fixture('JOURNAL_A'));
  second=await withHeldSource(await fixture('JOURNAL_B'));
  releaseA=await stockRelease(main);releaseB=await stockRelease(second);
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/journal-foundation/review',reviewRouter);
  app.use('/api/journal-foundation',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown endpoint'}));
@@ -342,6 +345,57 @@ test('MySQL enums and uniqueness refuse fake externally verified supplier, seria
  assert.ok(positions.length>=4);
  assert.ok(positions.every(r=>Object.values(r).every(x=>Number(x)===0)));
 });
+
+test('1EO unrelated or revoked JOURNAL reviewer cannot inspect or hold unposted evidence',async()=>{
+ const outsider=randomUUID(),tokenOther=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'eo-journal-'+outsider+'@example.invalid',
+   'No nominated journal scope','test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(tokenOther),outsider,csrf]);
+ const hdr={cookie:'aaditech_session='+tokenOther};
+ const notScoped=await fetch(base+'/api/journal-foundation/review/journals',{headers:hdr});
+ assert.equal(notScoped.status,200);
+ assert.equal((await notScoped.json() as {items:{id:string}[]}).items.some(x=>x.id===journalA),false);
+ assert.equal((await fetch(base+'/api/journal-foundation/review/journals/'+journalA,
+  {headers:hdr})).status,404);
+ const prior=await call('/api/journal-foundation/review/journals','GET',undefined,'reviewer');
+ assert.equal(prior.status,200);
+ assert.equal(prior.data.items.some((x:any)=>x.id===journalA),true);
+ const revoke={reviewerId:reviewer,scope:'JOURNAL',decision:'REVOKE',
+  reason:'Owner temporarily revokes internal unposted journal reviewer'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{stepUp:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const hidden=await call('/api/journal-foundation/review/journals','GET',undefined,'reviewer');
+  assert.equal(hidden.status,200);
+  assert.equal(hidden.data.items.some((x:any)=>x.id===journalA),false);
+  assert.equal((await call('/api/journal-foundation/review/journals/'+journalA,
+    'GET',undefined,'reviewer')).status,404);
+  const denied=await call('/api/journal-foundation/review/journals/'+journalA+'/decide',
+   'POST',{decision:'REVIEWED_HELD',balancingInspected:true,
+    reason:'Revoked scope must never be sufficient for journal approval',
+    evidenceRef:'EO-REVOKED-JOURNAL-REVIEW'},'reviewer');
+  assert.equal(denied.status,404);
+  const [decisions]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_unposted_journal_reviews WHERE journal_id=?',[journalA]);
+  assert.equal(Number(decisions[0].n),0);
+  const [held]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_unposted_journal_holds WHERE journal_id=?',[journalA]);
+  assert.equal(Number(held[0].n),0);
+ }finally{
+  const restore=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Owner explicitly reinstates bounded journal evidence scope'});
+  assert.equal(restore.status,201);
+ }
+ assert.equal((await call('/api/journal-foundation/review/journals/'+journalA,
+   'GET',undefined,'reviewer')).status,200);
+ const [events]=await db.query<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='JOURNAL'`,[owner,reviewer]);
+ assert.deepEqual(events.map((x:any)=>x.decision).sort(),['GRANT','REVOKE']);
+});
+
 test('independent reviewer rejects altered/unbalanced legs and serial substitutions',async()=>{
  const url='/api/journal-foundation/review/journals/'+journalA+'/decide';
  const body={decision:'REVIEWED_HELD',

@@ -17,7 +17,7 @@ export function enReviewerScopeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stag
 async function main(){
  enReviewerScopeMigrationTarget(process.env);
  const id='0044_en_workflow_review_scopes';
- if(MIGRATIONS[43]!==id||MIGRATIONS.length!==44)
+ if(MIGRATIONS[43]!==id||MIGRATIONS.length<44)
   throw Error('1EN exact schema-migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('1EN DB config incomplete');

@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/stockFoundation/ownerRouter';
 import reviewRouter from '../server/stockFoundation/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import {claimDigest,heldGrnSnapshot} from '../server/evidenceChain/validation';
 import {checkHeldSource,checkClaim,checkQuarantine,makePack} from '../server/evidenceChain/integrity';
 import {dispatchManifest,sha} from '../server/dispatch/validation';
@@ -214,10 +215,12 @@ test('create full 1AC/1AD/1AE/1AF synthetic HELD source in disposable MySQL',asy
    VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'STOCK')",[owner,reviewer]);
  main=await withHeldSource(await fixture('STOCK_MAIN'));
  second=await withHeldSource(await fixture('STOCK_SECOND'));
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/stock-foundation/review',reviewRouter);
  app.use('/api/stock-foundation',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -295,6 +298,60 @@ test('MySQL hard-zero CHECK rejects all direct positive, negative, reserved or p
  assert.equal(listed.data.postingAllowed,false);
  assert.ok(listed.data.items.every((p:any)=>Number(p.available)===0&&Number(p.reserved)===0));
 });
+
+test('1EO unassigned and revoked STOCK reviewer cannot view or decide known held release',async()=>{
+ const outsider=randomUUID(),outsiderToken=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'eo-stock-'+outsider+'@example.invalid','Unassigned stock reviewer',
+   'test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))`,
+  [hashToken(outsiderToken),outsider,csrf]);
+ const hdr={cookie:'aaditech_session='+outsiderToken};
+ const list=await fetch(base+'/api/stock-foundation/review/release-intents',{headers:hdr});
+ assert.equal(list.status,200);
+ assert.equal((await list.json() as {items:{id:string}[]}).items.some(x=>x.id===releaseId),false);
+ assert.equal((await fetch(base+'/api/stock-foundation/review/release-intents/'+releaseId,
+  {headers:hdr})).status,404);
+ const visible=await call('/api/stock-foundation/review/release-intents','GET',
+  undefined,'reviewer');
+ assert.equal(visible.status,200);
+ assert.equal(visible.data.items.some((x:any)=>x.id===releaseId),true);
+ const revoke={reviewerId:reviewer,scope:'STOCK',decision:'REVOKE',
+  reason:'Owner revokes stock release evidence reviewer authorization'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const q=await call('/api/stock-foundation/review/release-intents','GET',
+    undefined,'reviewer');
+  assert.equal(q.status,200);
+  assert.equal(q.data.items.some((x:any)=>x.id===releaseId),false);
+  assert.equal((await call('/api/stock-foundation/review/release-intents/'+releaseId,
+   'GET',undefined,'reviewer')).status,404);
+  const denied=await call('/api/stock-foundation/review/release-intents/'+releaseId+'/decide',
+   'POST',{decision:'REVIEWED_HELD',sourceInspected:true,
+    reason:'Revoked reviewer may not authorize even held source',
+    evidenceRef:'EO-STOCK-REVOKED-REVIEW'},'reviewer');
+  assert.equal(denied.status,404);
+  const [decisions]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_stock_release_decisions WHERE release_intent_id=?',[releaseId]);
+  assert.equal(Number(decisions[0].n),0);
+  const [holds]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_stock_release_holds WHERE release_intent_id=?',[releaseId]);
+  assert.equal(Number(holds[0].n),0);
+ }finally{
+  const restored=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+    reason:'Owner expressly restores only this held stock review scope'});
+  assert.equal(restored.status,201);
+ }
+ assert.equal((await call('/api/stock-foundation/review/release-intents/'+releaseId,
+  'GET',undefined,'reviewer')).status,200);
+ const [history]=await db.query<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='STOCK'`,[owner,reviewer]);
+ assert.deepEqual(history.map((x:any)=>x.decision).sort(),['GRANT','REVOKE']);
+});
+
 test('reviewer refuses tampered serial identity, denies self-review and can only approve HELD release',async()=>{
  const path='/api/stock-foundation/review/release-intents/'+releaseId+'/decide';
  const body={decision:'REVIEWED_HELD',reason:'Independently inspected full internally observed serial and lot register',

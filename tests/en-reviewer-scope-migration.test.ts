@@ -25,7 +25,7 @@ test('1EN add-only scope migration refuses production and unapproved staging',()
   EN_REVIEW_SCOPE_MIGRATION_APPROVED:'YES'}),'staging');
 });
 test('1EN immutable predecessor and no retroactive reviewer grants',()=>{
- assert.equal(MIGRATIONS.length,44);
+ assert.ok(MIGRATIONS.length>=44);
  assert.equal(MIGRATIONS[42],'0043_el_reviewer_scope_candidates');
  assert.equal(MIGRATIONS[43],'0044_en_workflow_review_scopes');
  const sql=readFileSync('database/migrations/0044_en_workflow_review_scopes.sql','utf8');

@@ -29,11 +29,23 @@ async function audit(c:PoolConnection,actor:string,id:string,event:'RELEASE_HELD
 router.get('/release-intents',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT id,held_grn_id AS heldGrnId,
-   observation_id AS observationId,prepared_by AS preparedBy,intent_sha256 AS intentSha256,
-   status,created_at AS createdAt
-   FROM inv_stock_release_intents WHERE prepared_by<>?
-   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId]);
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT r.id,r.held_grn_id AS heldGrnId,
+   r.observation_id AS observationId,r.prepared_by AS preparedBy,
+   r.intent_sha256 AS intentSha256,r.status,r.created_at AS createdAt
+   FROM inv_stock_release_intents r
+   JOIN inv_grn_held_records h ON h.id=r.held_grn_id
+   JOIN inv_grn_reconciliation_packs pack ON pack.id=h.pack_id
+   JOIN proc_ack_claims claim ON claim.id=pack.claim_id
+   JOIN proc_dispatch_preparations preparation ON preparation.id=claim.preparation_id
+   JOIN proc_po_holds po ON po.id=preparation.hold_id
+   JOIN proc_requests request_record ON request_record.id=po.request_id
+   WHERE r.prepared_by<>? AND pack.prepared_by=r.prepared_by
+     AND request_record.created_by=r.prepared_by
+     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       WHERE g.owner_user_id=r.prepared_by AND g.reviewer_user_id=?
+        AND g.workflow_scope='STOCK' AND g.state='ACTIVE')
+   ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalGrnVerified:false,postingAllowed:false});
  }catch(e){fail(res,e);}
 });
@@ -46,6 +58,13 @@ router.get('/release-intents/:id',async(req,res)=>{
   const state=await checkReleaseIntent(conn,req.params.id);
   if(state.source.ownerId===res.locals.auth.userId){
    await conn.rollback();res.status(404).json({error:'Not independent'});return;
+  }
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='STOCK'`,
+   [state.source.ownerId,res.locals.auth.userId]);
+  if(scope[0]?.state!=='ACTIVE'){
+   await conn.rollback();res.status(404).json({error:'Release intent unavailable for review'});return;
   }
   await conn.commit();
   res.json({intent:{id:state.id,status:state.status,sha256:state.intentSha256},
@@ -67,6 +86,14 @@ router.post('/release-intents/:id/decide',requirePrivilegedMfa,requireStepUp,asy
   const state=await checkReleaseIntent(conn,req.params.id);
   if(state.source.ownerId===actor){
    await conn.rollback();res.status(404).json({error:'No self-review'});return;
+  }
+  // The current owner assignment is locked with the release write. A later
+  // revocation cannot race ahead of a stale reviewer queue authorization.
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+    AND workflow_scope='STOCK' FOR UPDATE`,[state.source.ownerId,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
+   await conn.rollback();res.status(404).json({error:'Release intent unavailable for review'});return;
   }
   if(state.status!=='PENDING_INTERNAL')
    throw new ChainConflictError('Release intent already reviewed');
