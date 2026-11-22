@@ -35,9 +35,11 @@ router.get('/eligible',async(req,res)=>{
    FROM proc_po_holds h JOIN proc_requests r ON r.id=h.request_id
    JOIN proc_suppliers s ON s.id=r.supplier_id JOIN inventory_sites i ON i.id=r.site_id
    LEFT JOIN inv_inbound_observations o ON o.hold_id=h.id
-   WHERE r.created_by=? AND r.status='APPROVED_INTERNAL'
+   WHERE r.created_by=? AND s.created_by=? AND i.created_by=?
+   AND r.status='APPROVED_INTERNAL'
    AND h.status='HELD' AND h.dispatch_state='DISABLED'
-   ORDER BY h.created_at DESC,h.id DESC LIMIT 100`,[res.locals.auth.userId]);
+   ORDER BY h.created_at DESC,h.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalPoIssued:false,
    disclaimer:'HELD means the supplier was NOT sent a purchase order. Observation cannot certify goods receipt.'});
  }catch(e){fail(res,e);}
@@ -49,8 +51,11 @@ router.get('/observations',async(req,res)=>{
    o.request_id AS requestId,o.status,o.delivery_evidence_ref AS deliveryEvidenceRef,
    o.physical_count_ref AS physicalCountRef,o.payload_sha256 AS payloadSha256,
    o.created_at AS createdAt,o.decided_at AS decidedAt
-   FROM inv_inbound_observations o WHERE o.recorded_by=?
-   ORDER BY o.created_at DESC,o.id DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_inbound_observations o
+   JOIN inventory_sites i ON i.id=o.site_id
+   WHERE o.recorded_by=? AND i.created_by=?
+   ORDER BY o.created_at DESC,o.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,availableToSell:null,stockMovementsEnabled:false});
  }catch(e){fail(res,e);}
 });
@@ -59,8 +64,10 @@ router.get('/observations/:id',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.query<RowDataPacket[]>(
-   'SELECT id,status,hold_id AS holdId,payload_sha256 AS payloadSha256 FROM inv_inbound_observations WHERE id=? AND recorded_by=?',
-   [req.params.id,res.locals.auth.userId]);
+   `SELECT o.id,o.status,o.hold_id AS holdId,o.payload_sha256 AS payloadSha256
+   FROM inv_inbound_observations o JOIN inventory_sites i ON i.id=o.site_id
+   WHERE o.id=? AND o.recorded_by=? AND i.created_by=?`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'Observation not found'});return;}
   const [lines]=await db.query<RowDataPacket[]>(`SELECT product_id AS productId,quantity,
    tracking_mode AS trackingMode,lot_code AS lotCode,serials_json AS serialNumbers
@@ -103,7 +110,11 @@ router.post('/observations',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
    d.id AS decisionId,d.decision AS reviewDecision
    FROM proc_po_holds h JOIN proc_requests r ON r.id=h.request_id
    JOIN proc_review_decisions d ON d.id=h.decision_id
-   WHERE h.id=? FOR UPDATE`,[input.holdId]);
+   JOIN proc_suppliers s ON s.id=r.supplier_id
+   JOIN inventory_sites i ON i.id=r.site_id
+   WHERE h.id=? AND r.created_by=? AND s.created_by=?
+     AND i.created_by=? FOR UPDATE`,
+   [input.holdId,actor,actor,actor]);
   if(!holds.length||holds[0].ownerId!==actor){
    await conn.rollback();res.status(404).json({error:'Held PO not found for owner'});return;
   }
@@ -157,36 +168,49 @@ router.post('/observations',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
  }catch(e){if(conn)await conn.rollback().catch(()=>{});fail(res,e);}
  finally{conn?.release();}
 });
+// Phase 1EM: evidence custody is per authenticated OWNER, not a global
+// warehouse/SKU dashboard. Scope *all four discrepancy components*, not only
+// the visible item rows, to avoid count/pagination metadata leakage.
 router.get('/quarantine-summary',async(_req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const actor=String(res.locals.auth.userId);
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT e.site_id AS siteId,i.code AS siteCode,
-   e.product_id AS productId,p.sku,COUNT(*) AS eventCount,SUM(e.quantity) AS attestedQuantity
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT e.site_id AS siteId,
+   i.code AS siteCode,e.product_id AS productId,p.sku,
+   COUNT(*) AS eventCount,SUM(e.quantity) AS attestedQuantity
    FROM inv_quarantine_custody_events e
-   JOIN inventory_sites i ON i.id=e.site_id JOIN crm_products p ON p.id=e.product_id
+   JOIN inventory_sites i ON i.id=e.site_id
+   JOIN crm_products p ON p.id=e.product_id
    JOIN inv_inbound_observations o ON o.id=e.observation_id
-   WHERE o.status='QUARANTINED_INTERNAL'
-   GROUP BY e.site_id,i.code,e.product_id,p.sku ORDER BY i.code,p.sku LIMIT 100`);
+   WHERE o.status='QUARANTINED_INTERNAL' AND o.recorded_by=?
+     AND i.created_by=?
+   GROUP BY e.site_id,i.code,e.product_id,p.sku
+   ORDER BY i.code,p.sku LIMIT 100`,[actor,actor]);
   const [checks]=await db.query<RowDataPacket[]>(`SELECT
    (SELECT COUNT(*) FROM inv_quarantine_custody_events e
      JOIN inv_inbound_observations o ON o.id=e.observation_id
-     WHERE o.status<>'QUARANTINED_INTERNAL') AS orphanedStatus,
-   (SELECT COUNT(*) FROM inv_inbound_lines l
-     JOIN inv_inbound_observations o ON o.id=l.observation_id
-     LEFT JOIN inv_quarantine_custody_events e ON e.line_id=l.id
-     WHERE o.status='QUARANTINED_INTERNAL' AND (e.id IS NULL OR
-       e.quantity<>l.quantity OR e.site_id<>o.site_id OR e.product_id<>l.product_id)) AS mismatchedLines,
-   (SELECT COALESCE(SUM(l.quantity),0) FROM inv_inbound_lines l
-     JOIN inv_inbound_observations o ON o.id=l.observation_id
-     WHERE o.status='QUARANTINED_INTERNAL' AND l.tracking_mode='SERIAL') AS expectedSerials,
-   (SELECT COUNT(*) FROM inv_quarantine_serials) AS storedSerials`);
+     WHERE o.recorded_by=? AND o.status<>'QUARANTINED_INTERNAL') AS orphanedStatus,
+   (SELECT COUNT(*) FROM inv_inbound_lines inbound_line
+     JOIN inv_inbound_observations o ON o.id=inbound_line.observation_id
+     LEFT JOIN inv_quarantine_custody_events e ON e.line_id=inbound_line.id
+     WHERE o.recorded_by=? AND o.status='QUARANTINED_INTERNAL'
+       AND (e.id IS NULL OR e.quantity<>inbound_line.quantity
+         OR e.site_id<>o.site_id OR e.product_id<>inbound_line.product_id)) AS mismatchedLines,
+   (SELECT COALESCE(SUM(inbound_line.quantity),0) FROM inv_inbound_lines inbound_line
+     JOIN inv_inbound_observations o ON o.id=inbound_line.observation_id
+     WHERE o.recorded_by=? AND o.status='QUARANTINED_INTERNAL'
+       AND inbound_line.tracking_mode='SERIAL') AS expectedSerials,
+   (SELECT COUNT(*) FROM inv_quarantine_serials serial
+     JOIN inv_inbound_observations o ON o.id=serial.observation_id
+     WHERE o.recorded_by=?) AS storedSerials`,
+   [actor,actor,actor,actor]);
   const c=checks[0];
   const inconsistencies=Number(c.orphanedStatus)+Number(c.mismatchedLines)+
     Math.abs(Number(c.expectedSerials)-Number(c.storedSerials));
   res.json({items:rows,internalLedgerConsistent:inconsistencies===0,
    internalDiscrepancies:inconsistencies,availableToSell:null,reservedQuantity:null,
    financialValue:null,externalReceiptVerified:false,goodsIssued:false,
-   disclaimer:'Read-only internal quarantine custody evidence; not physical stock certification, available inventory, external goods receipt or financial valuation.'});
+   disclaimer:'Owner-scoped internal quarantine custody only; not physical stock certification, available inventory, external receipt or financial valuation.'});
  }catch(e){fail(res,e);}
 });
 export default router;

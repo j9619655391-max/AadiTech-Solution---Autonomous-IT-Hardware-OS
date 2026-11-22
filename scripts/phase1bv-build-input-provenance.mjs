@@ -76,6 +76,8 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1cf-checkpoint-publication-review-preflight.mjs',
  'scripts/phase1cg-external-source-reconciliation-preflight.mjs',
  'scripts/verify-patched-dependencies.mjs',
+ 'server/intake/ownerRouter.ts',
+ 'tests/intake-mysql.integration.ts',
  'server/inventory/router.ts',
  'tests/inventory-mysql.integration.ts',
  'server/crm/repository.ts',

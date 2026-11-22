@@ -63,6 +63,8 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/phase1ef-disconnected-quarantine-escalation.mjs',
  'scripts/phase1eg-unsent-manual-authority-handoff.mjs',
  'scripts/phase1eh-disconnected-response-intake-quarantine.mjs',
+ 'server/intake/ownerRouter.ts',
+ 'tests/intake-mysql.integration.ts',
  'server/inventory/router.ts',
  'tests/inventory-mysql.integration.ts',
  'server/crm/repository.ts',

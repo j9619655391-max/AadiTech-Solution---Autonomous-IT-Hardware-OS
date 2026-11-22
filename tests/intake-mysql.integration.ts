@@ -202,6 +202,100 @@ test('reviewer independently witnesses serialized/lot counts, records custody ev
  const [opening]=await db.query<any[]>('SELECT COUNT(*) AS n FROM inventory_opening_counts WHERE product_id=?',[productId]);
  assert.equal(Number(opening[0].n),0);
 });
+
+test('1EM actor-scoped quarantine summary conceals foreign sites and disclosure metrics',async()=>{
+ const otherOwner=randomUUID(),otherToken=newSecret(),foreignSite=randomUUID(),
+  foreignSupplier=randomUUID(),foreignRequest=randomUUID(),foreignDecision=randomUUID(),
+  foreignHold=randomUUID(),foreignObservation=randomUUID(),foreignLine=randomUUID();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [otherOwner,'em-intake-'+otherOwner+'@example.invalid','Foreign CI intake owner',
+   'test-only','OWNER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(otherToken),otherOwner,csrf]);
+ await db.execute('INSERT INTO inventory_sites(id,code,name,created_by) VALUES(?,?,?,?)',
+  [foreignSite,'EM_'+otherOwner.replace(/-/g,'').slice(0,16).toUpperCase(),
+   'Foreign owner quarantine site',otherOwner]);
+ await db.execute(`INSERT INTO proc_suppliers
+  (id,code,legal_name,status,evidence_ref,created_by,reviewed_by)
+  VALUES(?,?,?,'REVIEWED_INTERNAL',?,?,?)`,
+  [foreignSupplier,'EMSUP_'+otherOwner.replace(/-/g,'').slice(0,12).toUpperCase(),
+   'Foreign synthetic supplier','EM-SUP-REF-2026',otherOwner,reviewer]);
+ await db.execute(`INSERT INTO proc_requests
+  (id,supplier_id,site_id,created_by,quote_evidence_ref,subtotal,status)
+  VALUES(?,?,?,?,?,'40.00','APPROVED_INTERNAL')`,
+  [foreignRequest,foreignSupplier,foreignSite,otherOwner,'EM-FOREIGN-QUOTE-REF']);
+ await db.execute(`INSERT INTO proc_review_decisions
+  (id,request_id,reviewer_id,decision,reason,evidence_attested)
+  VALUES (?,?,?,'APPROVED_INTERNAL',?,1)`,
+  [foreignDecision,foreignRequest,reviewer,'Synthetic foreign owner fixture only']);
+ await db.execute(`INSERT INTO proc_po_holds
+  (id,request_id,decision_id,prepared_by,snapshot_sha256,snapshot_json)
+  VALUES(?,?,?,?,?,?)`,[foreignHold,foreignRequest,foreignDecision,
+   otherOwner,'1'.repeat(64),JSON.stringify({fixtureOnly:true})]);
+ await db.execute(`INSERT INTO inv_inbound_observations
+  (id,hold_id,request_id,site_id,recorded_by,delivery_evidence_ref,
+   physical_count_ref,payload_sha256,status)
+  VALUES (?,?,?,?,?,?,?,?,'QUARANTINED_INTERNAL')`,
+  [foreignObservation,foreignHold,foreignRequest,foreignSite,otherOwner,
+   'EM-PRIVATE-DELIVERY','EM-PRIVATE-COUNT','2'.repeat(64)]);
+ await db.execute(`INSERT INTO inv_inbound_lines
+  (id,observation_id,product_id,quantity,tracking_mode,lot_code,serials_json)
+  VALUES (?,?,?,4,'LOT',?,?)`,
+  [foreignLine,foreignObservation,productLotId,'EM-FOREIGN-LOT','[]']);
+ // Deliberately inconsistent foreign-only custody to prove even discrepancy
+ // metadata is NOT mixed into this owner's security status.
+ await db.execute(`INSERT INTO inv_quarantine_custody_events
+  (id,observation_id,line_id,site_id,product_id,quantity,recorded_by)
+  VALUES (?,?,?,?,?,5,?)`,
+  [randomUUID(),foreignObservation,foreignLine,foreignSite,productLotId,reviewer]);
+ const mine=await call('/api/intake/quarantine-summary');
+ assert.equal(mine.status,200);
+ assert.equal(mine.data.items.some((x:any)=>x.siteId===siteId),true);
+ assert.equal(mine.data.items.some((x:any)=>x.siteId===foreignSite),false);
+ assert.equal(mine.data.internalDiscrepancies,0);
+ assert.equal(mine.data.internalLedgerConsistent,true);
+ assert.equal(mine.data.availableToSell,null);
+ assert.equal(mine.data.financialValue,null);
+ const response=await fetch(base+'/api/intake/quarantine-summary',{
+  headers:{cookie:'aaditech_session='+otherToken}});
+ assert.equal(response.status,200);
+ const foreign=await response.json() as Record<string,any>;
+ assert.equal(foreign.items.some((x:any)=>x.siteId===foreignSite),true);
+ assert.equal(foreign.items.some((x:any)=>x.siteId===siteId),false);
+ assert.equal(foreign.internalDiscrepancies,1);
+ assert.equal(foreign.internalLedgerConsistent,false);
+ assert.equal(foreign.availableToSell,null);
+ assert.equal((await call('/api/intake/quarantine-summary','GET',undefined,'anon')).status,401);
+ assert.equal((await call('/api/intake/quarantine-summary','GET',undefined,'reviewer')).status,403);
+ const foreignList=await call('/api/intake/observations');
+ assert.equal(foreignList.status,200);
+ assert.equal(foreignList.data.items.some((x:any)=>x.id===foreignObservation),false);
+ assert.equal((await call('/api/intake/observations/'+foreignObservation)).status,404);
+ const otherRead=await fetch(base+'/api/intake/observations/'+foreignObservation,{
+  headers:{cookie:'aaditech_session='+otherToken}});
+ assert.equal(otherRead.status,200);
+ // No cross-owner site is ever eligible for another OWNER's intake write.
+ const confused=await seedHeld([{productId:productLotId,sku:'INT-LOT-'+productLotId,
+  name:'Synthetic Observed Lot Accessory',quantity:3,cost:'40.00'}]);
+ const [requestRows]=await db.execute<any[]>(
+  'SELECT request_id FROM proc_po_holds WHERE id=?',[confused]);
+ assert.equal(requestRows.length,1);
+ await db.execute('UPDATE proc_requests SET site_id=? WHERE id=?',
+  [foreignSite,requestRows[0].request_id]);
+ const eligible=await call('/api/intake/eligible');
+ assert.equal(eligible.status,200);
+ assert.equal(eligible.data.items.some((x:any)=>x.holdId===confused),false);
+ const key=randomUUID();
+ const denied=await call('/api/intake/observations','POST',
+  observation(confused,[lotLine()]),'owner',{key});
+ assert.equal(denied.status,404);
+ const [reservation]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM inv_inbound_request_keys WHERE actor_id=? AND request_key=?',
+  [owner,key]);
+ assert.equal(Number(reservation[0].n),0);
+});
+
 test('duplicate serial on different observation is refused atomically; rejection never posts custody',async()=>{
  const duplicateHold=await seedHeld([{productId,sku:'INT-SER-'+productId,
   name:'Synthetic Observed Serialized Server',quantity:2,cost:'70.00'}]);
