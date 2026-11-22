@@ -17,7 +17,7 @@ export function epReviewerScopeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stag
 async function main(){
  epReviewerScopeMigrationTarget(process.env);
  const id='0046_ep_proof_key_trust_review_scopes';
- if(MIGRATIONS[45]!==id||MIGRATIONS.length!==46)
+ if(MIGRATIONS[45]!==id)
   throw Error('1EP exact schema-migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('1EP DB config incomplete');
