@@ -297,6 +297,11 @@ test('isolated synthetic source, authenticated role separation and API mount',as
    VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ // 1EP: downstream synthetic provider fixture explicitly nominates reviewer
+ // for each upstream proof, key possession and issuer-authority workflow.
+ // Production code does NOT automatically assign such scopes.
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROOF'),(?,?,'KEY_LIFECYCLE'),(?,?,'EXTERNAL_TRUST')",
+  [owner,reviewer,owner,reviewer,owner,reviewer]);
  main=await withHeldSource(await fixture('EXTERNAL_CI'));
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
