@@ -93,10 +93,19 @@ router.post('/',async(req,res)=>{
       });
       return;
     }
-    const [customer]=await connection.query<RowDataPacket[]>('SELECT id,name FROM crm_customers WHERE id=? AND deleted_at IS NULL FOR UPDATE',[body.customerId]);
+    // Only CRM records transactionally created by this authenticated OWNER may
+    // supply customer identity, lead details or confidential SKU prices.
+    const [customer]=await connection.query<RowDataPacket[]>(`SELECT c.id,c.name FROM crm_customers c WHERE c.id=? AND c.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='customers'
+        AND a.entity_id=c.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+       [body.customerId,res.locals.auth.userId]);
     if(!customer.length)throw new QuoteInputError('Active customer not found');
     if(body.leadId){
-      const [lead]=await connection.query<RowDataPacket[]>('SELECT id,company FROM crm_leads WHERE id=? AND deleted_at IS NULL FOR UPDATE',[body.leadId]);
+      const [lead]=await connection.query<RowDataPacket[]>(`SELECT lead.id,lead.company FROM crm_leads lead
+       WHERE lead.id=? AND lead.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='leads'
+        AND a.entity_id=lead.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+       [body.leadId,res.locals.auth.userId]);
       if(!lead.length)throw new QuoteInputError('Active lead not found');
     }
     let sum=0n,tax=0n;
@@ -105,7 +114,11 @@ router.post('/',async(req,res)=>{
     for(const item of body.items as {productId:string;quantity:number}[]) {
       if(used.has(item.productId))throw new QuoteInputError('Duplicate product lines; combine quantities');
       used.add(item.productId);
-      const [products]=await connection.query<RowDataPacket[]>('SELECT id,sku,brand,model,hsn,unitCost,sellingPrice,minPrice,gstRate FROM crm_products WHERE id=? AND deleted_at IS NULL FOR UPDATE',[item.productId]);
+      const [products]=await connection.query<RowDataPacket[]>(`SELECT p.id,p.sku,p.brand,p.model,p.hsn,p.unitCost,p.sellingPrice,
+        p.minPrice,p.gstRate FROM crm_products p WHERE p.id=? AND p.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='products'
+         AND a.entity_id=p.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+        [item.productId,res.locals.auth.userId]);
       if(!products.length)throw new QuoteInputError('Active catalog product not found');
       const p=products[0];
       if(paise(String(p.sellingPrice))<paise(String(p.minPrice)))throw new QuoteInputError('Product selling price below minimum');

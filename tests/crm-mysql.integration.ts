@@ -176,6 +176,120 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
   assert.equal(Number(concurrentRows[0].n),1);
 });
 
+
+/* Phase 1EK: real MySQL HTTP actor-scoped CRM provenance and draft inputs.
+ * This is application-audit actor scope, NOT a legal organization/tenant mandate. */
+let ekOtherCookie='',ekOwnCustomer='',ekOtherCustomer='',ekOwnLead='',
+ ekOtherProduct='',ekOwnProduct='',ekOtherDraft='';
+test('1EK two OWNER sessions create independently scoped CRM inputs',async()=>{
+ const otherUser=randomUUID(),otherToken='k'.repeat(43);
+ ekOtherCookie='aaditech_session='+otherToken;
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+  [otherUser,'ek-'+otherUser+'@example.invalid','Isolated CRM owner','test-only','OWNER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(otherToken),otherUser,csrf]);
+ const ownCustomer=await call('/api/crm/customers','POST',{
+  name:'Actor A Private Customer',contactPerson:'A only',
+  email:'a-'+randomUUID()+'@example.invalid',phone:'1234567890',
+  city:'Pune',state:'Maharashtra'});
+ const otherCustomer=await call('/api/crm/customers','POST',{
+  name:'Actor B Private Customer',contactPerson:'B only',
+  email:'b-'+randomUUID()+'@example.invalid',phone:'1234567891',
+  city:'Mumbai',state:'Maharashtra'},true,true,{cookie:ekOtherCookie});
+ assert.equal(ownCustomer.status,201);assert.equal(otherCustomer.status,201);
+ ekOwnCustomer=String(ownCustomer.data.id);
+ ekOtherCustomer=String(otherCustomer.data.id);
+ const lead=await call('/api/crm/leads','POST',{
+  name:'Actor A Lead',company:'Private only',email:'ek-lead-'+randomUUID()+'@example.invalid',
+  phone:'1234567890',source:'EMAIL',requirement:'CI evidence'});
+ assert.equal(lead.status,201);ekOwnLead=String(lead.data.id);
+ const ownProduct=await call('/api/crm/products','POST',{
+  sku:'EK-OWN-'+randomUUID(),brand:'CI',model:'Owner A',category:'SERVER',
+  specs:'Synthetic only',unitCost:'100.00',minPrice:'100.00',
+  sellingPrice:'160.00',hsn:'8471'});
+ const otherProduct=await call('/api/crm/products','POST',{
+  sku:'EK-OTHER-'+randomUUID(),brand:'CI',model:'Owner B',category:'SERVER',
+  specs:'Synthetic only',unitCost:'90.00',minPrice:'90.00',
+  sellingPrice:'150.00',hsn:'8471'},true,true,{cookie:ekOtherCookie});
+ assert.equal(ownProduct.status,201);assert.equal(otherProduct.status,201);
+ ekOwnProduct=String(ownProduct.data.id);ekOtherProduct=String(otherProduct.data.id);
+});
+test('1EK CRM list/get/count, update/delete deny foreign OWNER and missing CREATE audit',async()=>{
+ for(const [entity,foreign,own] of [
+  ['customers',ekOtherCustomer,ekOwnCustomer],
+  ['products',ekOtherProduct,ekOwnProduct]
+ ] as const){
+  const list=await call('/api/crm/'+entity);
+  assert.equal(list.status,200);
+  assert.equal(list.data.items.some((x:any)=>x.id===foreign),false);
+  assert.equal(list.data.items.some((x:any)=>x.id===own),true);
+  assert.equal(list.data.total,list.data.items.length);
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign)).status,404);
+  const update=entity==='customers'?{expectedVersion:1,city:'Intrusion'}:
+   {expectedVersion:1,model:'Intrusion'};
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign,'PATCH',update)).status,404);
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign,'DELETE',undefined,
+   true,true,{'if-match':'1'})).status,404);
+  assert.equal((await call('/api/crm/'+entity+'/'+own,'GET',undefined,true,true,
+   {cookie:ekOtherCookie})).status,404);
+ }
+ const [rows]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM crm_audit_events WHERE entity_id=? AND operation=?',
+  [ekOtherCustomer,'UPDATE']);
+ assert.equal(Number(rows[0].n),0);
+ const bare=randomUUID();
+ await db.execute(`INSERT INTO crm_customers
+  (id,name,contactPerson,email,phone,city,state) VALUES (?,?,?,?,?,?,?)`,
+  [bare,'Unattributed legacy customer','Nobody','legacy-'+bare+'@example.invalid',
+   '1234567890','Mumbai','Maharashtra']);
+ assert.equal((await call('/api/crm/customers/'+bare)).status,404);
+ assert.equal((await call('/api/crm/customers/'+bare,'GET',undefined,true,true,
+  {cookie:ekOtherCookie})).status,404);
+});
+test('1EK quote cannot use another OWNER customer, lead or price catalog ID',async()=>{
+ const other={cookie:ekOtherCookie};
+ const payload={customerId:ekOtherCustomer,
+  items:[{productId:ekOtherProduct,quantity:1}]};
+ for(const body of [
+  {...payload,customerId:ekOwnCustomer},
+  {...payload,items:[{productId:ekOwnProduct,quantity:1}]},
+  {...payload,leadId:ekOwnLead}
+ ]){
+  const key=randomUUID();
+  const denied=await call('/api/quotes/drafts','POST',body,true,true,
+   {...other,'idempotency-key':key});
+  assert.equal(denied.status,400);
+  const [reservation]=await db.execute<any[]>(
+   'SELECT COUNT(*) AS n FROM sales_quote_create_requests WHERE request_key=?',[key]);
+  assert.equal(Number(reservation[0].n),0);
+ }
+ const ownDenied=await call('/api/quotes/drafts','POST',payload);
+ assert.equal(ownDenied.status,400);
+});
+test('1EK valid same-OWNER quote remains private, atomic and never dispatched',async()=>{
+ const body={customerId:ekOtherCustomer,
+  items:[{productId:ekOtherProduct,quantity:1}]};
+ const key=randomUUID(),options={cookie:ekOtherCookie,'idempotency-key':key};
+ const draft=await call('/api/quotes/drafts','POST',body,true,true,options);
+ assert.equal(draft.status,201);ekOtherDraft=String(draft.data.id);
+ assert.equal(draft.data.status,'DRAFT');
+ const replay=await call('/api/quotes/drafts','POST',body,true,true,options);
+ assert.equal(replay.status,200);assert.equal(replay.data.id,ekOtherDraft);
+ const foreignGet=await call('/api/quotes/drafts/'+ekOtherDraft);
+ assert.equal(foreignGet.status,404);
+ const ownGet=await call('/api/quotes/drafts/'+ekOtherDraft,'GET',
+  undefined,true,true,{cookie:ekOtherCookie});
+ assert.equal(ownGet.status,200);
+ assert.equal(ownGet.data.items.length,1);
+ const otherList=await call('/api/quotes/drafts','GET',undefined,
+  true,true,{cookie:ekOtherCookie});
+ const aList=await call('/api/quotes/drafts');
+ assert.equal(otherList.data.items.some((x:any)=>x.id===ekOtherDraft),true);
+ assert.equal(aList.data.items.some((x:any)=>x.id===ekOtherDraft),false);
+ assert.equal(ownGet.data.draft.status,'DRAFT');
+});
+
 test('draft revisions preserve original snapshots, enforce version and margin guardrail',async()=>{
   const customer=await call('/api/crm/customers','POST',{
     name:'Revision Customer',contactPerson:'Owner',email:'revision@example.invalid',

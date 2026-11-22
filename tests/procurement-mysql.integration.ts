@@ -223,3 +223,74 @@ test('Phase 1BI owner-only source readback catches supplier line-cost tamper and
  }
  assert.equal((await call(route)).data.localScopeConsistent,true);
 });
+
+
+
+/* Phase 1EK: supplier/site provenance is actor scope, not legal tenancy. */
+test('1EK two OWNER sessions cannot list each other suppliers or request details',async()=>{
+ const foreignUser=randomUUID(),foreignToken='z'.repeat(43);
+ const otherCookie='aaditech_session='+foreignToken;
+ const foreignSupplier=randomUUID(),foreignSite=randomUUID();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+  [foreignUser,'ek-proc-'+foreignUser+'@example.invalid',
+   'Isolated procurement owner','test-only','OWNER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(foreignToken),foreignUser,csrf]);
+ await db.execute(`INSERT INTO proc_suppliers
+  (id,code,legal_name,status,created_by) VALUES (?,?,?,'REVIEWED_INTERNAL',?)`,
+  [foreignSupplier,'EK'+foreignUser.replace(/-/g,'').slice(0,14).toUpperCase(),
+   'Another owner internal synthetic supplier',foreignUser]);
+ await db.execute('INSERT INTO inventory_sites(id,code,name,created_by) VALUES (?,?,?,?)',
+  [foreignSite,'EKS'+foreignUser.replace(/-/g,'').slice(0,14).toUpperCase(),
+   'Another owner private warehouse',foreignUser]);
+ const ownSuppliers=await call('/api/procurement/suppliers');
+ assert.equal(ownSuppliers.status,200);
+ assert.equal(ownSuppliers.data.items.some((x:any)=>x.id===supplierId),true);
+ assert.equal(ownSuppliers.data.items.some((x:any)=>x.id===foreignSupplier),false);
+ // A second OWNER with a valid server-side session also cannot read A's supplier records.
+ const headers={cookie:otherCookie};
+ const response=await fetch(base+'/api/procurement/suppliers',{headers});
+ assert.equal(response.status,200);
+ const items=await response.json() as {items:{id:string}[]};
+ assert.equal(items.items.some(x=>x.id===supplierId),false);
+ assert.equal(items.items.some(x=>x.id===foreignSupplier),true);
+ const otherRequest=await fetch(base+'/api/procurement/requests/'+requestId,{headers});
+ assert.equal(otherRequest.status,404);
+ const ownRequest=await call('/api/procurement/requests/'+requestId);
+ assert.equal(ownRequest.status,200);
+ const ownList=await call('/api/procurement/requests');
+ assert.equal(ownList.status,200);
+ assert.equal(ownList.data.items.some((x:any)=>x.id===requestId),true);
+});
+test('1EK known foreign supplier or warehouse UUIDs fail transactional procurement checks',async()=>{
+ const [others]=await db.execute<any[]>(`SELECT s.id AS supplierId,i.id AS siteId
+  FROM proc_suppliers s JOIN inventory_sites i ON i.created_by=s.created_by
+  WHERE s.legal_name='Another owner internal synthetic supplier'`);
+ assert.equal(others.length,1);
+ const foreignSupplier=String(others[0].supplierId),
+  foreignSite=String(others[0].siteId);
+ const baseBody={supplierId,siteId,quoteEvidenceRef:'EK-CI-OWNER-SCOPE-QUOTE',
+  items:[{productId,quantity:1,quotedUnitCost:'88.00'}]};
+ for(const body of [
+  {...baseBody,supplierId:foreignSupplier},
+  {...baseBody,siteId:foreignSite}
+ ]){
+  const key=randomUUID();
+  const denied=await call('/api/procurement/requests','POST',body,'owner',
+   {idempotencyKey:key});
+  assert.equal(denied.status,400);
+  const [reservations]=await db.execute<any[]>(
+   'SELECT COUNT(*) AS n FROM proc_request_keys WHERE actor_id=? AND request_key=?',
+   [owner,key]);
+  assert.equal(Number(reservations[0].n),0);
+ }
+ const [notPosted]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM proc_requests WHERE site_id=? AND created_by=?',
+  [foreignSite,owner]);
+ assert.equal(Number(notPosted[0].n),0);
+ const [holds]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM proc_po_holds h JOIN proc_requests r ON r.id=h.request_id WHERE r.site_id=?',
+  [foreignSite]);
+ assert.equal(Number(holds[0].n),0);
+});

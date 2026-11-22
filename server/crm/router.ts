@@ -32,7 +32,7 @@ export function createCRMRouter(provider:Provider=defaultProvider) {
       const {limit,offset,page}=parsePagination(req.query);
       const repo=provider();
       if(!repo){res.status(503).json({error:'CRM service unavailable'});return;}
-      const result=await repo.list(entity,limit,offset);
+      const result=await repo.list(entity,limit,offset,res.locals.auth.userId);
       res.json({...result,page,limit});
     }catch(e){error(res,e);}
   });
@@ -42,7 +42,7 @@ export function createCRMRouter(provider:Provider=defaultProvider) {
       if(!validId(req.params.id))throw new InputError('Invalid ID');
       const repo=provider();
       if(!repo){res.status(503).json({error:'CRM service unavailable'});return;}
-      const item=await repo.get(entity,req.params.id);
+      const item=await repo.get(entity,req.params.id,res.locals.auth.userId);
       if(!item){res.status(404).json({error:'Record not found'});return;}
       res.json(item);
     }catch(e){error(res,e);}

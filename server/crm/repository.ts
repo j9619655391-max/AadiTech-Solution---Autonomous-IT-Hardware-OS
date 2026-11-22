@@ -3,8 +3,8 @@ import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { definitions, type CRMEntity, type Input } from './validation';
 
 export interface CRMRepository {
-  list(entity: CRMEntity, limit: number, offset: number): Promise<{ items: object[]; total: number }>;
-  get(entity: CRMEntity, id: string): Promise<object | null>;
+  list(entity: CRMEntity, limit: number, offset: number, actor: string): Promise<{ items: object[]; total: number }>;
+  get(entity: CRMEntity, id: string, actor: string): Promise<object | null>;
   create(entity: CRMEntity, fields: Input, actor: string): Promise<object>;
   update(entity: CRMEntity, id: string, version: number, fields: Input, actor: string): Promise<object | 'not_found' | 'conflict'>;
   remove(entity: CRMEntity, id: string, version: number, actor: string): Promise<'deleted' | 'not_found' | 'conflict'>;
@@ -16,16 +16,29 @@ function clean(entity:CRMEntity,row:RowDataPacket):object {
   const columns=['id',...Object.keys(definitions[entity]),'version','created_at','updated_at'];
   return Object.fromEntries(columns.filter(k=>row[k]!==undefined).map(k=>[k,row[k]]));
 }
+// Phase 1EK: historical CRM rows have no creator FK. The application’s
+// transactionally written CREATE audit event is the only current actor-bound
+// provenance available. Missing or foreign provenance must fail closed,
+// never be silently assigned to a different OWNER or treated as legal tenancy.
+const creatorScope=(alias:string)=>`EXISTS (SELECT 1 FROM crm_audit_events creator
+ WHERE creator.entity_type=? AND creator.entity_id=${alias}.id
+ AND creator.operation='CREATE' AND creator.actor_user_id=?)`;
 export class MySQLCRMRepository implements CRMRepository {
   constructor(private readonly db:Pool){}
-  async list(entity:CRMEntity,limit:number,offset:number) {
-    const table=tables[entity];
-    const [rows]=await this.db.query<RowDataPacket[]>(`SELECT * FROM ${table} WHERE deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,[limit,offset]);
-    const [counts]=await this.db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM ${table} WHERE deleted_at IS NULL`);
+  async list(entity:CRMEntity,limit:number,offset:number,actor:string) {
+    const table=tables[entity],scope=creatorScope('record');
+    const [rows]=await this.db.query<RowDataPacket[]>(`SELECT record.* FROM ${table} record
+      WHERE record.deleted_at IS NULL AND ${scope}
+      ORDER BY record.created_at DESC,record.id DESC LIMIT ? OFFSET ?`,
+      [entity,actor,limit,offset]);
+    const [counts]=await this.db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+      FROM ${table} record WHERE record.deleted_at IS NULL AND ${scope}`,[entity,actor]);
     return {items:rows.map(x=>clean(entity,x)),total:Number(counts[0].total)};
   }
-  async get(entity:CRMEntity,id:string) {
-    const [rows]=await this.db.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=? AND deleted_at IS NULL LIMIT 1`,[id]);
+  async get(entity:CRMEntity,id:string,actor:string) {
+    const [rows]=await this.db.query<RowDataPacket[]>(`SELECT record.* FROM ${tables[entity]} record
+      WHERE record.id=? AND record.deleted_at IS NULL AND ${creatorScope('record')} LIMIT 1`,
+      [id,entity,actor]);
     return rows[0]?clean(entity,rows[0]):null;
   }
   private async audit(connection:PoolConnection,entity:CRMEntity,id:string,actor:string,operation:'CREATE'|'UPDATE'|'DELETE',before:object|null,after:object|null) {
@@ -48,7 +61,8 @@ export class MySQLCRMRepository implements CRMRepository {
     const connection=await this.db.getConnection();
     try {
       await connection.beginTransaction();
-      const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=? AND deleted_at IS NULL FOR UPDATE`,[id]);
+      const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT record.* FROM ${tables[entity]} record WHERE record.id=?
+        AND record.deleted_at IS NULL AND ${creatorScope('record')} FOR UPDATE`,[id,entity,actor]);
       if(!beforeRows.length){await connection.rollback();return 'not_found';}
       if(beforeRows[0].version!==version){await connection.rollback();return 'conflict';}
       const before=clean(entity,beforeRows[0]);const keys=Object.keys(fields);
@@ -68,7 +82,8 @@ export class MySQLCRMRepository implements CRMRepository {
     const connection=await this.db.getConnection();
     try{
       await connection.beginTransaction();
-      const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=? AND deleted_at IS NULL FOR UPDATE`,[id]);
+      const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT record.* FROM ${tables[entity]} record WHERE record.id=?
+        AND record.deleted_at IS NULL AND ${creatorScope('record')} FOR UPDATE`,[id,entity,actor]);
       if(!beforeRows.length){await connection.rollback();return 'not_found';}
       if(beforeRows[0].version!==version){await connection.rollback();return 'conflict';}
       const before=clean(entity,beforeRows[0]);

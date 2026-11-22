@@ -30,7 +30,8 @@ router.get('/suppliers',async(_req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.query<RowDataPacket[]>(
-   "SELECT id,code,legal_name AS legalName,tax_id AS taxId,status,evidence_ref AS evidenceRef,created_at AS createdAt FROM proc_suppliers ORDER BY code LIMIT 200");
+   "SELECT id,code,legal_name AS legalName,tax_id AS taxId,status,evidence_ref AS evidenceRef,created_at AS createdAt FROM proc_suppliers WHERE created_by=? ORDER BY code LIMIT 200",
+   [res.locals.auth.userId]);
   res.json({items:rows,verification:'INTERNAL_ATTESTATION_ONLY',externalVerification:false});
  }catch(e){fail(res,e);}
 });
@@ -61,8 +62,9 @@ router.get('/requests',async(req,res)=>{
    JOIN proc_suppliers s ON s.id=r.supplier_id
    JOIN inventory_sites i ON i.id=r.site_id
    LEFT JOIN proc_po_holds h ON h.request_id=r.id
-   WHERE r.created_by=? ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE r.created_by=? AND s.created_by=? AND i.created_by=?
+   ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,dispatchEnabled:false,stockPosted:false});
  }catch(e){fail(res,e);}
 });
@@ -70,9 +72,12 @@ router.get('/requests/:id',async(req,res)=>{
  if(!inventoryId(req.params.id)){res.status(400).json({error:'Invalid request ID'});return;}
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [requests]=await db.query<RowDataPacket[]>(`SELECT id,supplier_id AS supplierId,site_id AS siteId,
-   quote_evidence_ref AS quoteEvidenceRef,subtotal,status,created_at AS createdAt
-   FROM proc_requests WHERE id=? AND created_by=?`,[req.params.id,res.locals.auth.userId]);
+  const [requests]=await db.query<RowDataPacket[]>(`SELECT r.id,r.supplier_id AS supplierId,r.site_id AS siteId,
+   r.quote_evidence_ref AS quoteEvidenceRef,r.subtotal,r.status,r.created_at AS createdAt
+   FROM proc_requests r JOIN proc_suppliers s ON s.id=r.supplier_id
+   JOIN inventory_sites i ON i.id=r.site_id
+   WHERE r.id=? AND r.created_by=? AND s.created_by=? AND i.created_by=?`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId,res.locals.auth.userId]);
   if(!requests.length){res.status(404).json({error:'Purchase request not found'});return;}
   const [lines]=await db.query<RowDataPacket[]>(`SELECT product_id AS productId,sku_snapshot AS sku,
    name_snapshot AS name,quantity,quoted_unit_cost AS quotedUnitCost,line_subtotal AS lineSubtotal
@@ -109,11 +114,13 @@ router.post('/requests',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
     replayed:true,dispatchEnabled:false,stockPosted:false});return;
   }
   const [suppliers]=await conn.query<RowDataPacket[]>(
-   'SELECT id,status FROM proc_suppliers WHERE id=? FOR UPDATE',[input.supplierId]);
+   'SELECT id,status FROM proc_suppliers WHERE id=? AND created_by=? FOR UPDATE',
+   [input.supplierId,actor]);
   if(!suppliers.length||suppliers[0].status!=='REVIEWED_INTERNAL')
    throw new ProcurementInputError('Supplier requires independent internal identity review');
   const [sites]=await conn.query<RowDataPacket[]>(
-   'SELECT id FROM inventory_sites WHERE id=? FOR UPDATE',[input.siteId]);
+   'SELECT id FROM inventory_sites WHERE id=? AND created_by=? FOR UPDATE',
+   [input.siteId,actor]);
   if(!sites.length)throw new ProcurementInputError('Registered site not found');
   const snapshots:{productId:string;sku:string;name:string;quantity:number;unit:string;line:string}[]=[];
   for(const line of input.items){
@@ -163,7 +170,10 @@ router.post('/requests/:id/hold',requirePrivilegedMfa,requireStepUp,async(req,re
      r.subtotal,r.quote_evidence_ref,s.code AS supplier_code,s.legal_name AS supplier_name,
      s.status AS supplier_status
      FROM proc_requests r JOIN proc_suppliers s ON s.id=r.supplier_id
-     WHERE r.id=? AND r.created_by=? FOR UPDATE`,[req.params.id,actor]);
+     JOIN inventory_sites site ON site.id=r.site_id
+     WHERE r.id=? AND r.created_by=? AND s.created_by=?
+       AND site.created_by=? FOR UPDATE`,
+     [req.params.id,actor,actor,actor]);
   if(!rows.length){await conn.rollback();res.status(404).json({error:'Request not found'});return;}
   const reqRow=rows[0];
   if(reqRow.status!=='APPROVED_INTERNAL'||reqRow.supplier_status!=='REVIEWED_INTERNAL')
