@@ -3973,3 +3973,206 @@ test('1EH clock mismatch and redacted frozen output block promoted claims',()=>{
  has(ehAssess(f),'EH_ORIGINAL_EG_HISTORY_NOT_REVERIFIED');
  ehHold(r);
 });
+
+
+/* Phase 1EI: local-only external evidence ADMISSION PREREQUISITES, not approval. */
+import {EI_GATE_REQUIREMENTS,prerequisiteDigestEi,
+ createIndependentAdmissionPrerequisitesEi,
+ assessIndependentAdmissionPrerequisitesEi}
+ from '../scripts/phase1ei-independent-admission-prerequisites.mjs';
+function eiFixture(claims=Array(12).fill(null)){
+ const eh=ehFixture(claims);
+ return {args:{previousIntakeCandidate:eh.args,
+  prerequisites:clone(createIndependentAdmissionPrerequisitesEi(eh.args)),
+  now:NOW}};
+}
+const eiAssess=f=>assessIndependentAdmissionPrerequisitesEi(f.args);
+const eiHold=r=>{
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.independentExternalEvidenceGatesStillUnfilled,12);
+ assert.equal(r.claimedApplicantDigestsNeverAdmitted,true);
+ assert.equal(r.actualIndependentEvidenceAuthenticated,0);
+ assert.equal(r.independentApprovalOrCaseClosurePossible,false);
+ assert.equal(r.dispatchNetworkProviderOrCredentialsActivated,false);
+ assert.equal(r.offPlatformWormTrustedTimeDrStagingAccepted,false);
+};
+test('1EI exact 12 source-bound independent evidence prerequisites remain unmet',()=>{
+ const f=eiFixture(),r=eiAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.fullOriginalEhToDuHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.exactApplicantControlledPrerequisitesValidated,12);
+ assert.equal(Object.keys(EI_GATE_REQUIREMENTS).length,12);
+ assert.equal(Object.isFrozen(EI_GATE_REQUIREMENTS),true);
+ assert.ok(Object.values(EI_GATE_REQUIREMENTS).every(Object.isFrozen));
+ assert.ok(f.args.prerequisites.every(p=>
+  p.admissionStatus==='NOT_ADMITTED_EXTERNAL_PROOF_REQUIRED'));
+ eiHold(r);
+});
+test('1EI claimed external evidence digests never satisfy any admission gate',()=>{
+ const claims=Array(12).fill(null);
+ claims[0]='a'.repeat(64);claims[5]='b'.repeat(64);
+ claims[11]='c'.repeat(64);
+ const f=eiFixture(claims),r=eiAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.exactApplicantControlledPrerequisitesValidated,12);
+ assert.equal(f.args.prerequisites[5].applicantClaimState,
+  'APPLICANT_CLAIM_QUARANTINED');
+ assert.equal(f.args.prerequisites[1].applicantClaimState,
+  'NO_RESPONSE_OBSERVED');
+ eiHold(r);
+});
+test('1EI all 12 requirements have pinned unique verification and custody methods',()=>{
+ const all=Object.values(EI_GATE_REQUIREMENTS);
+ for(const key of ['requiredArtifact','verificationMethod','custodyRequirement']){
+  assert.equal(new Set(all.map(x=>x[key])).size,12);
+  assert.ok(all.every(x=>typeof x[key]==='string'&&x[key].length>12));
+ }
+ const f=eiFixture(),r=eiAssess(f);
+ f.args.prerequisites.forEach((record,i)=>{
+  const req=EI_GATE_REQUIREMENTS[record.gate];
+  assert.deepEqual([record.requiredArtifact,record.verificationMethod,
+   record.custodyRequirement],
+   [req.requiredArtifact,req.verificationMethod,req.custodyRequirement]);
+  assert.equal(record.sequence,i+1);
+ });
+ eiHold(r);
+});
+test('1EI intake root, each linked predecessor and digest remain deterministic',()=>{
+ const f=eiFixture(),rs=f.args.prerequisites;
+ assert.equal(rs[0].previousPrerequisiteSha256,
+  applicantIntakeDigestEh(f.args.previousIntakeCandidate.entries[11]));
+ for(let i=0;i<12;i++){
+  assert.equal(rs[i].quarantinedIntakeSha256,
+   applicantIntakeDigestEh(f.args.previousIntakeCandidate.entries[i]));
+  if(i)assert.equal(rs[i].previousPrerequisiteSha256,
+   prerequisiteDigestEi(rs[i-1]));
+ }
+ assert.deepEqual(rs,createIndependentAdmissionPrerequisitesEi(
+  f.args.previousIntakeCandidate));
+ eiHold(eiAssess(f));
+});
+test('1EI forged reviewer, source bytes, signer, time, custody cannot be approved',()=>{
+ for(const key of [
+  'independentReviewerAuthenticated','independentSourceBytesRetrieved',
+  'externalSignatureOrMandateVerified','freshRevocationAndTrustedTimeVerified',
+  'offPlatformCustodyVerified'
+ ]){
+  const f=eiFixture();f.args.prerequisites[6][key]=true;
+  const r=eiAssess(f);
+  has(r,'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+  eiHold(r);
+ }
+});
+test('1EI forged GO, case closure, dispatch, auto-retry and IO denied',()=>{
+ for(const [field,value] of [
+  ['admissionStatus','VERIFIED_EXTERNAL'],['releaseDecision','GO'],
+  ['requestDispatched',true],['caseClosed',true],['autoRetryAllowed',true],
+  ['networkRequests',1],['sideEffects',1]
+ ]){
+  const f=eiFixture();f.args.prerequisites[11][field]=value;
+  const r=eiAssess(f);
+  has(r,'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+  eiHold(r);
+ }
+});
+test('1EI wrong independent reviewer role or evidence verification method denied',()=>{
+ for(const [field,value] of [
+  ['requiredIndependentAuthorityRole','APPLICANT_AUTHOR'],
+  ['requiredArtifact','UNSIGNED_APPLICATION_SELF_ATTESTATION'],
+  ['verificationMethod','SELF_REPORTED_SHA256_EQUALS_TRUE'],
+  ['custodyRequirement','SAME_ACTOR_GIT_OR_CHAT']
+ ]){
+  const f=eiFixture();f.args.prerequisites[4][field]=value;
+  has(eiAssess(f),
+   'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+ }
+});
+test('1EI wrong scope, gate, intake digest, sequence, predecessor rejected',()=>{
+ for(const [field,value] of [
+  ['gate','LIVE_ISSUER_SIGNED_CRL_OCSP'],['sequence',12],
+  ['repository','ATTACKER_REPO'],['quarantinedIntakeSha256','f'.repeat(64)],
+  ['previousPrerequisiteSha256','f'.repeat(64)]
+ ]){
+  const f=eiFixture();f.args.prerequisites[0][field]=value;
+  has(eiAssess(f),
+   'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+ }
+});
+test('1EI reordered, missing, duplicate or extended gate list denied',()=>{
+ for(const edit of [
+  a=>a.reverse(),a=>a.pop(),a=>a.push(clone(a[0])),
+  a=>{a[3]=clone(a[2]);},a=>{delete a[4];}
+ ]){
+  const f=eiFixture();edit(f.args.prerequisites);
+  const r=eiAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EI_')));eiHold(r);
+ }
+});
+test('1EI rehashed self-consistent locally wrong chain cannot spoof original',()=>{
+ const f=eiFixture();
+ f.args.prerequisites[0].quarantinedIntakeSha256='f'.repeat(64);
+ for(let i=1;i<12;i++)
+  f.args.prerequisites[i].previousPrerequisiteSha256=
+   prerequisiteDigestEi(f.args.prerequisites[i-1]);
+ has(eiAssess(f),
+  'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+});
+test('1EI tampered EH claim, EG dispatched or EF closed invalidates entire chain',()=>{
+ for(const edit of [
+  f=>{f.args.previousIntakeCandidate.entries[0].receiptState='VERIFIED';},
+  f=>{f.args.previousIntakeCandidate.previousHandoffCandidate.requests[0]
+   .requestDispatched=true;},
+  f=>{f.args.previousIntakeCandidate.previousHandoffCandidate
+   .previousQuarantineCandidate.cases[0].caseStatus='CLOSED';},
+  f=>{f.args.previousIntakeCandidate.previousHandoffCandidate
+   .previousQuarantineCandidate.previousFailureCandidate
+   .plans[0].requestedVersion=0;}
+ ]){
+  const f=eiFixture();edit(f);
+  has(eiAssess(f),'EI_ORIGINAL_EH_HISTORY_NOT_REVERIFIED');
+ }
+});
+test('1EI generator refuses forged EH and cannot accept modified approval input',()=>{
+ const f=ehFixture();f.args.entries[0].caseClosed=true;
+ assert.throws(()=>createIndependentAdmissionPrerequisitesEi(f.args),
+  /EI_ORIGINAL_EH_HISTORY_NOT_REVERIFIED/);
+ const g=eiFixture();g.args.sourceApproved=true;
+ has(eiAssess(g),'EI_EXACT_BOUNDED_INPUT_REQUIRED');
+});
+test('1EI extra fields, cycles, malformed and oversized packet are refused',()=>{
+ let f=eiFixture();f.args.prerequisites[0].approved=true;
+ has(eiAssess(f),
+  'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+ f=eiFixture();f.args.prerequisites[0].cycle=f.args;
+ has(eiAssess(f),'EI_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=eiFixture();f.args.prerequisites[0].extra='z'.repeat(5900*1024);
+ has(eiAssess(f),'EI_EXACT_BOUNDED_INPUT_REQUIRED');
+ assert.throws(()=>prerequisiteDigestEi({signed:true}),
+  /EI_EXACT_UNFILLED_PREREQUISITE_REQUIRED/);
+});
+test('1EI accessors and wrong time never become verified evidence',()=>{
+ let f=eiFixture();
+ Object.defineProperty(f.args.prerequisites[0],'caseClosed',{
+  enumerable:true,configurable:true,get(){return false;}
+ });
+ has(eiAssess(f),
+  'EI_PREREQUISITE_SOURCE_REPLAY_OR_FALSE_EXTERNAL_AUTHORITY');
+ f=eiFixture();f.args.now='2026-11-21T00:00:01.000Z';
+ has(eiAssess(f),'EI_ORIGINAL_EH_HISTORY_NOT_REVERIFIED');
+});
+test('1EI report is frozen and never leaks synthetic claimed SHA or sources',()=>{
+ const claims=Array(12).fill(null);claims[1]='d'.repeat(64);
+ const f=eiFixture(claims),r=eiAssess(f),serialized=JSON.stringify(r);
+ for(const hidden of [claims[1],f.args.prerequisites[0].quarantinedIntakeSha256,
+  f.args.previousIntakeCandidate.entries[0].manualRequestSha256])
+  assert.equal(serialized.includes(hidden),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ const generated=createIndependentAdmissionPrerequisitesEi(
+  f.args.previousIntakeCandidate);
+ assert.equal(Object.isFrozen(generated),true);
+ assert.ok(generated.every(Object.isFrozen));
+ eiHold(r);
+});
