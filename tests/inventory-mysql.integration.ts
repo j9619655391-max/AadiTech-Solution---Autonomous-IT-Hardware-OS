@@ -11,10 +11,13 @@ if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.e
  throw Error('Inventory integration tests refuse non-disposable MySQL');
 const db=getPool();
 if(!db)throw Error('MySQL disposable inventory test requires DB pool');
-const actor=randomUUID(),reviewer=randomUUID(),token=randomUUID().replace(/-/g,'')+'a'.repeat(11);
+const actor=randomUUID(),reviewer=randomUUID(),otherOwner=randomUUID(),
+ token=randomUUID().replace(/-/g,'')+'a'.repeat(11);
 const csrf='c'.repeat(43),pass='CI-inventory-password-unique';
 const ownerCookie='aaditech_session='+token;
-const reviewerToken='r'.repeat(43),reviewerCookie='aaditech_session='+reviewerToken;
+const reviewerToken='r'.repeat(43),reviewerCookie='aaditech_session='+reviewerToken,
+ otherToken='o'.repeat(43),otherOwnerCookie='aaditech_session='+otherToken;
+let foreignSiteId='',foreignCountId='';
 let base='',stepUp='',siteId='',productId='';
 let close:()=>Promise<void>|undefined;
 after(async()=>{if(close)await close();await db.end();});
@@ -43,12 +46,22 @@ test('isolated stock setup uses existing server auth and product master',async()
   [reviewer,'stock-review-'+reviewer+'@example.invalid','Stock test reviewer','test-only','REVIEWER']);
  await db.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
   [hashToken(reviewerToken),reviewer,csrf]);
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+  [otherOwner,'stock-other-'+otherOwner+'@example.invalid','Other CI stock owner','test-only','OWNER']);
+ await db.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
+  [hashToken(otherToken),otherOwner,csrf]);
+ foreignSiteId=randomUUID();foreignCountId=randomUUID();
+ const foreignCode='CI_OTHER_'+otherOwner.replace(/-/g,'').slice(0,12).toUpperCase();
+ await db.execute('INSERT INTO inventory_sites(id,code,name,created_by) VALUES (?,?,?,?)',
+  [foreignSiteId,foreignCode,'Other owner private site',otherOwner]);
  productId=randomUUID();
  await db.execute(`INSERT INTO crm_products
   (id,sku,brand,model,category,specs,unitCost,sellingPrice,minPrice,hsn)
   VALUES (?,?,?,?,?,?,?,?,?,?)`,
   [productId,'CI-INV-'+productId,'Test','Count-only laptop','LAPTOP','Synthetic test item',
    '100.00','120.00','100.00','8471']);
+ await db.execute('INSERT INTO inventory_opening_counts(id,product_id,site_id,quantity,evidence_ref,attested_by) VALUES (?,?,?,?,?,?)',
+  [foreignCountId,productId,foreignSiteId,23,'OTHER-PRIVATE-COUNT-REF',otherOwner]);
  const app=express();app.use(express.json());app.use('/api/auth',authRouter);
  app.use('/api/inventory',inventoryRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -111,4 +124,68 @@ test('count requires exact schema, evidence reference and idempotency key',async
  const unsupported=await call('/api/inventory/opening-counts','DELETE',body);
  assert.equal(unsupported.status,404);
  assert.equal(unsupported.data.error,'Unknown API endpoint');
+});
+
+
+test('1EJ actor-scoped site list prevents OWNER-to-OWNER warehouse IDOR',async()=>{
+ const own=await call('/api/inventory/sites');
+ assert.equal(own.status,200);
+ assert.equal(own.data.items.some((s:any)=>s.id===foreignSiteId),false);
+ const foreign=await call('/api/inventory/sites','GET',undefined,
+  {cookie:otherOwnerCookie});
+ assert.equal(foreign.status,200);
+ assert.equal(foreign.data.items.some((s:any)=>s.id===foreignSiteId),true);
+ assert.equal(foreign.data.items.some((s:any)=>s.id===siteId),false);
+ assert.match(own.data.authority,/OWNER_ATTESTED_SITE_ONLY/);
+});
+test('1EJ opening counts and total do not disclose another OWNER counts',async()=>{
+ const mine=await call('/api/inventory/opening-counts?page=1&limit=50');
+ assert.equal(mine.status,200);
+ assert.equal(mine.data.items.some((c:any)=>c.id===foreignCountId),false);
+ assert.equal(mine.data.items.some((c:any)=>c.siteId===foreignSiteId),false);
+ assert.equal(mine.data.items.some((c:any)=>c.siteId===siteId),true);
+ const outsider=await call('/api/inventory/opening-counts?page=1&limit=50',
+  'GET',undefined,{cookie:otherOwnerCookie});
+ assert.equal(outsider.status,200);
+ assert.equal(outsider.data.items.some((c:any)=>c.id===foreignCountId),true);
+ assert.equal(outsider.data.items.some((c:any)=>c.siteId===siteId),false);
+ assert.equal(mine.data.total,mine.data.items.length);
+ assert.equal(outsider.data.total,outsider.data.items.length);
+ assert.equal(mine.data.availableToSell,null);
+ assert.equal(outsider.data.availableToSell,null);
+ assert.equal(mine.data.reservations,null);
+ assert.equal(outsider.data.reservations,null);
+});
+test('1EJ privileged write and idempotency cannot target another OWNER site',async()=>{
+ const body={productId,siteId:foreignSiteId,quantity:4,
+  evidenceRef:'CI-FOREIGN-BOLA-ATTEMPT'};
+ const key=randomUUID();
+ const denied=await call('/api/inventory/opening-counts','POST',body,
+  {idempotencyKey:key});
+ assert.equal(denied.status,400);
+ assert.match(denied.data.error,/Active product and registered site/);
+ // The rejected MySQL transaction must not reserve the failed idempotency key.
+ const [keys]=await db.query<any[]>(
+  'SELECT COUNT(*) AS n FROM inventory_opening_requests WHERE actor_id=? AND request_key=?',
+  [actor,key]);
+ assert.equal(Number(keys[0].n),0);
+ const [foreign]=await db.query<any[]>(
+  'SELECT quantity,attested_by FROM inventory_opening_counts WHERE id=?',
+  [foreignCountId]);
+ assert.equal(foreign.length,1);
+ assert.equal(Number(foreign[0].quantity),23);
+ assert.equal(foreign[0].attested_by,otherOwner);
+ const otherBody={productId,siteId,quantity:4,
+  evidenceRef:'CI-REVERSE-FOREIGN-BOLA'};
+ const deniedReverse=await call('/api/inventory/opening-counts','POST',
+  otherBody,{cookie:otherOwnerCookie,idempotencyKey:randomUUID()});
+ // The other owner has no password step-up; refuse before either actor scope or stock mutation.
+ assert.equal(deniedReverse.status,403);
+});
+test('1EJ cross-owner count read rejects unprivileged and anonymous sessions',async()=>{
+ for(const cookie of [reviewerCookie,'bad=1']){
+  const result=await call('/api/inventory/opening-counts',
+   'GET',undefined,{cookie});
+  assert.equal(result.status,cookie===reviewerCookie?403:401);
+ }
 });

@@ -76,6 +76,8 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1cf-checkpoint-publication-review-preflight.mjs',
  'scripts/phase1cg-external-source-reconciliation-preflight.mjs',
  'scripts/verify-patched-dependencies.mjs',
+ 'server/inventory/router.ts',
+ 'tests/inventory-mysql.integration.ts',
  'server.ts',
  'server/security/deploymentGuards.ts',
  'server/security/devToolExposure.ts',

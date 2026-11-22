@@ -23,11 +23,13 @@ function fail(res:Response,error:unknown){
  console.error('Inventory operation unavailable',error instanceof Error?error.name:'Unknown');
  res.status(503).json({error:'Inventory service unavailable'});
 }
+// Site listing and count reads are actor-scoped; role=OWNER is not tenant scope.
 router.get('/sites',async(_req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.query<RowDataPacket[]>(
-   'SELECT id,code,name,created_at FROM inventory_sites ORDER BY code LIMIT 100');
+   'SELECT id,code,name,created_at FROM inventory_sites WHERE created_by=? ORDER BY code LIMIT 100',
+   [res.locals.auth.userId]);
   res.json({items:rows,authority:'OWNER_ATTESTED_SITE_ONLY'});
  }catch(e){fail(res,e);}
 });
@@ -53,8 +55,13 @@ router.get('/opening-counts',async(req,res)=>{
     FROM inventory_opening_counts c
     JOIN inventory_sites s ON s.id=c.site_id
     JOIN crm_products p ON p.id=c.product_id
-    ORDER BY c.recorded_at DESC,c.id DESC LIMIT ? OFFSET ?`,[limit,offset]);
-  const [counts]=await db.query<RowDataPacket[]>('SELECT COUNT(*) AS total FROM inventory_opening_counts');
+    WHERE c.attested_by=? AND s.created_by=?
+    ORDER BY c.recorded_at DESC,c.id DESC LIMIT ? OFFSET ?`,
+    [res.locals.auth.userId,res.locals.auth.userId,limit,offset]);
+  const [counts]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM inventory_opening_counts c
+    JOIN inventory_sites s ON s.id=c.site_id
+    WHERE c.attested_by=? AND s.created_by=?`,
+    [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,total:Number(counts[0].total),page,limit,
    status:'OPENING_COUNTS_ONLY',availableToSell:null,reservations:null,
    disclaimer:'Owner-attested historical opening counts, not verified current stock, inventory availability, receivables or procurement receipts.'});
@@ -84,8 +91,11 @@ router.post('/opening-counts',requirePrivilegedMfa,requireStepUp,async(req,res)=
   if(claim.affectedRows===0){
    if(!existing.count_id)throw Error('Incomplete inventory request reservation');
    const [prior]=await conn.query<RowDataPacket[]>(
-    'SELECT id,product_id AS productId,site_id AS siteId,quantity,evidence_ref AS evidenceRef FROM inventory_opening_counts WHERE id=?',
-    [existing.count_id]);
+    `SELECT c.id,c.product_id AS productId,c.site_id AS siteId,
+    c.quantity,c.evidence_ref AS evidenceRef FROM inventory_opening_counts c
+    JOIN inventory_sites s ON s.id=c.site_id
+    WHERE c.id=? AND c.attested_by=? AND s.created_by=?`,
+    [existing.count_id,actor,actor]);
    if(!prior.length)throw Error('Prior opening count missing');
    await conn.commit();
    res.status(200).json({...prior[0],replayed:true,status:'OPENING_COUNT_ONLY',
@@ -93,8 +103,10 @@ router.post('/opening-counts',requirePrivilegedMfa,requireStepUp,async(req,res)=
   }
   const [products]=await conn.query<RowDataPacket[]>(
    'SELECT id FROM crm_products WHERE id=? AND deleted_at IS NULL FOR UPDATE',[input.productId]);
+  // Lock the exact actor-owned site before creating any opening count.
   const [sites]=await conn.query<RowDataPacket[]>(
-   'SELECT id FROM inventory_sites WHERE id=? FOR UPDATE',[input.siteId]);
+   'SELECT id FROM inventory_sites WHERE id=? AND created_by=? FOR UPDATE',
+   [input.siteId,actor]);
   if(!products.length||!sites.length)
    throw new InventoryInputError('Active product and registered site are required');
   const id=randomUUID();
