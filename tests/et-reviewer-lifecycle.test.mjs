@@ -15,14 +15,18 @@ test('1ET security-admin transaction locks the active acting OWNER before target
  assert.match(guard,/await conn.rollback\(\);res.status\(403\)/);
  assert.ok(src.includes('router.use(requireOwner)'));
 });
-test('1ET disabling reviewer withdraws ACTIVE nominations before commit; reenable cannot restore them',()=>{
+test('1EU reviewer disable AND re-enable quarantine ACTIVE nominations before account activation',()=>{
  const src=readFileSync('server/security/adminRouter.ts','utf8');
- const disable=src.indexOf("if(input.status==='DISABLED')");
+ const guard=src.indexOf("if(action==='status'&&target.status===input.status)");
+ const status=src.indexOf("if(action==='status'){");
  const revoke=src.indexOf("UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=? AND state='ACTIVE'");
+ const update=src.indexOf('UPDATE auth_users SET status=? WHERE id=? AND role=?');
  const commit=src.indexOf('await conn.commit()');
- assert.ok(disable>=0&&disable<revoke&&revoke<commit);
+ assert.ok(guard>=0&&guard<status&&status<revoke&&revoke<update&&update<commit);
+ assert.ok(!src.includes("if(input.status==='DISABLED')"),
+   'cleanup must not apply only to DISABLED requests');
  assert.ok(src.includes('revokedWorkflowNominations=grants.affectedRows'));
- assert.ok(!src.includes("SET state='ACTIVE'"));
+ assert.ok(!src.includes("SET state='ACTIVE'"),'never restore scope automatically');
  assert.ok(src.includes("productionReleaseAuthorized:false,releaseDecision:'HOLD'"));
 });
 test('1ET demotion cannot block owner revocation of an existing app-local scope',()=>{
