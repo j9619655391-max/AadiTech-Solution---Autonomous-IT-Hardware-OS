@@ -77,15 +77,14 @@ async function change(req:import('express').Request,res:import('express').Respon
   }
   let revokedWorkflowNominations=0;
   if(action==='status'){
+   // Quarantine latent scopes on both disable and re-enable. A direct database
+   // suspension might have bypassed the ordinary reviewer-disable API cleanup.
+   // Keep the reviewer identity locked until the status and session changes commit.
+   const [grants]=await conn.execute<ResultSetHeader>(
+    "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=? AND state='ACTIVE'",
+    [req.params.id]);
+   revokedWorkflowNominations=grants.affectedRows;
    await conn.execute('UPDATE auth_users SET status=? WHERE id=? AND role=?',[input.status,req.params.id,'REVIEWER']);
-   if(input.status==='DISABLED'){
-    // Permanently withdraw app-local reviewer nominations in the same transaction.
-    // Merely re-enabling the account must never resurrect prior scope authority.
-    const [grants]=await conn.execute<ResultSetHeader>(
-     "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=? AND state='ACTIVE'",
-     [req.params.id]);
-    revokedWorkflowNominations=grants.affectedRows;
-   }
   }
   // Every status change and explicit session-revocation operation invalidates all
   // previously issued reviewer sessions, including other devices.
