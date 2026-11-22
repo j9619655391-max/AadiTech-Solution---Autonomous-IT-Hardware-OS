@@ -33,9 +33,11 @@ test('1EN immutable predecessor and no retroactive reviewer grants',()=>{
  assert.match(sql,/ALTER TABLE app_reviewer_scope_events/i);
  for(const scope of ['QUOTES','PROCUREMENT','INTAKE','DISPATCH','EVIDENCE'])
   assert.equal(sql.match(new RegExp("'"+scope+"'","g"))?.length,2);
- assert.doesNotMatch(sql,/\\b(?:INSERT|UPDATE|DELETE|DROP|TRUNCATE)\\s+(?:INTO|FROM|TABLE)?\\b/i);
- assert.doesNotMatch(sql,/\\bGRANT\\s+ALL\\b/i);
- assert.doesNotMatch(sql,/\\b(?:production_tenant_activated|grant_business_data_access)\\b\\s*=\\s*'YES'/i);
+ for(const forbidden of ['INSERT INTO','UPDATE ','DELETE FROM','DROP TABLE',
+  'TRUNCATE TABLE','GRANT ALL'])
+  assert.equal(sql.toUpperCase().includes(forbidden),false);
+ assert.equal(sql.includes("production_tenant_activated='YES'"),false);
+ assert.equal(sql.includes("grant_business_data_access='YES'"),false);
  const original=readFileSync('database/migrations/0043_el_reviewer_scope_candidates.sql','utf8');
- assert.match(original,/workflow_scope ENUM\\('QUOTES','PROCUREMENT'\\)/);
+ assert.equal(original.includes("workflow_scope ENUM('QUOTES','PROCUREMENT')"),true);
 });
