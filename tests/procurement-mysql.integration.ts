@@ -415,13 +415,13 @@ test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',a
  };
  assert.equal(await count('app_reviewer_scope_grants'),0);
  assert.equal(await count('app_reviewer_scope_events'),0);
- for(const [column,invalid,restore] of [
-  ['status','DISABLED','ACTIVE'],['role','REVIEWER','OWNER']
+ for(const [column,invalid,restore,expectedStatus] of [
+  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',403]
  ] as const){
   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
   try{
    const denied=await call('/api/reviewer-scopes','POST',grant);
-   assert.equal(denied.status,401,column+' inactive owner must not nominate');
+   assert.equal(denied.status,expectedStatus,column+' ineligible owner must not nominate');
    assert.equal(await count('app_reviewer_scope_grants'),0,
     column+' denial cannot create a reviewer grant');
    assert.equal(await count('app_reviewer_scope_events'),0,

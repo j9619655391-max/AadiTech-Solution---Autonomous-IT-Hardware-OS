@@ -18,3 +18,7 @@ The /api/reviewer-scopes POST route already enforces a live OWNER session, CSRF,
 Independent live corporate/legal mandates, genuine provider credentials, RCAI/CCA/eMudhra issuer chain and signed live CRL/OCSP, outside WORM/CAS continuity and independent DR, protected-main CODEOWNERS/rulesets and independent reviews, staging penetration testing and owner/security/operations acceptance, and server-authoritative M01–M30 business workflows.
 
 The production gate is unchanged: productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD. No merge, production deploy, live supplier/customer messaging, financial or stock postings.
+
+## Historical initial CI fixture correction (no security bypass)
+
+Initial 1ES SHA `c76592a97ce8b329bc384f7e2644846803f7524e` reached real disposable MySQL but the new test incorrectly expected HTTP 401 for an account **demoted from OWNER to REVIEWER**. The secured request correctly returns **403** for a currently authenticated role that lacks OWNER privileges; an inactive DISABLED account returns **401**. The production authorization logic was correct. Correct only the test's two explicit expected status codes, retaining zero grant/event assertions and the transactional guard. The first push/PR integration failures must stay visible, and final exact-source CI must be rerun.
