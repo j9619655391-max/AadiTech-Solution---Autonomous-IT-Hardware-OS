@@ -51,6 +51,10 @@ router.get('/observations',async(req,res)=>{
    WHERE o.recorded_by<>? AND r.created_by=o.recorded_by
     AND supplier.created_by=o.recorded_by AND site.created_by=o.recorded_by
     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
       WHERE g.owner_user_id=o.recorded_by AND g.reviewer_user_id=?
       AND g.workflow_scope='INTAKE' AND g.state='ACTIVE')
    ORDER BY o.created_at DESC,o.id DESC LIMIT 100`,
@@ -74,6 +78,10 @@ router.get('/observations/:id',async(req,res)=>{
     AND r.created_by=o.recorded_by
     AND supplier.created_by=o.recorded_by AND site.created_by=o.recorded_by
     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
       WHERE g.owner_user_id=o.recorded_by AND g.reviewer_user_id=?
       AND g.workflow_scope='INTAKE' AND g.state='ACTIVE')`,
    [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
@@ -112,6 +120,10 @@ router.post('/observations/:id/witness',requirePrivilegedMfa,requireStepUp,async
   // Serialize a grant REVOKE against every witness write, not only UI queue.
   const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
    FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
    WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='INTAKE'
    FOR UPDATE`,[rows[0].recordedBy,actor]);
   if(scope[0]?.state!=='ACTIVE'){

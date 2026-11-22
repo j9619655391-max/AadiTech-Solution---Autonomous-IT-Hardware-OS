@@ -34,6 +34,10 @@ router.get('/queue',async(req,res)=>{
         AND d.revision_number=COALESCE(r.revision_number,0)
       WHERE q.created_by<>? AND EXISTS (
         SELECT 1 FROM app_reviewer_scope_grants scope_grant
+       JOIN auth_users scope_owner ON scope_owner.id=scope_grant.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=scope_grant.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
         WHERE scope_grant.owner_user_id=q.created_by
           AND scope_grant.reviewer_user_id=? AND scope_grant.workflow_scope='QUOTES'
           AND scope_grant.state='ACTIVE')
@@ -50,6 +54,10 @@ router.get('/:id/brief',async(req,res)=>{
       `SELECT q.id,q.created_by,q.subtotal,q.tax_estimate,q.total_estimate
         FROM sales_quote_drafts q WHERE q.id=? AND q.created_by<>?
         AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
           WHERE g.owner_user_id=q.created_by AND g.reviewer_user_id=?
           AND g.workflow_scope='QUOTES' AND g.state='ACTIVE')
         LIMIT 1`,[req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
@@ -77,6 +85,10 @@ router.get('/:id',async(req,res)=>{
     const [owned]=await db.execute<RowDataPacket[]>(
       `SELECT q.id FROM sales_quote_drafts q WHERE q.id=? AND q.created_by<>?
        AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
          WHERE g.owner_user_id=q.created_by AND g.reviewer_user_id=?
           AND g.workflow_scope='QUOTES' AND g.state='ACTIVE') LIMIT 1`,
        [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
@@ -114,7 +126,11 @@ router.post('/:id',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
     // Recheck the ACTIVE grant with a lock INSIDE the same write transaction.
     // Concurrent revocation serializes on this row; no stale permission.
     const [scopeRows]=await conn.query<RowDataPacket[]>(`SELECT state
-      FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+      FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
       AND workflow_scope='QUOTES' FOR UPDATE`,
       [drafts[0].created_by,res.locals.auth.userId]);
     if(scopeRows[0]?.state!=='ACTIVE'){

@@ -42,6 +42,10 @@ router.get('/release-intents',async(req,res)=>{
    WHERE r.prepared_by<>? AND pack.prepared_by=r.prepared_by
      AND request_record.created_by=r.prepared_by
      AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
        WHERE g.owner_user_id=r.prepared_by AND g.reviewer_user_id=?
         AND g.workflow_scope='STOCK' AND g.state='ACTIVE')
    ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
@@ -61,6 +65,10 @@ router.get('/release-intents/:id',async(req,res)=>{
   }
   const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
    FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
    WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='STOCK'`,
    [state.source.ownerId,res.locals.auth.userId]);
   if(scope[0]?.state!=='ACTIVE'){
@@ -90,7 +98,11 @@ router.post('/release-intents/:id/decide',requirePrivilegedMfa,requireStepUp,asy
   // The current owner assignment is locked with the release write. A later
   // revocation cannot race ahead of a stale reviewer queue authorization.
   const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
-   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
     AND workflow_scope='STOCK' FOR UPDATE`,[state.source.ownerId,actor]);
   if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Release intent unavailable for review'});return;

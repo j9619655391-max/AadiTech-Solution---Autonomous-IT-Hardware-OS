@@ -45,6 +45,10 @@ router.get('/journals',async(req,res)=>{
     AND j.prepared_by=pack.prepared_by AND j.prepared_by=site.created_by
     AND j.prepared_by=request_record.created_by
     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
       WHERE g.owner_user_id=j.prepared_by AND g.reviewer_user_id=?
        AND g.workflow_scope='JOURNAL' AND g.state='ACTIVE')
    ORDER BY j.created_at DESC,j.id DESC LIMIT 100`,
@@ -63,7 +67,11 @@ router.get('/journals/:id',async(req,res)=>{
    await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;
   }
   const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
-   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
      AND workflow_scope='JOURNAL'`,[state.release.source.ownerId,res.locals.auth.userId]);
   if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;
@@ -92,7 +100,11 @@ router.post('/journals/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
   // Re-validate exact scope under lock in the decision transaction, so a
   // revoked reviewer cannot write an unposted journal HOLD from stale UI.
   const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
-   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
      AND workflow_scope='JOURNAL' FOR UPDATE`,[state.release.source.ownerId,actor]);
   if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Journal unavailable for independent review'});return;

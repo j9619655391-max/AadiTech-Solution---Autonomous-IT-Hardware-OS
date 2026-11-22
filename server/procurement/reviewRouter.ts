@@ -32,6 +32,10 @@ router.get('/suppliers',async(req,res)=>{
    tax_id AS taxId,status,created_by AS createdBy FROM proc_suppliers
    WHERE status='UNVERIFIED' AND created_by<>?
    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
     WHERE g.owner_user_id=proc_suppliers.created_by AND g.reviewer_user_id=?
      AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')
    ORDER BY created_at,id LIMIT 100`,
@@ -55,7 +59,11 @@ router.post('/suppliers/:id/attest',requirePrivilegedMfa,requireStepUp,async(req
   }
   // Lock active owner-to-reviewer scope before writing an attestation.
   const [scopeRows]=await conn.query<RowDataPacket[]>(`SELECT state
-   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
    AND workflow_scope='PROCUREMENT' FOR UPDATE`,
    [rows[0].created_by,actor]);
   if(scopeRows[0]?.state!=='ACTIVE'){
@@ -85,6 +93,10 @@ router.get('/requests',async(req,res)=>{
    JOIN inventory_sites i ON i.id=r.site_id
    WHERE r.created_by<>?
     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
       WHERE g.owner_user_id=r.created_by AND g.reviewer_user_id=?
        AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')
     ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
@@ -104,6 +116,10 @@ router.get('/requests/:id',async(req,res)=>{
    JOIN inventory_sites i ON i.id=r.site_id
    WHERE r.id=? AND r.created_by<>?
    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+       JOIN auth_users scope_owner ON scope_owner.id=g.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=g.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE'
     WHERE g.owner_user_id=r.created_by AND g.reviewer_user_id=?
       AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')`,
    [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
@@ -131,7 +147,11 @@ router.post('/requests/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
    await conn.rollback();res.status(404).json({error:'Request not available for independent review'});return;
   }
   const [scopeRows]=await conn.query<RowDataPacket[]>(`SELECT state
-    FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+    FROM app_reviewer_scope_grants
+       JOIN auth_users scope_owner ON scope_owner.id=app_reviewer_scope_grants.owner_user_id
+         AND scope_owner.role='OWNER' AND scope_owner.status='ACTIVE'
+       JOIN auth_users scope_reviewer ON scope_reviewer.id=app_reviewer_scope_grants.reviewer_user_id
+         AND scope_reviewer.role='REVIEWER' AND scope_reviewer.status='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=?
       AND workflow_scope='PROCUREMENT' FOR UPDATE`,
     [rows[0].created_by,actor]);
   if(scopeRows[0]?.state!=='ACTIVE'){
