@@ -25,7 +25,7 @@ test('1EP review grant extension denies production and unapproved staging target
   EP_REVIEW_SCOPE_MIGRATION_APPROVED:'YES'}),'staging');
 });
 test('1EP migration 0046 only appends review scopes; no past grants or legal trust',()=>{
- assert.equal(MIGRATIONS.length,46);
+ assert.ok(MIGRATIONS.length>=46);
  assert.equal(MIGRATIONS[44],'0045_eo_stock_journal_review_scopes');
  assert.equal(MIGRATIONS[45],'0046_ep_proof_key_trust_review_scopes');
  const sql=readFileSync('database/migrations/0046_ep_proof_key_trust_review_scopes.sql','utf8');

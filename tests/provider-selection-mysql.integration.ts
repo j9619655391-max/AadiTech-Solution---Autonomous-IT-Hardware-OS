@@ -308,6 +308,10 @@ test('isolated synthetic source, authenticated role separation and API mount',as
  // Production code does NOT automatically assign such scopes.
  await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROOF'),(?,?,'KEY_LIFECYCLE'),(?,?,'EXTERNAL_TRUST')",
   [owner,reviewer,owner,reviewer,owner,reviewer]);
+ // Phase 1EQ: explicit disposable-CI-only nominations. Never automatic production authority.
+ for(const scope of ['PROVIDER_BRIDGE','PROVIDER_SANDBOX','PROVIDER_SELECTION','PROVIDER_ONBOARDING'])
+  await db.execute('INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,?)',[owner,reviewer,scope]);
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROVIDER_ONBOARDING')",[owner,securityReviewer]);
  main=await withHeldSource(await fixture('EXTERNAL_CI'));
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
@@ -832,6 +836,16 @@ test('1AN CCA named evaluation candidate and access gate never claim contract, r
  const r=await call('/api/provider-selection/nominations','POST',payload);
  assert.equal(r.status,201,JSON.stringify(r));namedNom=r.data.id;
  assert.equal(r.data.credentialsConfigured,false);
+ await db.execute("UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='PROVIDER_SELECTION'",[owner,reviewer]);
+ const hidden=await call('/api/provider-selection/review/nominations','GET',undefined,'reviewer');
+ assert.equal(hidden.status,200,JSON.stringify(hidden));
+ assert.equal(hidden.data.items.some((p:{id:string})=>p.id===namedNom),false);
+ assert.equal((await call('/api/provider-selection/review/nominations/'+namedNom+'/decide',
+  'POST',{decision:'REVIEWED_CANDIDATE_HELD',
+   reason:'Provider written authority and signatory mandate have not been established',
+   evidenceRef:'CI-REVOKED-SCOPE-2026',officialListingInspected:true,
+   contractMissingAcknowledged:true},'reviewer')).status,404);
+ await db.execute("UPDATE app_reviewer_scope_grants SET state='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='PROVIDER_SELECTION'",[owner,reviewer]);
  assert.equal((await call('/api/provider-selection/review/nominations/'+namedNom+'/decide',
   'POST',{decision:'TRUSTED',reason:'Not approved external root or supplier authority',
    evidenceRef:'CI-REVIEW-2026',officialListingInspected:true,

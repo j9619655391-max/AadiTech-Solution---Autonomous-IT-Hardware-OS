@@ -4,12 +4,14 @@ import type {PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
+import {providerScopeSql,requireProviderReviewerScope,ProviderReviewScopeDenied} from '../security/providerReviewScope';
 import {inventoryId} from '../inventory/validation';
 import {readPin,signedOrg} from './integrity';
 import {validateReviewHeld,ChainInputError,ChainConflictError,digest} from './validation';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 function fail(res:Response,e:unknown){
+ if(e instanceof ProviderReviewScopeDenied){res.status(404).json({error:'Evidence unavailable to reviewer'});return;}
  if(e instanceof ChainInputError){res.status(400).json({error:e.message});return;}
  if(e instanceof ChainConflictError||(e&&typeof e==='object'&&'code' in e&&e.code==='ER_DUP_ENTRY')){
   res.status(409).json({error:'Pinned provider review or frozen signed evidence conflict'});return;
@@ -32,7 +34,7 @@ router.get('/pins',async(req,res)=>{
    p.evidence_ref AS evidenceRef,p.status,f.pin_id AS frozen
    FROM inv_provider_pin_candidates p
    LEFT JOIN inv_provider_pin_freezes f ON f.pin_id=p.id
-   WHERE p.provisioned_by<>? ORDER BY p.created_at DESC LIMIT 100`,[res.locals.auth.userId]);
+   WHERE p.provisioned_by<>? AND ${providerScopeSql('p.provisioned_by','PROVIDER_BRIDGE')} ORDER BY p.created_at DESC LIMIT 100`,[res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalCertificateAuthoritiesVerified:0});
  }catch(e){fail(res,e);}
 });
@@ -45,6 +47,7 @@ router.post('/pins/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,res)
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),pin=await readPin(c,req.params.id,false);
+  await requireProviderReviewerScope(c,pin.provisionedBy,actor,'PROVIDER_BRIDGE',true);
   if(pin.provisionedBy===actor){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -71,8 +74,8 @@ router.get('/credentials',async(req,res)=>{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT id,pin_id AS pinId,
    issuer_id AS issuerId,submitted_by AS submittedBy,purpose,
    message_sha256 AS messageSha256,status
-   FROM inv_provider_org_credentials WHERE submitted_by<>?
-   ORDER BY created_at DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_provider_org_credentials p WHERE p.submitted_by<>? AND ${providerScopeSql('p.submitted_by','PROVIDER_BRIDGE')}
+   ORDER BY created_at DESC LIMIT 100`,[res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externallyAuthenticatedCredentials:0});
  }catch(e){fail(res,e);}
 });
@@ -83,6 +86,7 @@ router.get('/credentials/:id',async(req,res)=>{
  try{
   c=await db.getConnection();await c.beginTransaction();
   const data=await signedOrg(c,req.params.id);
+  await requireProviderReviewerScope(c,data.submitter,String(res.locals.auth.userId),'PROVIDER_BRIDGE');
   if(data.submitter===res.locals.auth.userId){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -103,6 +107,7 @@ router.post('/credentials/:id/decide',requirePrivilegedMfa,requireStepUp,async(r
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),v=await signedOrg(c,req.params.id);
+  await requireProviderReviewerScope(c,v.submitter,actor,'PROVIDER_BRIDGE',true);
   if(v.submitter===actor){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }

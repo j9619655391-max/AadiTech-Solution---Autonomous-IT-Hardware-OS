@@ -4,12 +4,14 @@ import type {PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
+import {providerScopeSql,requireProviderReviewerScope,ProviderReviewScopeDenied} from '../security/providerReviewScope';
 import {ensureId} from '../providerBridge/validation';
 import {readCase,readCert} from './integrity';
 import {reviewCaseBody,reviewCertBody,ChainInputError,ChainConflictError,checkDigest} from './validation';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 function fail(res:Response,e:unknown){
+ if(e instanceof ProviderReviewScopeDenied){res.status(404).json({error:'Evidence unavailable to reviewer'});return;}
  if(e instanceof ChainInputError){res.status(400).json({error:e.message});return;}
  if(e instanceof ChainConflictError||(e&&typeof e==='object'&&'code' in e&&
   ['ER_DUP_ENTRY','ER_CHECK_CONSTRAINT_VIOLATED'].includes(String(e.code)))){
@@ -32,8 +34,8 @@ router.get('/cases',async(req,res)=>{
    registry_reference AS registryReference,identity_document_sha256 AS identityDocumentSha256,
    signatory_reference AS signatoryReference,signatory_document_sha256 AS signatoryDocumentSha256,
    status,corporate_identity_state AS corporateState,signatory_authority_state AS signatoryState
-   FROM inv_sandbox_onboarding_cases WHERE opened_by<>?
-   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_sandbox_onboarding_cases c WHERE c.opened_by<>? AND ${providerScopeSql('c.opened_by','PROVIDER_SANDBOX')}
+   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,genuinelyCorporateAuthenticated:false});
  }catch(e){fail(res,e);}
 });
@@ -45,6 +47,7 @@ router.post('/cases/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,res
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),record=await readCase(c,caseId);
+  await requireProviderReviewerScope(c,record.openedBy,actor,'PROVIDER_SANDBOX',true);
   if(actor===record.openedBy){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -72,8 +75,8 @@ router.get('/certificates',async(req,res)=>{
    p.leaf_spki_sha256 AS leafKeyFingerprint,p.leaf_serial AS leafSerial,p.status,
    r.decision AS reviewState FROM inv_sandbox_cert_packages p
    LEFT JOIN inv_sandbox_cert_reviews r ON r.cert_id=p.id
-   WHERE p.imported_by<>? ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE p.imported_by<>? AND ${providerScopeSql('p.imported_by','PROVIDER_SANDBOX')} ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,providerIssuedAuthenticated:false});
  }catch(e){fail(res,e);}
 });
@@ -84,6 +87,7 @@ router.get('/certificates/:id',async(req,res)=>{
  try{
   c=await db.getConnection();await c.beginTransaction();
   const record=await readCert(c,id);
+  await requireProviderReviewerScope(c,record.caseData.openedBy,String(res.locals.auth.userId),'PROVIDER_SANDBOX');
   if(record.importedBy===res.locals.auth.userId){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -105,6 +109,7 @@ router.post('/certificates/:id/decide',requirePrivilegedMfa,requireStepUp,async(
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),record=await readCert(c,id);
+  await requireProviderReviewerScope(c,record.caseData.openedBy,actor,'PROVIDER_SANDBOX',true);
   if(actor===record.importedBy){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }

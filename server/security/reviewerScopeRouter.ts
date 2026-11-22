@@ -11,7 +11,7 @@ const router=Router();
 router.use(requireOwner);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 const validId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-type Scope='QUOTES'|'PROCUREMENT'|'INTAKE'|'DISPATCH'|'EVIDENCE'|'STOCK'|'JOURNAL'|'PROOF'|'KEY_LIFECYCLE'|'EXTERNAL_TRUST';
+type Scope='QUOTES'|'PROCUREMENT'|'INTAKE'|'DISPATCH'|'EVIDENCE'|'STOCK'|'JOURNAL'|'PROOF'|'KEY_LIFECYCLE'|'EXTERNAL_TRUST'|'PROVIDER_BRIDGE'|'PROVIDER_SANDBOX'|'PROVIDER_SELECTION'|'PROVIDER_ONBOARDING';
 type Decision='GRANT'|'REVOKE';
 router.get('/',async(_req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
@@ -32,11 +32,11 @@ router.post('/',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
  if(!body||typeof body!=='object'||Array.isArray(body)||
     Object.keys(body).sort().join(',')!=='decision,reason,reviewerId,scope' ||
     typeof body.reviewerId!=='string'||!validId.test(body.reviewerId)||
-    !['QUOTES','PROCUREMENT','INTAKE','DISPATCH','EVIDENCE','STOCK','JOURNAL','PROOF','KEY_LIFECYCLE','EXTERNAL_TRUST'].includes(body.scope)||
+    !['QUOTES','PROCUREMENT','INTAKE','DISPATCH','EVIDENCE','STOCK','JOURNAL','PROOF','KEY_LIFECYCLE','EXTERNAL_TRUST','PROVIDER_BRIDGE','PROVIDER_SANDBOX','PROVIDER_SELECTION','PROVIDER_ONBOARDING'].includes(body.scope)||
     !['GRANT','REVOKE'].includes(body.decision)||
     typeof body.reason!=='string'||body.reason.trim().length<16||
     body.reason.trim().length>500){
-  res.status(400).json({error:'Exact reviewerId, QUOTES/PROCUREMENT/INTAKE/DISPATCH/EVIDENCE/STOCK/JOURNAL/PROOF/KEY_LIFECYCLE/EXTERNAL_TRUST scope, GRANT/REVOKE and 16-500 character reason required'});return;
+  res.status(400).json({error:'Exact reviewerId, QUOTES/PROCUREMENT/INTAKE/DISPATCH/EVIDENCE/STOCK/JOURNAL/PROOF/KEY_LIFECYCLE/EXTERNAL_TRUST/PROVIDER_BRIDGE/PROVIDER_SANDBOX/PROVIDER_SELECTION/PROVIDER_ONBOARDING scope, GRANT/REVOKE and 16-500 character reason required'});return;
  }
  const reviewerId=body.reviewerId as string,scope=body.scope as Scope,
   decision=body.decision as Decision,reason=body.reason.trim() as string,

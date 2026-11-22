@@ -3,7 +3,7 @@ import type {PoolConnection,RowDataPacket} from 'mysql2/promise';
 // Only app-local OWNER nominations, NOT real CCA, MCA, external identities or
 // independent statutory attestation. Read scope before confidential data access;
 // use lock=true for a mutation in the same transaction as durable review writes.
-export type SensitiveReviewScope='PROOF'|'KEY_LIFECYCLE'|'EXTERNAL_TRUST';
+export type SensitiveReviewScope='PROOF'|'KEY_LIFECYCLE'|'EXTERNAL_TRUST'|'PROVIDER_BRIDGE'|'PROVIDER_SANDBOX'|'PROVIDER_SELECTION'|'PROVIDER_ONBOARDING';
 export async function activeSensitiveReviewerScope(
  conn:PoolConnection,ownerId:string,reviewerId:string,
  scope:SensitiveReviewScope,lock=false):Promise<boolean>{

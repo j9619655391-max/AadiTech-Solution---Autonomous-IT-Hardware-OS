@@ -4,11 +4,13 @@ import type {PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
+import {providerScopeSql,requireProviderReviewerScope,ProviderReviewScopeDenied} from '../security/providerReviewScope';
 import {ensureId,reviewBody,ChainInputError,ChainConflictError} from './validation';
 import {readNomination,readPolicy,readDossier} from './integrity';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 function fail(res:Response,e:unknown){
+ if(e instanceof ProviderReviewScopeDenied){res.status(404).json({error:'Evidence unavailable to reviewer'});return;}
  if(e instanceof ChainInputError){res.status(400).json({error:e.message});return;}
  if(e instanceof ChainConflictError||(e&&typeof e==='object'&&'code' in e&&
    ['ER_DUP_ENTRY','ER_CHECK_CONSTRAINT_VIOLATED'].includes(String(e.code)))){
@@ -24,8 +26,8 @@ router.get('/nominations',async(req,res)=>{
    n.opened_by AS openedBy,n.status,n.nomination_ticket AS evidenceRef,
    r.decision AS reviewed FROM inv_provider_named_nominations n
    LEFT JOIN inv_provider_named_reviews r ON r.nomination_id=n.id
-   WHERE n.opened_by<>? ORDER BY n.created_at DESC LIMIT 100`,
-  [res.locals.auth.userId]);
+   WHERE n.opened_by<>? AND ${providerScopeSql('n.opened_by','PROVIDER_SELECTION')} ORDER BY n.created_at DESC LIMIT 100`,
+  [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,authorizedProviderCount:0,productionReady:false});
  }catch(e){fail(res,e);}
 });
@@ -40,6 +42,7 @@ router.post('/nominations/:id/decide',requirePrivilegedMfa,requireStepUp,async(r
  try{
   c=await db.getConnection();await c.beginTransaction();
   const reviewer=String(res.locals.auth.userId),nom=await readNomination(c,id,false);
+  await requireProviderReviewerScope(c,nom.owner,reviewer,'PROVIDER_SELECTION',true);
   if(nom.owner===reviewer){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -67,8 +70,8 @@ router.get('/policies',async(req,res)=>{
    p.cps_sha256 AS cpsSha256,p.purpose,p.status,r.decision AS reviewed
    FROM inv_provider_policy_proposals p
    LEFT JOIN inv_provider_policy_reviews r ON r.policy_id=p.id
-   WHERE p.prepared_by<>? ORDER BY p.created_at DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE p.prepared_by<>? AND ${providerScopeSql('p.prepared_by','PROVIDER_SELECTION')} ORDER BY p.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,fullPkiPolicyVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -83,6 +86,7 @@ router.post('/policies/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
  try{
   c=await db.getConnection();await c.beginTransaction();
   const reviewer=String(res.locals.auth.userId),policy=await readPolicy(c,id);
+  await requireProviderReviewerScope(c,policy.nom.owner,reviewer,'PROVIDER_SELECTION',true);
   if(policy.preparedBy===reviewer){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }
@@ -111,8 +115,8 @@ router.get('/dossiers',async(req,res)=>{
    d.status,r.decision AS reviewed
    FROM inv_provider_registry_dossiers d
    LEFT JOIN inv_provider_registry_reviews r ON r.dossier_id=d.id
-   WHERE d.prepared_by<>? ORDER BY d.created_at DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE d.prepared_by<>? AND ${providerScopeSql('d.prepared_by','PROVIDER_SELECTION')} ORDER BY d.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,independentlyVerifiedRegistryCount:0});
  }catch(e){fail(res,e);}
 });
@@ -127,6 +131,7 @@ router.post('/dossiers/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
  try{
   c=await db.getConnection();await c.beginTransaction();
   const reviewer=String(res.locals.auth.userId),dossier=await readDossier(c,id);
+  await requireProviderReviewerScope(c,dossier.nom.owner,reviewer,'PROVIDER_SELECTION',true);
   if(dossier.preparedBy===reviewer){
    await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
   }

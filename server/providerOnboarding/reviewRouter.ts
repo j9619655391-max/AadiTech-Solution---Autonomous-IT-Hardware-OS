@@ -4,12 +4,14 @@ import type {PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
+import {providerScopeSql,requireProviderReviewerScope,ProviderReviewScopeDenied} from '../security/providerReviewScope';
 import {packetReviewBody,artifactReviewBody,mcaReviewBody,ChainInputError,
  ChainConflictError,ensureId} from './validation';
 import {readPacket,readArtifact,readMca} from './integrity';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
 function fail(res:Response,e:unknown){
+ if(e instanceof ProviderReviewScopeDenied){res.status(404).json({error:'Evidence unavailable to reviewer'});return;}
  if(e instanceof ChainInputError){res.status(400).json({error:e.message});return;}
  if(e instanceof ChainConflictError||(e&&typeof e==='object'&&'code' in e&&
   ['ER_DUP_ENTRY','ER_CHECK_CONSTRAINT_VIOLATED'].includes(String(e.code)))){
@@ -35,8 +37,8 @@ router.get('/packets',async(req,res)=>{
    p.prepared_by AS owner,p.contract_document_sha256 AS contractDigest,
    p.provider_onboarding_ref AS onboardingRef,p.status,
    (SELECT COUNT(*) FROM inv_provider_ao_packet_reviews r WHERE r.packet_id=p.id) AS reviewCount
-   FROM inv_provider_ao_packets p WHERE p.prepared_by<>?
-   ORDER BY p.created_at DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_provider_ao_packets p WHERE p.prepared_by<>? AND ${providerScopeSql('p.prepared_by','PROVIDER_ONBOARDING')}
+   ORDER BY p.created_at DESC LIMIT 100`,[res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,providerContractAuthenticated:false,approvedCredentialsPresent:false});
  }catch(e){fail(res,e);}
 });
@@ -45,6 +47,7 @@ router.post('/packets/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,r
  try{id=ensureId(req.params.id);v=packetReviewBody(req.body);}catch(e){fail(res,e);return;}
  await tx(res,async(c,reviewer)=>{
   const packet=await readPacket(c,id);
+  await requireProviderReviewerScope(c,packet.owner,reviewer,'PROVIDER_ONBOARDING',true);
   if(packet.owner===reviewer)throw new ChainConflictError('Owner cannot self-review');
   if(packet.status!=='PENDING_INTERNAL')throw new ChainConflictError('Already completed or rejected');
   const [existing]=await c.query<RowDataPacket[]>(`SELECT review_role AS role,reviewer_id AS actor
@@ -72,8 +75,8 @@ router.get('/revocations',async(req,res)=>{
    a.imported_by AS owner,v.decision AS reviewDecision
    FROM inv_provider_ao_revocation_trials a
    LEFT JOIN inv_provider_ao_revocation_reviews v ON v.artifact_id=a.id
-   WHERE a.imported_by<>? ORDER BY a.created_at DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE a.imported_by<>? AND ${providerScopeSql('a.imported_by','PROVIDER_ONBOARDING')} ORDER BY a.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,actualPublisherAuthenticated:false});
  }catch(e){fail(res,e);}
 });
@@ -82,6 +85,7 @@ router.post('/revocations/:id/decide',requirePrivilegedMfa,requireStepUp,async(r
  try{id=ensureId(req.params.id);v=artifactReviewBody(req.body);}catch(e){fail(res,e);return;}
  await tx(res,async(c,reviewer)=>{
   const artifact=await readArtifact(c,id);
+  await requireProviderReviewerScope(c,artifact.trial.packet.owner,reviewer,'PROVIDER_ONBOARDING',true);
   if(artifact.trial.packet.owner===reviewer)throw new ChainConflictError('Independent reviewer required');
   const [old]=await c.query<RowDataPacket[]>(`SELECT id FROM inv_provider_ao_revocation_reviews
    WHERE artifact_id=? FOR UPDATE`,[id]);
@@ -101,8 +105,8 @@ router.get('/mca-evidence',async(req,res)=>{
    m.mca_master_data_sha256 AS mcaDigest,m.signatory_mandate_sha256 AS signerDigest,
    m.status,r.decision AS reviewDecision FROM inv_provider_ao_mca_evidence m
    LEFT JOIN inv_provider_ao_mca_reviews r ON r.mca_id=m.id
-   WHERE m.prepared_by<>? ORDER BY m.created_at DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE m.prepared_by<>? AND ${providerScopeSql('m.prepared_by','PROVIDER_ONBOARDING')} ORDER BY m.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items,realRegistryOrSignatoryVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -111,6 +115,7 @@ router.post('/mca-evidence/:id/decide',requirePrivilegedMfa,requireStepUp,async(
  try{id=ensureId(req.params.id);v=mcaReviewBody(req.body);}catch(e){fail(res,e);return;}
  await tx(res,async(c,reviewer)=>{
   const mca=await readMca(c,id);
+  await requireProviderReviewerScope(c,mca.packet.owner,reviewer,'PROVIDER_ONBOARDING',true);
   if(mca.preparedBy===reviewer)throw new ChainConflictError('Independent reviewer required');
   if(mca.status!=='PENDING_EXTERNAL')throw new ChainConflictError('Already reviewed');
   const [old]=await c.query<RowDataPacket[]>(`SELECT id FROM inv_provider_ao_mca_reviews

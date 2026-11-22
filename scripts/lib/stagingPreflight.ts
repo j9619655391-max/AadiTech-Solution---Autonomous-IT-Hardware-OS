@@ -36,7 +36,8 @@ export const MIGRATIONS=[
  '0043_el_reviewer_scope_candidates',
  '0044_en_workflow_review_scopes',
  '0045_eo_stock_journal_review_scopes',
- '0046_ep_proof_key_trust_review_scopes'
+ '0046_ep_proof_key_trust_review_scopes',
+ '0047_eq_provider_review_scopes'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
