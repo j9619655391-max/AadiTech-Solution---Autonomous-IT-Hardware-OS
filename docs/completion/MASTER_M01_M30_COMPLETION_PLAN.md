@@ -803,3 +803,13 @@ Engineering SOURCE `4c5de3b8048a3f395a47586b9e3ff819d4fb76c1`: PR CI [4471701125
 - [ ] **Phase 1EF documentation-only final source HEAD CI:** after committing this evidence, independently verify the resulting new exact SHA for fresh push and PR workflows and reconcile all GitHub Checks. Publish final source SHA and CI receipts to Draft PR #1 and Issue #2 without another SHA-changing commit.
 - [ ] **External authorized evidence and genuinely independent acceptance still missing:** all 12 real gates in Issue #2 need actual records and signed nonauthor approvals. No case closure or production GO is possible from a local applicant fixture.
 - **Production HARD HOLD:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`; Draft PR #1 open/unmerged, Issue #2 open, `main` unchanged. No production release, independent evidence promotion, real finance/stock/customer/supplier dispatch or credentials.
+
+
+
+## Phase 1EG — Disconnected unsent independent-authority manual handoff HARD HOLD (22 November 2026 IST)
+
+- [x] Built scripts/phase1eg-unsent-manual-authority-handoff.mjs: original full Phase 1EF/1EE/1ED through 1DU applicant-controlled history must reverify; exact 12 source/case/role-bound, SHA-linked, frozen manual requests with NOT_SENT_NOT_APPROVED and zero network, auto-retry, sending, independent authority or release capability.
+- [x] Thirteen Phase 1EG adversarial Node groups added to tests/phase1dt-offline-rollover-checkpoint-continuity.test.mjs covering immutable deterministic requests, role/replay/scope tamper, fake sent/CLOSED/GO, auto-retry/side effects, rehashed successor, upstream version downgrade and altered original EF/ED, cycles/oversize and secret-redacted immutable HOLD. Phase 1BV/BW governed source inventories updated. See docs/phase-1/PHASE_1EG_DISCONNECTED_UNSENT_MANUAL_AUTHORITY_HANDOFF_HARD_HOLD.md.
+- [ ] Verify exact commit push/PR GitHub Actions and check/job match before treating engineering gates as successful. Internal tests never grant legal/provider authority.
+- [ ] Genuine licensed provider/issuer/MCA/independent reviewer/remote custody/DR/protected-main/staging approval remains missing; no fake request or locally linked SHA is a signed independent approval.
+- **Production HARD HOLD:** productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD; main unchanged; PR #1 Draft/unmerged and Issue #2 open. No external side effects, credential enrollment, or live business posting.

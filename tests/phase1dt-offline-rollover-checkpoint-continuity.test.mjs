@@ -3650,3 +3650,158 @@ test('1EF generated quarantine tickets and redacted report are frozen and do not
  assert.equal(Object.isFrozen(r.anomalyCodes),true);
  efHold(r);
 });
+
+
+
+/* Phase 1EG: source-bound unsent manual authority handoff; never a live workflow. */
+import {EG_MANUAL_EVIDENCE_REQUEST_TYPES,manualRequestDigestEg,
+ createUnsentManualHandoffEg,assessUnsentManualHandoffEg}
+ from '../scripts/phase1eg-unsent-manual-authority-handoff.mjs';
+function egFixture(){
+ const ef=efFixture();
+ return {args:{previousQuarantineCandidate:ef.args,
+  requests:clone(createUnsentManualHandoffEg(ef.args)),now:NOW}};
+}
+const egAssess=f=>assessUnsentManualHandoffEg(f.args);
+function egHold(r){
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualRequestsSent,0);
+ assert.equal(r.actualIndependentReviewersAuthenticated,0);
+ assert.equal(r.externalIssuerLegalOrProviderEvidenceVerified,false);
+ assert.equal(r.independentRemoteCustodyOrAuditStorageVerified,false);
+ assert.equal(r.autoRetryOrExternalIOPerformed,false);
+ assert.equal(r.manualHandoffCannotActivateOrCloseCases,true);
+}
+test('1EG twelve unsent human-authority requests preserve permanent HARD HOLD',()=>{
+ const f=egFixture(),r=egAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.fullOriginalEfToDuHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.applicantControlledUnsentRequestsValidated,12);
+ assert.equal(Object.keys(EG_MANUAL_EVIDENCE_REQUEST_TYPES).length,12);
+ assert.ok(f.args.requests.every(x=>x.requestState==='NOT_SENT_NOT_APPROVED'));
+ egHold(r);
+});
+test('1EG deterministic request digests and predecessor link across all 12 gates',()=>{
+ const f=egFixture(),requests=f.args.requests;
+ assert.equal(requests[0].previousRequestSha256,
+  requests[0].failureTranscriptSha256);
+ for(let i=1;i<12;i++)
+  assert.equal(requests[i].previousRequestSha256,
+   manualRequestDigestEg(requests[i-1]));
+ assert.deepEqual(requests,createUnsentManualHandoffEg(f.args.previousQuarantineCandidate));
+ egHold(egAssess(f));
+});
+test('1EG forged approved, dispatched, closed or verified case never becomes sent',()=>{
+ for(const [field,value] of [
+  ['requestState','APPROVED'],['requestDispatched',true],
+  ['caseClosed',true],['reviewerAuthenticated',true],
+  ['externalEvidenceVerified',true],['releaseDecision','GO']
+ ]){
+  const f=egFixture();f.args.requests[0][field]=value;
+  has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+  egHold(egAssess(f));
+ }
+});
+test('1EG no automatic retries, external I/O, or removal of manual review',()=>{
+ for(const [field,value] of [
+  ['autoRetryAllowed',true],['networkRequests',1],
+  ['sideEffects',1],['manualIndependentAuthorityRequired',false]
+ ]){
+  const f=egFixture();f.args.requests[3][field]=value;
+  has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+ }
+});
+test('1EG cannot substitute reviewer role, external request type or gate order',()=>{
+ for(const [field,value] of [
+  ['gate','LIVE_ISSUER_SIGNED_CRL_OCSP'],
+  ['requiredIndependentAuthorityRole','APPLICANT_AUTHOR'],
+  ['requestType','EXECUTE_LIVE_PROVIDER_CALL'],['sequence',11]
+ ]){
+  const f=egFixture();f.args.requests[2][field]=value;
+  has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+ }
+});
+test('1EG swapped, cloned, missing and extra request records are denied',()=>{
+ for(const edit of [
+  r=>r.reverse(),r=>{r[1]=clone(r[0]);},
+  r=>r.pop(),r=>r.push(clone(r[0]))
+ ]){
+  const f=egFixture();edit(f.args.requests);
+  const r=egAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EG_')));egHold(r);
+ }
+});
+test('1EG source/fault/case hash scope changes cannot silently rebind',()=>{
+ for(const field of [
+  'failureTranscriptSha256','quarantineCaseSha256','previousRequestSha256'
+ ]){
+  const f=egFixture();f.args.requests[4][field]='f'.repeat(64);
+  has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+ }
+});
+test('1EG attacker rehashing the entire downstream request chain still fails',()=>{
+ const f=egFixture();f.args.requests[0].requestType=
+  'SIGNED_PROVIDER_LICENSE_REVIEW_WRONG';
+ let digest=null;
+ for(let i=1;i<12;i++){
+  if(i===1){f.args.requests[0].requestType='SIGNED_PROVIDER_LICENSE_REVIEW';}
+  if(i===1){f.args.requests[0].quarantineCaseSha256='f'.repeat(64);}
+  digest=manualRequestDigestEg(f.args.requests[i-1]);
+  f.args.requests[i].previousRequestSha256=digest;
+ }
+ has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+});
+test('1EG upstream EF forged case closure and EE downgrade invalidate every request',()=>{
+ for(const edit of [
+  f=>{f.args.previousQuarantineCandidate.cases[0].caseStatus='CLOSED';},
+  f=>{f.args.previousQuarantineCandidate.previousFailureCandidate.plans[0].requestedVersion=0;}
+ ]){
+  const f=egFixture();edit(f);
+  has(egAssess(f),'EG_ORIGINAL_EF_HISTORY_NOT_REVERIFIED');
+  egHold(egAssess(f));
+ }
+});
+test('1EG generator refuses applicant-only fake independent evidence',()=>{
+ const f=efFixture();
+ f.args.cases[0].reviewerAuthenticated=true;
+ assert.throws(()=>createUnsentManualHandoffEg(f.args),
+  /EG_ORIGINAL_EF_HISTORY_NOT_REVERIFIED/);
+});
+test('1EG extra production fields, cyclic graph and malformed input fail closed',()=>{
+ let f=egFixture();f.args.approved=true;
+ has(egAssess(f),'EG_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=egFixture();f.args.requests[0].trustedAuthority=true;
+ has(egAssess(f),'EG_UNSENT_REQUEST_REPLAY_SCOPE_OR_FALSE_AUTHORITY');
+ f=egFixture();f.args.requests[0].self=f.args;
+ has(egAssess(f),'EG_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=egFixture();f.args.requests[0].extra='x'.repeat(5000*1024);
+ has(egAssess(f),'EG_EXACT_BOUNDED_INPUT_REQUIRED');
+ assert.throws(()=>manualRequestDigestEg({approved:true}),
+  /EG_EXACT_UNSENT_REQUEST_REQUIRED/);
+});
+test('1EG strict clock and changed original EE source are refused',()=>{
+ let f=egFixture();f.args.now='2026-11-21T00:00:01.000Z';
+ has(egAssess(f),'EG_ORIGINAL_EF_HISTORY_NOT_REVERIFIED');
+ f=egFixture();
+ f.args.previousQuarantineCandidate.previousFailureCandidate
+  .previousPortCandidate.receipts[3].status='VERIFIED';
+ has(egAssess(f),'EG_ORIGINAL_EF_HISTORY_NOT_REVERIFIED');
+});
+test('1EG output is frozen, redacted and does not disclose request scope hashes',()=>{
+ const f=egFixture(),r=egAssess(f),s=JSON.stringify(r);
+ for(const secret of [
+  f.args.requests[0].quarantineCaseSha256,
+  f.args.requests[0].failureTranscriptSha256,
+  f.args.previousQuarantineCandidate.cases[0].sourceBundleSha256,
+  f.args.previousQuarantineCandidate.previousFailureCandidate
+   .previousPortCandidate.receipts[0].adapterId
+ ])assert.equal(s.includes(secret),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ const generated=createUnsentManualHandoffEg(f.args.previousQuarantineCandidate);
+ assert.equal(Object.isFrozen(generated),true);
+ assert.ok(generated.every(Object.isFrozen));
+ egHold(r);
+});
