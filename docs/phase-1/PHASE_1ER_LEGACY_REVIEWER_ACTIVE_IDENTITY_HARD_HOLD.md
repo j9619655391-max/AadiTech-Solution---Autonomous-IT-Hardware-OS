@@ -21,3 +21,7 @@ Require actual same-HEAD push and Draft PR workflows and inspect TypeScript comp
 ## Unresolved
 
 Owner/tenant/legal organization reconciliation, complete M01–M30 server-authoritative workflows, approved eMudhra/CCA/RCAI and live CRL/OCSP, MCA mandate, independent reviewer and witness credentials, signed WORM/CAS and DR, protected-main human reviews, authorized security/staging signoffs all remain pending. `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`; PR #1 stays Draft, Issue #2 stays open, `main` unchanged.
+
+## Additional disposable-MySQL adversarial verification
+
+`tests/procurement-mysql.integration.ts` now additionally toggles the originating OWNER account to `status=DISABLED` and separately to `role=REVIEWER` in the disposable CI database, while leaving the prior `PROCUREMENT` nomination ACTIVE. It requires the unrelated acting REVIEWER to see no queue entry, to receive HTTP 404 for a known request ID, and to receive HTTP 404 for a direct known-ID decision before duplicate-review handling. Each mutation is restored in `finally`; the original scoped detail must become readable again. Real hosted execution and test results are pending; this is not independent security sign-off.
