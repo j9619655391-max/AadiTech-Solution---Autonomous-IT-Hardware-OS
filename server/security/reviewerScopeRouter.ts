@@ -46,6 +46,15 @@ router.post('/',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
+  // Session authorization is checked before entering this transaction. Recheck
+  // and lock the nominating OWNER here so concurrent demotion/disable cannot
+  // race a new nomination or revocation audit event.
+  const [sourceOwners]=await conn.query<RowDataPacket[]>(
+   'SELECT id,role,status FROM auth_users WHERE id=? FOR UPDATE',[owner]);
+  if(sourceOwners.length!==1||sourceOwners[0].role!=='OWNER'||
+     sourceOwners[0].status!=='ACTIVE'){
+   await conn.rollback();res.status(403).json({error:'Active OWNER account required for reviewer scope changes'});return;
+  }
   const [users]=await conn.query<RowDataPacket[]>(
    'SELECT id,role,status FROM auth_users WHERE id=? FOR UPDATE',[reviewerId]);
   if(!users.length||users[0].role!=='REVIEWER'||

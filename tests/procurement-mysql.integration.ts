@@ -402,3 +402,40 @@ test('1ER disabled or demoted OWNER cannot expose or authorize old PROCUREMENT n
    'Restored source author state permits prior scoped read, not a new grant');
  }
 });
+
+test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',async()=>{
+ const grant={reviewerId:reviewer,scope:'QUOTES',decision:'GRANT',
+  reason:'Owner account status and role must block stale nominations'};
+ const count=async(table:'app_reviewer_scope_grants'|'app_reviewer_scope_events')=>{
+  const [rows]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM '+table+
+   " WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+   [owner,reviewer]);
+  return Number(rows[0].n);
+ };
+ assert.equal(await count('app_reviewer_scope_grants'),0);
+ assert.equal(await count('app_reviewer_scope_events'),0);
+ for(const [column,invalid,restore] of [
+  ['status','DISABLED','ACTIVE'],['role','REVIEWER','OWNER']
+ ] as const){
+  await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
+  try{
+   const denied=await call('/api/reviewer-scopes','POST',grant);
+   assert.equal(denied.status,401,column+' inactive owner must not nominate');
+   assert.equal(await count('app_reviewer_scope_grants'),0,
+    column+' denial cannot create a reviewer grant');
+   assert.equal(await count('app_reviewer_scope_events'),0,
+    column+' denial cannot create an audit event');
+  }finally{
+   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+  }
+ }
+ const granted=await call('/api/reviewer-scopes','POST',grant);
+ assert.equal(granted.status,201);
+ assert.equal(granted.data.productionReleaseAuthorized,false);
+ const revoked=await call('/api/reviewer-scopes','POST',{
+  ...grant,decision:'REVOKE',reason:'Close isolated CI nomination after successful control test'});
+ assert.equal(revoked.status,201);
+ assert.equal(revoked.data.state,'REVOKED');
+ assert.equal(await count('app_reviewer_scope_events'),2);
+});

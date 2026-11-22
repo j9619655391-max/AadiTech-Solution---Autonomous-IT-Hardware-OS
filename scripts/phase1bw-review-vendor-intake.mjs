@@ -116,6 +116,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'server/security/reviewerScopeRouter.ts',
  'server/quotes/reviewRouter.ts',
  'tests/er-legacy-reviewer-active-identity.test.mjs',
+ 'tests/es-reviewer-nominator-transaction.test.mjs',
  'server/procurement/reviewRouter.ts',
  'scripts/lib/stagingPreflight.ts',
  'package.json',
