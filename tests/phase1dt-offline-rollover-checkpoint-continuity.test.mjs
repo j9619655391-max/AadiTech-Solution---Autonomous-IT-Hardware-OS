@@ -3805,3 +3805,171 @@ test('1EG output is frozen, redacted and does not disclose request scope hashes'
  assert.ok(generated.every(Object.isFrozen));
  egHold(r);
 });
+
+
+/* Phase 1EH: disconnected applicant-only manual-response intake quarantine.
+ * Claimed SHA digests are NEVER independently authenticated evidence. */
+import {applicantIntakeDigestEh,createQuarantinedManualIntakeEh,
+ assessQuarantinedManualIntakeEh}
+ from '../scripts/phase1eh-disconnected-response-intake-quarantine.mjs';
+function ehFixture(claims=Array(12).fill(null)){
+ const eg=egFixture();
+ return {args:{previousHandoffCandidate:eg.args,
+  entries:clone(createQuarantinedManualIntakeEh(eg.args,claims)),now:NOW}};
+}
+const ehAssess=f=>assessQuarantinedManualIntakeEh(f.args);
+function ehHold(r){
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.actualIndependentResponsesAuthenticated,0);
+ assert.equal(r.requestsDispatched,0);
+ assert.equal(r.realIssuerOrLegalAuthorityVerified,false);
+ assert.equal(r.independentReviewerEnrollmentVerified,false);
+ assert.equal(r.externalStorageOrTrustedTimeVerified,false);
+ assert.equal(r.closureOrAutomaticRetryPermitted,false);
+}
+test('1EH 12 absent responses are source-linked and still permanently HOLD',()=>{
+ const f=ehFixture(),r=ehAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.fullOriginalEgToDuHistoryReverifiedMathematicallyOnly,true);
+ assert.equal(r.applicantControlledIntakeEntriesValidated,12);
+ assert.equal(r.applicantClaimedUnverifiedEvidenceHashes,0);
+ assert.ok(f.args.entries.every(x=>x.receiptState==='NO_RESPONSE_OBSERVED'));
+ ehHold(r);
+});
+test('1EH three alleged evidence SHA claims remain quarantined, not authenticated',()=>{
+ const claims=Array(12).fill(null);claims[0]='a'.repeat(64);
+ claims[5]='b'.repeat(64);claims[11]='c'.repeat(64);
+ const f=ehFixture(claims),r=ehAssess(f);
+ assert.deepEqual(r.anomalyCodes,[]);
+ assert.equal(r.applicantClaimedUnverifiedEvidenceHashes,3);
+ assert.equal(r.applicantControlledIntakeEntriesValidated,12);
+ assert.equal(f.args.entries[5].receiptState,'APPLICANT_CLAIM_QUARANTINED');
+ ehHold(r);
+});
+test('1EH exact EG request digest and chained 12-intake local predecessors',()=>{
+ const f=ehFixture();
+ assert.equal(f.args.entries[0].previousIntakeSha256,
+  manualRequestDigestEg(f.args.previousHandoffCandidate.requests[11]));
+ for(let i=0;i<12;i++){
+  assert.equal(f.args.entries[i].manualRequestSha256,
+   manualRequestDigestEg(f.args.previousHandoffCandidate.requests[i]));
+  if(i)assert.equal(f.args.entries[i].previousIntakeSha256,
+   applicantIntakeDigestEh(f.args.entries[i-1]));
+ }
+ ehHold(ehAssess(f));
+});
+test('1EH faked provider, reviewer, custody, sent, closure or GO is rejected',()=>{
+ for(const [key,value] of [
+  ['reviewerAuthenticated',true],
+  ['providerOrIssuerEvidenceVerified',true],
+  ['independentOffPlatformCustodyVerified',true],
+  ['requestDispatched',true],['caseClosed',true],
+  ['releaseDecision','GO']
+ ]){
+  const f=ehFixture();f.args.entries[2][key]=value;
+  const r=ehAssess(f);
+  has(r,'EH_INTAKE_REPLAY_FALSE_AUTHORITY_OR_SOURCE_BINDING');
+  ehHold(r);
+ }
+});
+test('1EH never accepts automatic retry, network or external mutation claims',()=>{
+ for(const [key,value] of [
+  ['autoRetryAllowed',true],['networkRequests',1],['sideEffects',1]
+ ]){
+  const f=ehFixture();f.args.entries[3][key]=value;
+  has(ehAssess(f),'EH_INTAKE_REPLAY_FALSE_AUTHORITY_OR_SOURCE_BINDING');
+ }
+});
+test('1EH a claimed digest cannot be silently presented as an observed receipt',()=>{
+ for(const mutate of [
+  e=>{e.claimedEvidenceSha256='a'.repeat(64);},
+  e=>{e.receiptState='RECEIVED_VERIFIED';},
+  e=>{e.claimedEvidenceSha256='A'.repeat(64);},
+  e=>{e.claimedEvidenceSha256='https://untrusted.test/receipt';}
+ ]){
+  const f=ehFixture();mutate(f.args.entries[0]);
+  const r=ehAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EH_')));ehHold(r);
+ }
+});
+test('1EH replayed request, swapped gate, role or sequence cannot be adopted',()=>{
+ for(const [key,value] of [
+  ['manualRequestSha256','f'.repeat(64)],
+  ['gate','LIVE_ISSUER_SIGNED_CRL_OCSP'],
+  ['requiredIndependentAuthorityRole','APPLICANT_AUTHOR'],
+  ['sequence',4],['previousIntakeSha256','f'.repeat(64)]
+ ]){
+  const f=ehFixture();f.args.entries[0][key]=value;
+  has(ehAssess(f),'EH_INTAKE_REPLAY_FALSE_AUTHORITY_OR_SOURCE_BINDING');
+ }
+});
+test('1EH duplicate/reversed/shortened/extended intake lists fail closed',()=>{
+ for(const edit of [
+  a=>a.reverse(),a=>{a[3]=clone(a[2]);},
+  a=>a.pop(),a=>a.push(clone(a[0]))
+ ]){
+  const f=ehFixture();edit(f.args.entries);
+  const r=ehAssess(f);
+  assert.ok(r.anomalyCodes.some(x=>x.startsWith('EH_')));ehHold(r);
+ }
+});
+test('1EH local rehash of rewritten predecessor cannot counterfeit authority',()=>{
+ const f=ehFixture();
+ f.args.entries[0].manualRequestSha256='f'.repeat(64);
+ for(let i=1;i<12;i++)f.args.entries[i].previousIntakeSha256=
+  applicantIntakeDigestEh(f.args.entries[i-1]);
+ has(ehAssess(f),'EH_INTAKE_REPLAY_FALSE_AUTHORITY_OR_SOURCE_BINDING');
+});
+test('1EH original signed upstream chain/EG manual request cannot be forged',()=>{
+ for(const edit of [
+  f=>{f.args.previousHandoffCandidate.requests[0].requestDispatched=true;},
+  f=>{f.args.previousHandoffCandidate.previousQuarantineCandidate.cases[0].caseStatus='CLOSED';},
+  f=>{f.args.previousHandoffCandidate.previousQuarantineCandidate
+   .previousFailureCandidate.plans[0].requestedVersion=0;}
+ ]){
+  const f=ehFixture();edit(f);
+  has(ehAssess(f),'EH_ORIGINAL_EG_HISTORY_NOT_REVERIFIED');
+ }
+});
+test('1EH generator refuses fake EG authority, malformed and wrong claim counts',()=>{
+ const f=egFixture();f.args.requests[0].reviewerAuthenticated=true;
+ assert.throws(()=>createQuarantinedManualIntakeEh(f.args),
+  /EH_ORIGINAL_EG_HISTORY_NOT_REVERIFIED/);
+ const g=egFixture();
+ for(const bad of [[],[null],Array(13).fill(null),
+  Array(12).fill('fake'),Array(12).fill('A'.repeat(64))]){
+  assert.throws(()=>createQuarantinedManualIntakeEh(g.args,bad),
+   /EH_EXACT_TWELVE_CLAIMS_OR_ABSENCES_REQUIRED/);
+ }
+});
+test('1EH exact schema rejects extras, malformed, cyclic and oversized objects',()=>{
+ let f=ehFixture();f.args.productionReady=true;
+ has(ehAssess(f),'EH_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=ehFixture();f.args.entries[0].approved=true;
+ has(ehAssess(f),'EH_CLAIM_SCHEMA_OR_HASH_INVALID');
+ f=ehFixture();f.args.entries[0].cycle=f.args;
+ has(ehAssess(f),'EH_EXACT_BOUNDED_INPUT_REQUIRED');
+ f=ehFixture();f.args.entries[0].extra='z'.repeat(5500*1024);
+ has(ehAssess(f),'EH_EXACT_BOUNDED_INPUT_REQUIRED');
+ assert.throws(()=>applicantIntakeDigestEh({releaseDecision:'GO'}),
+  /EH_EXACT_QUARANTINED_ENTRY_REQUIRED/);
+});
+test('1EH clock mismatch and redacted frozen output block promoted claims',()=>{
+ const claims=Array(12).fill(null);claims[8]='e'.repeat(64);
+ const f=ehFixture(claims);
+ const r=ehAssess(f),text=JSON.stringify(r);
+ for(const hidden of [claims[8],f.args.entries[3].manualRequestSha256,
+  f.args.previousHandoffCandidate.requests[0].quarantineCaseSha256])
+  assert.equal(text.includes(hidden),false);
+ assert.equal(Object.isFrozen(r),true);
+ assert.equal(Object.isFrozen(r.anomalyCodes),true);
+ const made=createQuarantinedManualIntakeEh(
+  f.args.previousHandoffCandidate,claims);
+ assert.equal(Object.isFrozen(made),true);
+ assert.ok(made.every(Object.isFrozen));
+ f.args.now='2026-11-21T00:00:01.000Z';
+ has(ehAssess(f),'EH_ORIGINAL_EG_HISTORY_NOT_REVERIFIED');
+ ehHold(r);
+});

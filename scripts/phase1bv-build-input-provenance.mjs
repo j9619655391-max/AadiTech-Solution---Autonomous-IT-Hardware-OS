@@ -64,6 +64,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/phase1ee-disconnected-version-failure-taxonomy.mjs',
  'scripts/phase1ef-disconnected-quarantine-escalation.mjs',
  'scripts/phase1eg-unsent-manual-authority-handoff.mjs',
+ 'scripts/phase1eh-disconnected-response-intake-quarantine.mjs',
  'scripts/phase1by-github-governance-observer.mjs',
  'scripts/phase1cs-push-head-governance.mjs',
  'scripts/phase1ck-picomatch-worker.cjs',
