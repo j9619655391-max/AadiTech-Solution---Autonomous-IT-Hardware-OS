@@ -373,3 +373,32 @@ test('1EL owner can revoke/regrant review access with transactional audit and no
   'SELECT COUNT(*) AS n FROM app_organization_candidates');
  assert.equal(Number(orgRows[0].n),0);
 });
+
+test('1ER disabled or demoted OWNER cannot expose or authorize old PROCUREMENT nominations',async()=>{
+ const queue='/api/procurement/review/requests';
+ const detail=queue+'/'+requestId;
+ const decision=detail+'/decide';
+ const body={decision:'APPROVED_INTERNAL',
+  reason:'Inactive original owner must make this known request inaccessible',
+  evidenceAttested:true};
+ assert.equal((await call(detail,'GET',undefined,'reviewer')).status,200);
+ for(const [column,invalid,restore] of [
+  ['status','DISABLED','ACTIVE'],['role','REVIEWER','OWNER']
+ ] as const){
+  await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
+  try{
+   const hidden=await call(queue,'GET',undefined,'reviewer');
+   assert.equal(hidden.status,200);
+   assert.equal(hidden.data.items.some((row:any)=>row.id===requestId),false,
+    column+' source owner must be filtered from queue');
+   assert.equal((await call(detail,'GET',undefined,'reviewer')).status,404,
+    column+' known ID read should deny');
+   assert.equal((await call(decision,'POST',body,'reviewer')).status,404,
+    column+' known ID write should deny before duplicate-decision check');
+  }finally{
+   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+  }
+  assert.equal((await call(detail,'GET',undefined,'reviewer')).status,200,
+   'Restored source author state permits prior scoped read, not a new grant');
+ }
+});
