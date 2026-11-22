@@ -179,7 +179,7 @@ test('authenticated quote drafts snapshot verified product prices and do not sen
 
 /* Phase 1EK: real MySQL HTTP actor-scoped CRM provenance and draft inputs.
  * This is application-audit actor scope, NOT a legal organization/tenant mandate. */
-let ekOtherCookie='',ekOwnCustomer='',ekOtherCustomer='',ekOwnLead='',
+let ekOtherCookie='',ekOwnCustomer='',ekOtherCustomer='',ekOwnLead='',ekOtherLead='',
  ekOtherProduct='',ekOwnProduct='',ekOtherDraft='';
 test('1EK two OWNER sessions create independently scoped CRM inputs',async()=>{
  const otherUser=randomUUID(),otherToken='k'.repeat(43);
@@ -204,6 +204,11 @@ test('1EK two OWNER sessions create independently scoped CRM inputs',async()=>{
   name:'Actor A Lead',company:'Private only',email:'ek-lead-'+randomUUID()+'@example.invalid',
   phone:'1234567890',source:'EMAIL',requirement:'CI evidence'});
  assert.equal(lead.status,201);ekOwnLead=String(lead.data.id);
+ const foreignLead=await call('/api/crm/leads','POST',{
+  name:'Actor B Lead',company:'Private B',email:'ek-other-lead-'+randomUUID()+'@example.invalid',
+  phone:'1234567890',source:'EMAIL',requirement:'Synthetic internal quote only'
+ },true,true,{cookie:ekOtherCookie});
+ assert.equal(foreignLead.status,201);ekOtherLead=String(foreignLead.data.id);
  const ownProduct=await call('/api/crm/products','POST',{
   sku:'EK-OWN-'+randomUUID(),brand:'CI',model:'Owner A',category:'SERVER',
   specs:'Synthetic only',unitCost:'100.00',minPrice:'100.00',
@@ -268,7 +273,7 @@ test('1EK quote cannot use another OWNER customer, lead or price catalog ID',asy
  assert.equal(ownDenied.status,400);
 });
 test('1EK valid same-OWNER quote remains private, atomic and never dispatched',async()=>{
- const body={customerId:ekOtherCustomer,
+ const body={customerId:ekOtherCustomer,leadId:ekOtherLead,
   items:[{productId:ekOtherProduct,quantity:1}]};
  const key=randomUUID(),options={cookie:ekOtherCookie,'idempotency-key':key};
  const draft=await call('/api/quotes/drafts','POST',body,true,true,options);

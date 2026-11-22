@@ -101,10 +101,10 @@ router.post('/',async(req,res)=>{
        [body.customerId,res.locals.auth.userId]);
     if(!customer.length)throw new QuoteInputError('Active customer not found');
     if(body.leadId){
-      const [lead]=await connection.query<RowDataPacket[]>(`SELECT lead.id,lead.company FROM crm_leads lead
-       WHERE lead.id=? AND lead.deleted_at IS NULL
+      const [lead]=await connection.query<RowDataPacket[]>(`SELECT lead_record.id,lead_record.company FROM crm_leads lead_record
+       WHERE lead_record.id=? AND lead_record.deleted_at IS NULL
        AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='leads'
-        AND a.entity_id=lead.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+        AND a.entity_id=lead_record.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
        [body.leadId,res.locals.auth.userId]);
       if(!lead.length)throw new QuoteInputError('Active lead not found');
     }
