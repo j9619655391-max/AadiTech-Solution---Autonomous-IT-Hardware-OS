@@ -82,6 +82,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'server/crm/router.ts',
  'server/quotes/router.ts',
  'server/procurement/ownerRouter.ts',
+ 'tests/staging-preflight.test.ts',
  'tests/el-reviewer-scope-migration.test.ts',
  'tests/crm-mysql.integration.ts',
  'tests/procurement-mysql.integration.ts',
