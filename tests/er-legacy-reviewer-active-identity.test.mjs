@@ -12,10 +12,10 @@ const reviewerSources=Object.freeze({
 test('Phase 1ER legacy reviewer scope checks require active OWNER and REVIEWER identities',()=>{
   for(const [family,count] of Object.entries(reviewerSources)){
     const source=readFileSync('server/'+family+'/reviewRouter.ts','utf8');
-    const queries=[...source.matchAll(/FROM app_reviewer_scope_grants(?:[ \\t]+(?:g|scope_grant))?([\\s\\S]*?)\\bWHERE\\b/g)];
+    const queries=source.split('FROM app_reviewer_scope_grants').slice(1).map(part=>part.split('WHERE')[0]);
     assert.equal(queries.length,count,family+': all grant checks must be inspected');
     for(const [index,match] of queries.entries()){
-      const sql=match[1];
+      const sql=match;
       for(const clause of [
         'JOIN auth_users scope_owner ON scope_owner.id=',
         "scope_owner.role='OWNER'",
