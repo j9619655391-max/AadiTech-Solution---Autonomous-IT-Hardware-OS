@@ -21,3 +21,10 @@
 **Limit:** Existing system has an OWNER actor ID, not a production-ready multi-tenant legal-entity authorization model. This fix isolates existing personal warehouses but is **not** complete tenant/role ACL enforcement across CRM, procurement, vendor catalog, quotes, stock or finance. End-to-end BOLA audit and independent staging acceptance remain open in Issue #2. No trustworthy live stock quantity is asserted.
 
 **Production release:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. Draft PR #1 remains unmerged, Issue #2 remains open, `main` stays unmodified; no external provider calls, supplier PO, customer quote, GRN/stock/finance/tax posting, data export or deployment.
+
+
+## Exact engineering SHA GitHub-hosted verification receipt
+
+Commit [`e193bd0f6a1668140bc30c2758004faa9f3fbd3a`](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/commit/e193bd0f6a1668140bc30c2758004faa9f3fbd3a) independently observed on official GitHub: [push run 45027948592](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/45027948592) COMPLETED/SUCCESS, 7 pass + 1 PR-only skipped; [PR run 45027954706](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/45027954706) COMPLETED/SUCCESS, all 8 jobs pass. Both were attempt 1. Official Actions Jobs and Checks app 15368 reconciled 16/16 exact job/check IDs, SHA, names, statuses and conclusions, zero mismatches. Hosted baseline Node 1,441/1,441, TS 204/204, staging-security TS 20/20; *real disposable CI MySQL inventory HTTP* 8/8 including 4/4 Phase 1EJ groups, other MySQL integrations and isolated Chromium role/MFA smoke successful. This is **internal engineering CI**, not an independent security audit, tenancy certification, production data migration, external authority or real staging acceptance.
+
+**Important:** Adding this receipt creates a newer docs-inclusive commit that requires *its own* completed exact-SHA push/PR workflows. Do not cite the engineering-only SHA as evidence for the final documentation inclusive source.
