@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/externalTrust/ownerRouter';
 import reviewRouter from '../server/externalTrust/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import lifecycleOwnerRouter from '../server/keyLifecycle/ownerRouter';
 import lifecycleReviewRouter from '../server/keyLifecycle/reviewRouter';
 import proofOwnerRouter from '../server/proofFoundation/ownerRouter';
@@ -289,9 +290,11 @@ test('isolated synthetic source, authenticated role separation and API mount',as
    VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROOF'),(?,?,'KEY_LIFECYCLE'),(?,?,'EXTERNAL_TRUST')",[owner,reviewer,owner,reviewer,owner,reviewer]);
  main=await withHeldSource(await fixture('EXTERNAL_CI'));
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/proof-foundation/review',proofReviewRouter);
  app.use('/api/proof-foundation',proofOwnerRouter);
  app.use('/api/key-lifecycle/review',lifecycleReviewRouter);
@@ -339,6 +342,39 @@ test('registration requires OWNER, CSRF, step-up and registry review remains HEL
  assert.equal((await call('/api/external-trust/review/issuers/'+issuerId+'/decide',
   'POST',reviewIssuer,'reviewer')).status,409);
 });
+
+test('1EP unrelated/revoked EXTERNAL_TRUST reviewer loses issuer and attestation access',async()=>{
+ const outsider=randomUUID(),tokenOther=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'ep-issuer-'+outsider+'@example.invalid','Unassigned root reviewer',
+   'test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(tokenOther),outsider,csrf]);
+ const unrelated=await fetch(base+'/api/external-trust/review/issuers',
+  {headers:{cookie:'aaditech_session='+tokenOther}});
+ assert.equal(unrelated.status,200);
+ assert.equal((await unrelated.json() as {items:{id:string}[]}).items.some(x=>x.id===issuerId),false);
+ const revoke={reviewerId:reviewer,scope:'EXTERNAL_TRUST',decision:'REVOKE',
+  reason:'Owner withdraws internal issuer and corporate authority reviewer'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const hidden=await call('/api/external-trust/review/issuers','GET',undefined,'reviewer');
+  assert.equal(hidden.status,200);
+  assert.equal(hidden.data.items.some((x:any)=>x.id===issuerId),false);
+  assert.equal((await call('/api/external-trust/review/issuers/'+issuerId+'/decide',
+   'POST',reviewIssuer,'reviewer')).status,404);
+  const [rows]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_external_issuer_reviews WHERE issuer_id=?',[issuerId]);
+  assert.equal(Number(rows[0].n),1);
+ }finally{
+  assert.equal((await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Owner explicitly reinstates bounded internal trust review scope'})).status,201);
+ }
+});
+
 test('1AI candidate key plus independently checked 1AJ Ed25519 possession is required',async()=>{
  const p={partyKind:'SUPPLIER',partyId:main.supplierId,
   publicKeySpkiB64:vendorPair.publicKey.export({format:'der',type:'spki'}).toString('base64'),
@@ -381,6 +417,24 @@ test('signed organizational authority is mathematically verified but never exter
  assert.equal(recorded.data.organizationAuthorityVerified,false);
  const replay=await call('/api/external-trust/attestations','POST',{...payload,signatureB64});
  assert.equal(replay.status,200);assert.equal(replay.data.id,authorityId);
+ const revoke={reviewerId:reviewer,scope:'EXTERNAL_TRUST',decision:'REVOKE',
+  reason:'Owner revokes internal authority inspection before final attestation'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  assert.equal((await call('/api/external-trust/review/attestations',
+   'GET',undefined,'reviewer')).data.items.some((x:any)=>x.id===authorityId),false);
+  assert.equal((await call('/api/external-trust/review/attestations/'+authorityId,
+   'GET',undefined,'reviewer')).status,404);
+  assert.equal((await call('/api/external-trust/review/attestations/'+authorityId+'/decide',
+   'POST',reviewAuthority,'reviewer')).status,404);
+  const [rows]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_external_authority_reviews WHERE attestation_id=?',
+   [authorityId]);
+  assert.equal(Number(rows[0].n),0);
+ }finally{
+  assert.equal((await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Owner explicitly restores scoped internal cryptographic authority reviewer'})).status,201);
+ }
  assert.equal((await call('/api/external-trust/readiness/'+authorityId)).status,409);
  assert.equal((await call('/api/external-trust/review/attestations/'+authorityId+'/decide',
   'POST',reviewAuthority,'owner')).status,403);

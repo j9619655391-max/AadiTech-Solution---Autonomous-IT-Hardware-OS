@@ -6,6 +6,7 @@ import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inventoryId} from '../inventory/validation';
 import {inspectReceipt,inspectRotation} from './integrity';
+import {activeSensitiveReviewerScope} from '../security/sensitiveReviewScope';
 import {ChainInputError,ChainConflictError,reviewBody,sha256} from './validation';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
@@ -33,9 +34,14 @@ router.get('/receipts',async(req,res)=>{
    p.status,p.created_at AS createdAt
    FROM inv_key_possession_receipts p
    JOIN inv_proof_key_candidates k ON k.id=p.key_id
+   JOIN inv_key_possession_challenges challenge ON challenge.id=p.challenge_id
    LEFT JOIN inv_key_possession_reviews r ON r.receipt_id=p.id
-   WHERE k.registered_by<>? ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE k.registered_by<>? AND challenge.prepared_by=k.registered_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=k.registered_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='KEY_LIFECYCLE' AND g.state='ACTIVE')
+   ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalPartyAuthentication:false});
  }catch(e){fail(res,e);}
 });
@@ -46,8 +52,10 @@ router.get('/receipts/:id',async(req,res)=>{
  try{
   c=await db.getConnection();await c.beginTransaction();
   const rec=await inspectReceipt(c,req.params.id);
-  if(rec.key.registeredBy===res.locals.auth.userId){
-   await c.rollback();res.status(404).json({error:'Independent inspection required'});return;
+  if(rec.key.registeredBy===res.locals.auth.userId||
+    !await activeSensitiveReviewerScope(c,rec.key.registeredBy,
+      String(res.locals.auth.userId),'KEY_LIFECYCLE')){
+   await c.rollback();res.status(404).json({error:'Possession unavailable to reviewer'});return;
   }
   await c.commit();
   res.json({receiptId:rec.id,format:rec.message.format,message:rec.message,
@@ -65,8 +73,9 @@ router.post('/receipts/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),rec=await inspectReceipt(c,req.params.id);
-  if(rec.key.registeredBy===actor){
-   await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(rec.key.registeredBy===actor||
+    !await activeSensitiveReviewerScope(c,rec.key.registeredBy,actor,'KEY_LIFECYCLE',true)){
+   await c.rollback();res.status(404).json({error:'Possession unavailable to reviewer'});return;
   }
   const [prior]=await c.query<RowDataPacket[]>(`SELECT id FROM inv_key_possession_reviews
    WHERE receipt_id=? FOR UPDATE`,[req.params.id]);
@@ -96,8 +105,13 @@ router.get('/rotations',async(req,res)=>{
    FROM inv_key_rotation_proposals x
    JOIN inv_proof_key_candidates a ON a.id=x.old_key_id
    JOIN inv_proof_key_candidates b ON b.id=x.new_key_id
-   WHERE x.prepared_by<>? ORDER BY x.created_at DESC,x.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE x.prepared_by<>? AND a.registered_by=x.prepared_by
+    AND b.registered_by=x.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=x.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='KEY_LIFECYCLE' AND g.state='ACTIVE')
+   ORDER BY x.created_at DESC,x.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalAuthorityGranted:false});
  }catch(e){fail(res,e);}
 });
@@ -111,13 +125,22 @@ router.post('/rotations/:id/decide',requirePrivilegedMfa,requireStepUp,async(req
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId);
   // Rejections remain available even if the owner emergency-revoked the old key.
-  const [pending]=await c.query<RowDataPacket[]>(`SELECT id,old_key_id AS oldKeyId,
-   new_key_id AS newKeyId,prepared_by AS preparedBy,status
-   FROM inv_key_rotation_proposals WHERE id=? FOR UPDATE`,[req.params.id]);
+  const [pending]=await c.query<RowDataPacket[]>(`SELECT x.id,
+   x.old_key_id AS oldKeyId,x.new_key_id AS newKeyId,
+   x.prepared_by AS preparedBy,x.status,
+   a.registered_by AS oldOwner,b.registered_by AS newOwner
+   FROM inv_key_rotation_proposals x
+   JOIN inv_proof_key_candidates a ON a.id=x.old_key_id
+   JOIN inv_proof_key_candidates b ON b.id=x.new_key_id
+   WHERE x.id=? FOR UPDATE`,[req.params.id]);
   if(pending.length!==1||pending[0].status!=='PENDING_INTERNAL')
    throw new ChainConflictError('Rotation review no longer pending');
-  if(pending[0].preparedBy===actor){
-   await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(pending[0].preparedBy===actor||
+    pending[0].oldOwner!==pending[0].preparedBy||
+    pending[0].newOwner!==pending[0].preparedBy||
+    !await activeSensitiveReviewerScope(c,pending[0].preparedBy,
+      actor,'KEY_LIFECYCLE',true)){
+   await c.rollback();res.status(404).json({error:'Rotation unavailable to reviewer'});return;
   }
   if(data.decision==='REVIEWED_UNTRUSTED'){
    const checked=await inspectRotation(c,req.params.id);

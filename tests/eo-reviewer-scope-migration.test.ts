@@ -26,7 +26,7 @@ test('1EO review extension rejects production, wrong DB and unapproved staging',
   EO_REVIEW_SCOPE_MIGRATION_APPROVED:'YES'}),'staging');
 });
 test('1EO app-only stock/journal scopes append in 0045 with no retroactive authority',()=>{
- assert.equal(MIGRATIONS.length,45);
+ assert.ok(MIGRATIONS.length>=45);
  assert.equal(MIGRATIONS[43],'0044_en_workflow_review_scopes');
  assert.equal(MIGRATIONS[44],'0045_eo_stock_journal_review_scopes');
  const sql=readFileSync('database/migrations/0045_eo_stock_journal_review_scopes.sql','utf8');

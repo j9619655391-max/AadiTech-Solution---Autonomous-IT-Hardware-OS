@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/proofFoundation/ownerRouter';
 import reviewRouter from '../server/proofFoundation/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import {readHeldGrnSource} from '../server/stockFoundation/integrity';
 import {releaseSnapshot,releaseHoldSnapshot} from '../server/stockFoundation/validation';
 import {claimDigest,heldGrnSnapshot} from '../server/evidenceChain/validation';
@@ -260,11 +261,13 @@ test('create complete synthetic internal 1AC–1AG source, isolated owners and r
    VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROOF')",[owner,reviewer]);
  main=await withHeldSource(await fixture('PROOF_MAIN'));
  second=await withHeldSource(await fixture('PROOF_OTHER'));
  releaseA=await stockRelease(main);releaseB=await stockRelease(second);
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/proof-foundation/review',reviewRouter);
  app.use('/api/proof-foundation',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API route'}));
@@ -302,6 +305,47 @@ test('key registrations and source listings have role, CSRF and step-up security
  assert.ok(source.data.items.some((i:any)=>i.sourceId===main.preparationId));
  assert.ok(source.data.items.some((i:any)=>i.sourceId===main.heldGrnId));
 });
+
+test('1EP PROOF reviewer must be nominated: unrelated and revoked role denied known key',async()=>{
+ const outsider=randomUUID(),tokenOther=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'ep-proof-'+outsider+'@example.invalid','Unassigned proof inspector','test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(tokenOther),outsider,csrf]);
+ const response=await fetch(base+'/api/proof-foundation/review/keys',
+  {headers:{cookie:'aaditech_session='+tokenOther}});
+ assert.equal(response.status,200);
+ assert.equal((await response.json() as {items:{id:string}[]}).items.some(x=>x.id===supplierKeyId),false);
+ assert.equal((await call('/api/proof-foundation/review/keys','GET',undefined,'reviewer')).data.items.some(
+  (x:any)=>x.id===supplierKeyId),true);
+ const revoke={reviewerId:reviewer,scope:'PROOF',decision:'REVOKE',
+  reason:'Owner withdraws proof candidate reviewer access from key evidence'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const hidden=await call('/api/proof-foundation/review/keys','GET',undefined,'reviewer');
+  assert.equal(hidden.status,200);
+  assert.equal(hidden.data.items.some((x:any)=>x.id===supplierKeyId),false);
+  const denied=await call('/api/proof-foundation/review/keys/'+supplierKeyId+'/decide',
+    'POST',keyReview,'reviewer');
+  assert.equal(denied.status,404);
+  const [rows]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_proof_key_reviews WHERE key_id=?',[supplierKeyId]);
+  assert.equal(Number(rows[0].n),0);
+ }finally{
+  const restored=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+    reason:'Owner explicitly restores only the offline proof review nomination'});
+  assert.equal(restored.status,201);
+ }
+ assert.equal((await call('/api/proof-foundation/review/keys','GET',undefined,'reviewer')).data.items.some(
+   (x:any)=>x.id===supplierKeyId),true);
+ const [events]=await db.query<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='PROOF'`,[owner,reviewer]);
+ assert.deepEqual(events.map((e:any)=>e.decision).sort(),['GRANT','REVOKE']);
+});
+
 test('independent key format review is NEVER verified external identity',async()=>{
  assert.equal((await call('/api/proof-foundation/review/keys/'+supplierKeyId+'/decide',
   'POST',keyReview,'owner')).status,403);
@@ -358,6 +402,25 @@ test('signed evidence is checked against frozen outbox; bogus signatures and par
  supplierClaimId=registered.data.id;
  const replay=await call('/api/proof-foundation/claims','POST',input);
  assert.equal(replay.status,200);assert.equal(replay.data.id,supplierClaimId);
+ const revoke={reviewerId:reviewer,scope:'PROOF',decision:'REVOKE',
+  reason:'Owner revokes signed-proof claim reviewer before review decision'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const q=await call('/api/proof-foundation/review/claims','GET',undefined,'reviewer');
+  assert.equal(q.status,200);
+  assert.equal(q.data.items.some((x:any)=>x.id===supplierClaimId),false);
+  assert.equal((await call('/api/proof-foundation/review/claims/'+supplierClaimId,
+   'GET',undefined,'reviewer')).status,404);
+  assert.equal((await call('/api/proof-foundation/review/claims/'+supplierClaimId+'/decide',
+   'POST',claimReview,'reviewer')).status,404);
+  const [reviews]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_signed_proof_reviews WHERE claim_id=?',[supplierClaimId]);
+  assert.equal(Number(reviews[0].n),0);
+ }finally{
+  assert.equal((await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Restore only the explicitly owner-nominated proof review scope'})).status,201);
+ }
+
  assert.equal((await call('/api/proof-foundation/claims','POST',
   {...input,reference:'ALTERED-CLAIM-2026'})).status,409);
  assert.equal((await call('/api/proof-foundation/message-template?'+

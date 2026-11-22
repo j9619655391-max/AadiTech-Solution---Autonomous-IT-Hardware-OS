@@ -6,6 +6,7 @@ import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inventoryId} from '../inventory/validation';
 import {inspectIssuer,inspectAuthority} from './integrity';
+import {activeSensitiveReviewerScope} from '../security/sensitiveReviewScope';
 import {validateReview,ChainInputError,ChainConflictError,digest} from './validation';
 const router=Router();router.use(requireReviewer);
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
@@ -36,8 +37,12 @@ router.get('/issuers',async(req,res)=>{
    i.external_root_state AS externalRootState,f.issuer_id AS frozen
    FROM inv_external_issuer_candidates i
    LEFT JOIN inv_external_issuer_freezes f ON f.issuer_id=i.id
-   WHERE i.registered_by<>? ORDER BY i.created_at DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE i.registered_by<>?
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+     WHERE g.owner_user_id=i.registered_by AND g.reviewer_user_id=?
+      AND g.workflow_scope='EXTERNAL_TRUST' AND g.state='ACTIVE')
+   ORDER BY i.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externallyAuthenticatedIssuerCount:0});
  }catch(e){fail(res,e);}
 });
@@ -51,8 +56,9 @@ router.post('/issuers/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,r
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId);
   const issuer=await inspectIssuer(c,req.params.id,false);
-  if(issuer.registeredBy===actor){
-   await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(issuer.registeredBy===actor||
+    !await activeSensitiveReviewerScope(c,issuer.registeredBy,actor,'EXTERNAL_TRUST',true)){
+   await c.rollback();res.status(404).json({error:'Issuer unavailable to reviewer'});return;
   }
   if(issuer.status!=='PENDING_INTERNAL')throw new ChainConflictError('Issuer already reviewed');
   const id=randomUUID();
@@ -79,8 +85,16 @@ router.get('/attestations',async(req,res)=>{
    a.key_id AS keyId,a.prepared_by AS preparedBy,a.purpose,
    a.statement_sha256 AS digest,a.status,
    a.external_authority_state AS externalAuthorityState
-   FROM inv_external_authority_attestations a WHERE a.prepared_by<>?
-   ORDER BY a.created_at DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_external_authority_attestations a
+   JOIN inv_external_issuer_candidates issuer ON issuer.id=a.issuer_id
+   JOIN inv_proof_key_candidates candidate ON candidate.id=a.key_id
+   WHERE a.prepared_by<>? AND issuer.registered_by=a.prepared_by
+    AND candidate.registered_by=a.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+     WHERE g.owner_user_id=a.prepared_by AND g.reviewer_user_id=?
+      AND g.workflow_scope='EXTERNAL_TRUST' AND g.state='ACTIVE')
+   ORDER BY a.created_at DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,legalAuthorityVerified:false,officialGrnAuthenticated:false});
  }catch(e){fail(res,e);}
 });
@@ -91,8 +105,10 @@ router.get('/attestations/:id',async(req,res)=>{
  try{
   c=await db.getConnection();await c.beginTransaction();
   const a=await inspectAuthority(c,req.params.id);
-  if(a.issuer.registeredBy===res.locals.auth.userId){
-   await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(a.issuer.registeredBy===res.locals.auth.userId||
+    !await activeSensitiveReviewerScope(c,a.issuer.registeredBy,
+      String(res.locals.auth.userId),'EXTERNAL_TRUST')){
+   await c.rollback();res.status(404).json({error:'Attestation unavailable to reviewer'});return;
   }
   await c.commit();
   res.json({id:a.id,status:a.status,issuerFingerprint:a.issuer.fingerprint,
@@ -111,8 +127,9 @@ router.post('/attestations/:id/decide',requirePrivilegedMfa,requireStepUp,async(
  try{
   c=await db.getConnection();await c.beginTransaction();
   const actor=String(res.locals.auth.userId),a=await inspectAuthority(c,req.params.id);
-  if(a.issuer.registeredBy===actor){
-   await c.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(a.issuer.registeredBy===actor||
+    !await activeSensitiveReviewerScope(c,a.issuer.registeredBy,actor,'EXTERNAL_TRUST',true)){
+   await c.rollback();res.status(404).json({error:'Attestation unavailable to reviewer'});return;
   }
   if(a.status!=='PENDING_INTERNAL')
    throw new ChainConflictError('Attestation already independently reviewed');

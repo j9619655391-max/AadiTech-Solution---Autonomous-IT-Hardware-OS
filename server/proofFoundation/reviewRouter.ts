@@ -6,6 +6,7 @@ import {requireReviewer,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 import {inventoryId} from '../inventory/validation';
 import {readCandidate,readVerifiedClaim} from './integrity';
+import {activeSensitiveReviewerScope} from '../security/sensitiveReviewScope';
 import {validateKeyReview,validateClaimReview,proofHoldSnapshot,
  ChainInputError,ChainConflictError} from './validation';
 import {sha} from '../dispatch/validation';
@@ -30,12 +31,21 @@ async function audit(c:PoolConnection,actor:string,type:'KEY'|'CLAIM',
 router.get('/keys',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT id,party_kind AS partyKind,
-   supplier_id AS supplierId,site_id AS siteId,
-   fingerprint_sha256 AS fingerprintSha256,
-   registered_by AS registeredBy,evidence_ref AS evidenceRef,status
-   FROM inv_proof_key_candidates WHERE registered_by<>?
-   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId]);
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT k.id,k.party_kind AS partyKind,
+   k.supplier_id AS supplierId,k.site_id AS siteId,
+   k.fingerprint_sha256 AS fingerprintSha256,
+   k.registered_by AS registeredBy,k.evidence_ref AS evidenceRef,k.status
+   FROM inv_proof_key_candidates k
+   LEFT JOIN proc_suppliers supplier ON supplier.id=k.supplier_id
+   LEFT JOIN inventory_sites site ON site.id=k.site_id
+   WHERE k.registered_by<>?
+     AND ((k.party_kind='SUPPLIER' AND supplier.created_by=k.registered_by)
+       OR (k.party_kind='WAREHOUSE' AND site.created_by=k.registered_by))
+     AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=k.registered_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='PROOF' AND g.state='ACTIVE')
+   ORDER BY k.created_at DESC,k.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalIdentityAuthenticated:false,trustAnchorVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -49,8 +59,9 @@ router.post('/keys/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,res)
   conn=await db.getConnection();await conn.beginTransaction();
   const actor=String(res.locals.auth.userId);
   const key=await readCandidate(conn,req.params.id,false);
-  if(key.registeredBy===actor){
-   await conn.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(key.registeredBy===actor||
+     !await activeSensitiveReviewerScope(conn,key.registeredBy,actor,'PROOF',true)){
+   await conn.rollback();res.status(404).json({error:'Key unavailable to reviewer'});return;
   }
   if(key.status!=='PENDING_INTERNAL')throw new ChainConflictError('Key already internally reviewed');
   const id=randomUUID();
@@ -74,12 +85,24 @@ router.post('/keys/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,res)
 router.get('/claims',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT id,claim_kind AS kind,
-   key_id AS keyId,created_by AS createdBy,
-   dispatch_preparation_id AS preparationId,held_grn_id AS heldGrnId,
-   message_sha256 AS messageSha256,signature_matched AS signatureMatched,status
-   FROM inv_signed_proof_claims WHERE created_by<>?
-   ORDER BY created_at DESC,id DESC LIMIT 100`,[res.locals.auth.userId]);
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT c.id,c.claim_kind AS kind,
+   c.key_id AS keyId,c.created_by AS createdBy,
+   c.dispatch_preparation_id AS preparationId,c.held_grn_id AS heldGrnId,
+   c.message_sha256 AS messageSha256,c.signature_matched AS signatureMatched,c.status
+   FROM inv_signed_proof_claims c
+   JOIN inv_proof_key_candidates k ON k.id=c.key_id
+   LEFT JOIN proc_dispatch_preparations prep ON prep.id=c.dispatch_preparation_id
+   LEFT JOIN inv_grn_held_records grn ON grn.id=c.held_grn_id
+   LEFT JOIN inv_grn_reconciliation_packs pack ON pack.id=grn.pack_id
+   WHERE c.created_by<>? AND k.registered_by=c.created_by
+    AND ((c.claim_kind='WAREHOUSE_GRN_ASSERTION' AND pack.prepared_by=c.created_by)
+     OR (c.claim_kind IN ('PO_ISSUANCE_ASSERTION','SUPPLIER_ACK_ASSERTION')
+       AND prep.prepared_by=c.created_by))
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=c.created_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='PROOF' AND g.state='ACTIVE')
+   ORDER BY c.created_at DESC,c.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,validSignaturesAreNotVerifiedIdentity:true});
  }catch(e){fail(res,e);}
 });
@@ -90,8 +113,10 @@ router.get('/claims/:id',async(req,res)=>{
  try{
   conn=await db.getConnection();await conn.beginTransaction();
   const state=await readVerifiedClaim(conn,req.params.id);
-  if(state.ownerId===res.locals.auth.userId){
-   await conn.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(state.ownerId===res.locals.auth.userId||
+    !await activeSensitiveReviewerScope(conn,state.ownerId,
+      String(res.locals.auth.userId),'PROOF')){
+   await conn.rollback();res.status(404).json({error:'Claim unavailable to reviewer'});return;
   }
   await conn.commit();
   res.json({claim:{id:state.id,kind:state.kind,status:state.status},
@@ -112,8 +137,9 @@ router.post('/claims/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,re
   conn=await db.getConnection();await conn.beginTransaction();
   const actor=String(res.locals.auth.userId);
   const state=await readVerifiedClaim(conn,req.params.id);
-  if(state.ownerId===actor){
-   await conn.rollback();res.status(404).json({error:'Independent reviewer required'});return;
+  if(state.ownerId===actor||
+    !await activeSensitiveReviewerScope(conn,state.ownerId,actor,'PROOF',true)){
+   await conn.rollback();res.status(404).json({error:'Claim unavailable to reviewer'});return;
   }
   if(state.status!=='PENDING_INTERNAL')
    throw new ChainConflictError('Signed claim has existing review');

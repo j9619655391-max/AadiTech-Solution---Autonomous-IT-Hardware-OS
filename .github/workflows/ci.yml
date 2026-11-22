@@ -543,6 +543,10 @@ jobs:
         run: bun run db:migrate:eo-reviewer-scopes
       - name: Phase 1EO verify checksum/idempotency and no previous grant escalation
         run: bun run db:migrate:eo-reviewer-scopes
+      - name: Phase 1EP add proof/key/issuer review scopes in disposable CI
+        run: bun run db:migrate:ep-reviewer-scopes
+      - name: Phase 1EP verify no retroactive grants and exact migration checksum
+        run: bun run db:migrate:ep-reviewer-scopes
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL

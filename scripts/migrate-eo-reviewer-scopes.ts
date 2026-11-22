@@ -17,7 +17,7 @@ export function eoReviewerScopeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stag
 async function main(){
  eoReviewerScopeMigrationTarget(process.env);
  const id='0045_eo_stock_journal_review_scopes';
- if(MIGRATIONS[44]!==id||MIGRATIONS.length!==45)
+ if(MIGRATIONS[44]!==id||MIGRATIONS.length<45)
   throw Error('1EO exact schema-migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('1EO DB config incomplete');

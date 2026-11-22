@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/keyLifecycle/ownerRouter';
 import reviewRouter from '../server/keyLifecycle/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import proofOwnerRouter from '../server/proofFoundation/ownerRouter';
 import proofReviewRouter from '../server/proofFoundation/reviewRouter';
 import {readHeldGrnSource} from '../server/stockFoundation/integrity';
@@ -269,9 +270,11 @@ test('isolated 1AC–1AF source and independent actor auth for key lifecycle',as
    VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'PROOF'),(?,?,'KEY_LIFECYCLE')",[owner,reviewer,owner,reviewer]);
  main=await withHeldSource(await fixture('LIFECYCLE_MAIN'));
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/proof-foundation/review',proofReviewRouter);
  app.use('/api/proof-foundation',proofOwnerRouter);
  app.use('/api/key-lifecycle/review',reviewRouter);
@@ -363,6 +366,49 @@ test('Ed25519 nonce possession one-shot, deterministic source and reviewer indep
  assert.equal(receipts[0].challenge_status,'MATCHED_INTERNAL');
  assert.equal(receipts[0].decision,'REVIEWED_UNTRUSTED');
 });
+
+test('1EP unassigned and revoked KEY_LIFECYCLE reviewer loses possession read/decisions',async()=>{
+ const outsider=randomUUID(),tokenOther=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'ep-possession-'+outsider+'@example.invalid',
+   'Unassigned key possession reviewer','test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,[hashToken(tokenOther),outsider,csrf]);
+ const unrelated=await fetch(base+'/api/key-lifecycle/review/receipts',
+  {headers:{cookie:'aaditech_session='+tokenOther}});
+ assert.equal(unrelated.status,200);
+ assert.equal((await unrelated.json() as {items:{receiptId:string}[]}).items.some(
+  x=>x.receiptId===oldReceipt),false);
+ assert.equal((await fetch(base+'/api/key-lifecycle/review/receipts/'+oldReceipt,
+  {headers:{cookie:'aaditech_session='+tokenOther}})).status,404);
+ const existing=await call('/api/key-lifecycle/review/receipts','GET',undefined,'reviewer');
+ assert.equal(existing.status,200);
+ assert.equal(existing.data.items.some((x:any)=>x.receiptId===oldReceipt),true);
+ const revoke={reviewerId:reviewer,scope:'KEY_LIFECYCLE',decision:'REVOKE',
+  reason:'Owner revokes candidate key-possession and rotation reviewer'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const hidden=await call('/api/key-lifecycle/review/receipts','GET',undefined,'reviewer');
+  assert.equal(hidden.status,200);
+  assert.equal(hidden.data.items.some((x:any)=>x.receiptId===oldReceipt),false);
+  assert.equal((await call('/api/key-lifecycle/review/receipts/'+oldReceipt,
+    'GET',undefined,'reviewer')).status,404);
+  assert.equal((await call('/api/key-lifecycle/review/receipts/'+oldReceipt+'/decide',
+    'POST',positive,'reviewer')).status,404);
+  const [checks]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_key_possession_reviews WHERE receipt_id=?',[oldReceipt]);
+  assert.equal(Number(checks[0].n),1);
+ }finally{
+  const restored=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Owner explicitly reauthorizes the key-lifecycle reviewer'});
+  assert.equal(restored.status,201);
+ }
+ assert.equal((await call('/api/key-lifecycle/review/receipts/'+oldReceipt,
+   'GET',undefined,'reviewer')).status,200);
+});
+
 test('expired challenge and changed stored digest are rejected; no possession receipt created',async()=>{
  const made=await call('/api/key-lifecycle/challenges','POST',{keyId:emergencyKey});
  assert.equal(made.status,201);
@@ -398,6 +444,19 @@ test('independent rotation suspends both keys, retires old atomically, keeps new
  assert.equal(made.status,201,JSON.stringify(made));
  rotationId=made.data.rotationId;
  assert.equal(made.data.oldKeySuspended,true);
+ const revoke={reviewerId:reviewer,scope:'KEY_LIFECYCLE',decision:'REVOKE',
+  reason:'Owner suspends rotation reviewer before irreversible retirement'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ const attempted=await call('/api/key-lifecycle/review/rotations/'+rotationId+'/decide',
+  'POST',positive,'reviewer');
+ assert.equal(attempted.status,404);
+ const [retirementBefore]=await db.query<any[]>(
+  'SELECT COUNT(*) AS n FROM inv_key_retirements WHERE key_id=?',[oldKey]);
+ assert.equal(Number(retirementBefore[0].n),0);
+ assert.equal((await call('/api/key-lifecycle/review/rotations','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.rotationId===rotationId),false);
+ assert.equal((await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+  reason:'Owner restores scoped rotation review after checking signer separation'})).status,201);
  assert.equal(((await call(sourceTemplate(oldKey))).status),409);
  assert.equal(((await call(sourceTemplate(newKey))).status),409);
  assert.equal((await call('/api/key-lifecycle/review/rotations/'+rotationId+'/decide',

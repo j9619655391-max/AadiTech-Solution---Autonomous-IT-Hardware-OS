@@ -98,6 +98,7 @@
     "db:migrate:el-reviewer-scopes": "tsx scripts/migrate-el-reviewer-scopes.ts",
     "db:migrate:en-reviewer-scopes": "tsx scripts/migrate-en-reviewer-scopes.ts",
     "db:migrate:eo-reviewer-scopes": "tsx scripts/migrate-eo-reviewer-scopes.ts",
+    "db:migrate:ep-reviewer-scopes": "tsx scripts/migrate-ep-reviewer-scopes.ts",
     "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts"
   },
   "dependencies": {
