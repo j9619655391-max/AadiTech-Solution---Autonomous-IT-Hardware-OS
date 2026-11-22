@@ -130,6 +130,8 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'server/quotes/reviewRouter.ts',
  'tests/er-legacy-reviewer-active-identity.test.mjs',
  'tests/es-reviewer-nominator-transaction.test.mjs',
+ 'tests/et-reviewer-lifecycle.test.mjs',
+ 'server/security/adminRouter.ts',
  'server/procurement/reviewRouter.ts',
  'scripts/lib/stagingPreflight.ts',
  'server.ts',

@@ -9,6 +9,7 @@ import authRouter from '../server/auth/router';
 import ownerRouter from '../server/procurement/ownerRouter';
 import reviewRouter from '../server/procurement/reviewRouter';
 import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
+import securityAdminRouter from '../server/security/adminRouter';
 
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
  throw Error('Procurement integration only permitted on disposable aaditech_ci');
@@ -59,6 +60,7 @@ test('establish disposable real MySQL identities and supplier/catalog/site fixtu
  const app=express();app.use(express.json({limit:'32kb'}));
  app.use('/api/auth',authRouter);
  app.use('/api/reviewer-scopes',reviewerScopeRouter);
+ app.use('/api/security',securityAdminRouter);
  app.use('/api/procurement/review',reviewRouter);
  app.use('/api/procurement',ownerRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -438,4 +440,71 @@ test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',a
  assert.equal(revoked.status,201);
  assert.equal(revoked.data.state,'REVOKED');
  assert.equal(await count('app_reviewer_scope_events'),2);
+});
+
+test('1ET reviewer disable withdraws every scope; enable never resurrects them; demoted identities remain revocable',async()=>{
+ // All mutations remain first-party, synthetic, and isolated to aaditech_ci.
+ const step=await call('/api/auth/step-up','POST',{currentPassword:ownerPass});
+ assert.equal(step.status,200);
+ ownerStep=String(step.data.stepUpToken);
+ const target='/api/security/reviewers/'+reviewer+'/status';
+ const rows=async()=>{
+  const [grants]=await db.query<any[]>(
+   'SELECT workflow_scope,state FROM app_reviewer_scope_grants WHERE reviewer_user_id=? AND owner_user_id=?',
+   [reviewer,owner]);
+  return grants as {workflow_scope:string;state:string}[];
+ };
+ assert.equal((await rows()).some(x=>x.workflow_scope==='PROCUREMENT'&&x.state==='ACTIVE'),true);
+ // Stale owner authority must be denied even when the target is an active reviewer.
+ for(const [column,invalid,restore,expected] of [
+  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',403]
+ ] as const){
+  await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
+  try{
+   const denied=await call(target,'PATCH',{status:'DISABLED'});
+   assert.equal(denied.status,expected);
+   assert.equal((await rows()).some(x=>x.workflow_scope==='PROCUREMENT'&&x.state==='ACTIVE'),true);
+  }finally{
+   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+  }
+ }
+ const disabled=await call(target,'PATCH',{status:'DISABLED'});
+ assert.equal(disabled.status,200);
+ assert.equal(disabled.data.revokedWorkflowNominations,1);
+ assert.equal(disabled.data.productionReleaseAuthorized,false);
+ assert.equal(disabled.data.releaseDecision,'HOLD');
+ assert.equal((await rows()).some(x=>x.state==='ACTIVE'),false);
+ assert.equal((await call('/api/procurement/review/requests','GET',undefined,'reviewer')).status,401);
+ const enabled=await call(target,'PATCH',{status:'ACTIVE'});
+ assert.equal(enabled.status,200);
+ assert.equal(enabled.data.revokedWorkflowNominations,0);
+ // A newly authenticated reviewer still has no inherited procurement rights.
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(reviewerToken),reviewer,csrf]);
+ const queue=await call('/api/procurement/review/requests','GET',undefined,'reviewer');
+ assert.equal(queue.status,200);
+ assert.equal(queue.data.items.some((x:any)=>x.id===requestId),false);
+ const grant={reviewerId:reviewer,scope:'PROCUREMENT',decision:'GRANT',
+  reason:'Fresh nomination after explicit disable and reenable lifecycle'};
+ assert.equal((await call('/api/reviewer-scopes','POST',grant)).status,201);
+ assert.equal((await call('/api/procurement/review/requests','GET',undefined,'reviewer'))
+  .data.items.some((x:any)=>x.id===requestId),true);
+ // A demoted identity can be manually revoked, but never granted anew.
+ await db.execute("UPDATE auth_users SET role='OWNER' WHERE id=?",[reviewer]);
+ try{
+  assert.equal((await call('/api/reviewer-scopes','POST',{
+   ...grant,decision:'REVOKE',reason:'Remove obsolete reviewer authority after account demotion'})).status,201);
+  assert.equal((await call('/api/reviewer-scopes','POST',grant)).status,400);
+ }finally{
+  await db.execute("UPDATE auth_users SET role='REVIEWER' WHERE id=?",[reviewer]);
+ }
+ assert.equal((await rows()).some(x=>x.state==='ACTIVE'),false);
+ assert.equal((await call('/api/procurement/review/requests','GET',undefined,'reviewer'))
+  .data.items.some((x:any)=>x.id===requestId),false);
+ const [events]=await db.query<any[]>(
+  "SELECT event_type FROM auth_security_events WHERE actor_user_id=? AND target_user_id=? AND event_type IN ('REVIEWER_DISABLED','REVIEWER_ENABLED')",
+  [owner,reviewer]);
+ assert.equal(events.some((x:any)=>x.event_type==='REVIEWER_DISABLED'),true);
+ assert.equal(events.some((x:any)=>x.event_type==='REVIEWER_ENABLED'),true);
 });

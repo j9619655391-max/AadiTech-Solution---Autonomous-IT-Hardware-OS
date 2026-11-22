@@ -57,9 +57,12 @@ router.post('/',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
   }
   const [users]=await conn.query<RowDataPacket[]>(
    'SELECT id,role,status FROM auth_users WHERE id=? FOR UPDATE',[reviewerId]);
-  if(!users.length||users[0].role!=='REVIEWER'||
-      (decision==='GRANT'&&users[0].status!=='ACTIVE')){
-   await conn.rollback();res.status(400).json({error:'Active REVIEWER account required for a grant'});return;
+  // Only an ACTIVE REVIEWER may receive a grant. An existing ACTIVE grant
+  // must remain revocable even if its subject was disabled/demoted meanwhile;
+  // otherwise restoration of the account role could revive latent privileges.
+  if(!users.length||(decision==='GRANT'&&
+      (users[0].role!=='REVIEWER'||users[0].status!=='ACTIVE'))){
+   await conn.rollback();res.status(400).json({error:'Known identity required; active REVIEWER required for a grant'});return;
   }
   const [rows]=await conn.query<RowDataPacket[]>(
    `SELECT state FROM app_reviewer_scope_grants

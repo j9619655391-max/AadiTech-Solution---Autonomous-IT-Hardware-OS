@@ -59,6 +59,14 @@ async function change(req:import('express').Request,res:import('express').Respon
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
+  // The request middleware may have observed a now-stale OWNER session.
+  // Serialize the acting owner's identity before touching the reviewer.
+  const actorId=String(res.locals.auth.userId);
+  const [actors]=await conn.query<RowDataPacket[]>(
+   'SELECT id,role,status FROM auth_users WHERE id=? FOR UPDATE',[actorId]);
+  if(actors.length!==1||actors[0].role!=='OWNER'||actors[0].status!=='ACTIVE'){
+   await conn.rollback();res.status(403).json({error:'Active OWNER required for reviewer administration'});return;
+  }
   const [rows]=await conn.query<RowDataPacket[]>('SELECT id,role,status,email FROM auth_users WHERE id=? FOR UPDATE',[req.params.id]);
   if(!rows.length||rows[0].role!=='REVIEWER'){
    await conn.rollback();res.status(404).json({error:'Reviewer not found'});return;
@@ -67,8 +75,17 @@ async function change(req:import('express').Request,res:import('express').Respon
   if(action==='status'&&target.status===input.status){
    await conn.rollback();res.status(409).json({error:'Reviewer is already in requested state'});return;
   }
+  let revokedWorkflowNominations=0;
   if(action==='status'){
    await conn.execute('UPDATE auth_users SET status=? WHERE id=? AND role=?',[input.status,req.params.id,'REVIEWER']);
+   if(input.status==='DISABLED'){
+    // Permanently withdraw app-local reviewer nominations in the same transaction.
+    // Merely re-enabling the account must never resurrect prior scope authority.
+    const [grants]=await conn.execute<ResultSetHeader>(
+     "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=? AND state='ACTIVE'",
+     [req.params.id]);
+    revokedWorkflowNominations=grants.affectedRows;
+   }
   }
   // Every status change and explicit session-revocation operation invalidates all
   // previously issued reviewer sessions, including other devices.
@@ -77,7 +94,9 @@ async function change(req:import('express').Request,res:import('express').Respon
   await conn.execute('INSERT INTO auth_security_events (id,actor_user_id,target_user_id,event_type,revoked_session_count) VALUES (?,?,?,?,?)',
    [randomUUID(),res.locals.auth.userId,req.params.id,eventType,revoked.affectedRows]);
   await conn.commit();
-  res.json({reviewerId:req.params.id,status:action==='status'?input.status:target.status,revokedSessions:revoked.affectedRows,eventType});
+  res.json({reviewerId:req.params.id,status:action==='status'?input.status:target.status,
+   revokedSessions:revoked.affectedRows,revokedWorkflowNominations,eventType,
+   productionReleaseAuthorized:false,releaseDecision:'HOLD'});
  }catch(e){await conn.rollback();fail(res,e);}finally{conn.release();}
 }
 router.patch('/reviewers/:id/status',requirePrivilegedMfa,requireStepUp,(req,res)=>{void change(req,res,'status');});
