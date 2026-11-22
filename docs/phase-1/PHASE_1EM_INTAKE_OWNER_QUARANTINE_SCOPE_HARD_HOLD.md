@@ -25,3 +25,11 @@ Only exact-SHA push and PR GitHub-hosted CI, official Check/Job identity reconci
 First-class verified tenant membership, full route-by-route BOLA across reviewer/warehouse/dispatch/GRN/journals, historical CRM provenance reconciliation, real supplier delivery and receipts, customer pricing/dispatch with consent, MCA/CCA/RCAI/eMudhra signed trust and live CRL/OCSP, independent remote WORM/CAS/DR, protected main two-nonauthor reviews, signed CI and independent staging approvals all remain pending. Do not close Issue #2 based on this incremental internal route fix.
 
 **Release invariant:** `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. No merge, deploy, provider onboarding, supplier/customer outreach, PO/GRN, stock/finance/tax posting.
+
+
+## Phase 1EM official exact-source CI receipt
+
+**Engineering commit:** [`6e93a68d29bf1158dcdca54dd8287acf53661fa1`](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/commit/6e93a68d29bf1158dcdca54dd8287acf53661fa1).
+Official [push run 45054558184](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/45054558184) COMPLETED/SUCCESS (7 pass + 1 expected PR-only skip); [PR run 45054566230](https://github.com/j9619655391-max/AadiTech-Solution---Autonomous-IT-Hardware-OS/actions/runs/45054566230) COMPLETED/SUCCESS 8/8, both attempt 1. Official Checks app 15368 independently reconciled 16/16 unique job IDs, check names, exact source SHA, completed status and success/skipped conclusions against Actions Jobs, zero mismatches. Hosted Node baseline 1,441/1,441, TypeScript 206/206, staging-security 20/20; real disposable MySQL intake suite 6/6 with new cross-owner private warehouse, inconsistent custody amount and isolation/no idempotency leak test, plus Chromium MFA/role smoke and read-only staging preflight succeeded.
+
+**The receipt-only docs commit must be independently CI verified on the resulting newer docs-inclusive HEAD.** No external approvals, physical inventory, legal entity or production readiness can be inferred from these local tests.
