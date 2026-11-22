@@ -32,7 +32,8 @@ export const MIGRATIONS=[
  '0039_bp_candidate_evidence_intake',
  '0040_bq_candidate_remote_evidence',
  '0041_br_provider_byte_evidence',
- '0042_bs_signed_revocation_holds'
+ '0042_bs_signed_revocation_holds',
+ '0043_el_reviewer_scope_candidates'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {

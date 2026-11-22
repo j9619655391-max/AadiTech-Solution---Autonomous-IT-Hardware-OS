@@ -9,6 +9,7 @@ import quoteDraftRouter from '../server/quotes/router';
 import quoteReviewRouter from '../server/quotes/reviewRouter';
 import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
 import securityAdminRouter from '../server/security/adminRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import commercialIntegrityRouter from '../server/commercialIntegrity/ownerRouter';
 import authRouter from '../server/auth/router';
 import mfaRouter from '../server/auth/mfaRouter';
@@ -36,7 +37,10 @@ test('setup isolated owner session',async()=>{
     [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer',await hashPassword(reviewerPassword),'REVIEWER']);
   await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
     [hashToken(reviewerToken),reviewerId,csrf]);
-  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
+  // Only this actor/workflow receives an explicit synthetic CI review scope.
+  await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'QUOTES')",
+   [actor,reviewerId]);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/reviewer-scopes',reviewerScopeRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -293,6 +297,61 @@ test('1EK valid same-OWNER quote remains private, atomic and never dispatched',a
  assert.equal(otherList.data.items.some((x:any)=>x.id===ekOtherDraft),true);
  assert.equal(aList.data.items.some((x:any)=>x.id===ekOtherDraft),false);
  assert.equal(ownGet.data.draft.status,'DRAFT');
+});
+
+
+test('1EL quote reviewer sees only explicitly nominated OWNERs, including after revocation',async()=>{
+ const unauthorized=randomUUID(),unscopedToken='v'.repeat(43),
+  otherReviewerCookie='aaditech_session='+unscopedToken;
+ await db.execute("INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+  [unauthorized,'el-reviewer-'+unauthorized+'@example.invalid','Unassigned test reviewer',
+   'test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(unscopedToken),unauthorized,csrf]);
+ const [mine]=await db.execute<any[]>(
+  'SELECT id FROM sales_quote_drafts WHERE created_by=? ORDER BY created_at LIMIT 1',[actor]);
+ assert.ok(mine.length>0);
+ const ownId=String(mine[0].id);
+ const isolated=await call('/api/quotes/reviews/queue','GET',
+  undefined,true,true,{cookie:otherReviewerCookie});
+ assert.equal(isolated.status,200);
+ assert.equal(isolated.data.items.some((q:any)=>q.id===ownId),false);
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief','GET',
+  undefined,true,true,{cookie:otherReviewerCookie})).status,404);
+ assert.equal((await call('/api/quotes/reviews/'+ownId,'GET',
+  undefined,true,true,{cookie:otherReviewerCookie})).status,404);
+ const primaryQueue=await call('/api/quotes/reviews/queue');
+ assert.equal(primaryQueue.status,200);
+ assert.equal(primaryQueue.data.items.some((q:any)=>q.id===ownId),true);
+ assert.equal(primaryQueue.data.items.some((q:any)=>q.id===ekOtherDraft),false);
+ assert.equal((await call('/api/quotes/reviews/'+ekOtherDraft+'/brief')).status,404);
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,200);
+ const scopes=await call('/api/reviewer-scopes');
+ assert.equal(scopes.status,200);
+ assert.equal(scopes.data.items.some((g:any)=>g.scope==='QUOTES'&&g.reviewerId===reviewerId),true);
+ // This is an isolated test fixture revocation, not a production admin action.
+ await db.execute(`UPDATE app_reviewer_scope_grants SET state='REVOKED'
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'`,
+  [actor,reviewerId]);
+ try{
+  const after=await call('/api/quotes/reviews/queue');
+  assert.equal(after.status,200);
+  assert.equal(after.data.items.some((q:any)=>q.id===ownId),false);
+  assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,404);
+  assert.equal((await call('/api/quotes/reviews/'+ownId)).status,404);
+ }finally{
+  await db.execute(`UPDATE app_reviewer_scope_grants SET state='ACTIVE'
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'`,
+   [actor,reviewerId]);
+ }
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,200);
+ const [orgs]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM app_organization_candidates');
+ const [members]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM app_organization_member_candidates');
+ assert.equal(Number(orgs[0].n),0);
+ assert.equal(Number(members[0].n),0);
 });
 
 test('draft revisions preserve original snapshots, enforce version and margin guardrail',async()=>{

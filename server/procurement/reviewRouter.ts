@@ -30,8 +30,12 @@ router.get('/suppliers',async(req,res)=>{
  try{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT id,code,legal_name AS legalName,
    tax_id AS taxId,status,created_by AS createdBy FROM proc_suppliers
-   WHERE status='UNVERIFIED' AND created_by<>? ORDER BY created_at,id LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE status='UNVERIFIED' AND created_by<>?
+   AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+    WHERE g.owner_user_id=proc_suppliers.created_by AND g.reviewer_user_id=?
+     AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')
+   ORDER BY created_at,id LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalVerification:false});
  }catch(e){fail(res,e);}
 });
@@ -47,6 +51,14 @@ router.post('/suppliers/:id/attest',requirePrivilegedMfa,requireStepUp,async(req
   const [rows]=await conn.query<RowDataPacket[]>(
    'SELECT id,status,created_by FROM proc_suppliers WHERE id=? FOR UPDATE',[req.params.id]);
   if(!rows.length||rows[0].created_by===actor){
+   await conn.rollback();res.status(404).json({error:'Supplier not available for independent review'});return;
+  }
+  // Lock active owner-to-reviewer scope before writing an attestation.
+  const [scopeRows]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   AND workflow_scope='PROCUREMENT' FOR UPDATE`,
+   [rows[0].created_by,actor]);
+  if(scopeRows[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Supplier not available for independent review'});return;
   }
   if(rows[0].status!=='UNVERIFIED')
@@ -71,8 +83,12 @@ router.get('/requests',async(req,res)=>{
    FROM proc_requests r
    JOIN proc_suppliers s ON s.id=r.supplier_id
    JOIN inventory_sites i ON i.id=r.site_id
-   WHERE r.created_by<>? ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE r.created_by<>?
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=r.created_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')
+    ORDER BY r.created_at DESC,r.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows});
  }catch(e){fail(res,e);}
 });
@@ -86,7 +102,11 @@ router.get('/requests/:id',async(req,res)=>{
    i.code AS siteCode FROM proc_requests r
    JOIN proc_suppliers s ON s.id=r.supplier_id
    JOIN inventory_sites i ON i.id=r.site_id
-   WHERE r.id=? AND r.created_by<>?`,[req.params.id,res.locals.auth.userId]);
+   WHERE r.id=? AND r.created_by<>?
+   AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+    WHERE g.owner_user_id=r.created_by AND g.reviewer_user_id=?
+      AND g.workflow_scope='PROCUREMENT' AND g.state='ACTIVE')`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
   if(!requests.length){res.status(404).json({error:'Purchase request not available'});return;}
   const [lines]=await db.query<RowDataPacket[]>(`SELECT sku_snapshot AS sku,
    name_snapshot AS name,quantity,quoted_unit_cost AS quotedUnitCost,line_subtotal AS lineSubtotal
@@ -108,6 +128,13 @@ router.post('/requests/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
      JOIN proc_suppliers s ON s.id=r.supplier_id
      WHERE r.id=? FOR UPDATE`,[req.params.id]);
   if(!rows.length||rows[0].created_by===actor){
+   await conn.rollback();res.status(404).json({error:'Request not available for independent review'});return;
+  }
+  const [scopeRows]=await conn.query<RowDataPacket[]>(`SELECT state
+    FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+      AND workflow_scope='PROCUREMENT' FOR UPDATE`,
+    [rows[0].created_by,actor]);
+  if(scopeRows[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Request not available for independent review'});return;
   }
   if(rows[0].status!=='PENDING')

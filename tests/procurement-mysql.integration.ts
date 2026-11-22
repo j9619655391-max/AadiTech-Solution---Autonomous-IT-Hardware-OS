@@ -8,6 +8,7 @@ import commercialIntegrityRouter from '../server/commercialIntegrity/ownerRouter
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/procurement/ownerRouter';
 import reviewRouter from '../server/procurement/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
  throw Error('Procurement integration only permitted on disposable aaditech_ci');
@@ -57,6 +58,7 @@ test('establish disposable real MySQL identities and supplier/catalog/site fixtu
   [siteId,'P'+owner.replace(/-/g,'').slice(0,15).toUpperCase(),'Isolated stock site',owner]);
  const app=express();app.use(express.json({limit:'32kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/procurement/review',reviewRouter);
  app.use('/api/procurement',ownerRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -88,6 +90,31 @@ test('authentication, role separation and CSRF/step-up gates protect supplier an
  assert.equal(created.data.status,'UNVERIFIED');
  assert.equal(created.data.externalVerification,false);
  assert.equal((await call('/api/procurement/suppliers','POST',input)).status,409);
+ // An unrelated REVIEWER role alone grants no visibility. Explicitly scope the
+ // credential by current-password step-up and existing owner CSRF protection.
+ const unscoped=await call('/api/procurement/review/suppliers','GET',undefined,'reviewer');
+ assert.equal(unscoped.status,200);
+ assert.equal(unscoped.data.items.some((s:any)=>s.id===supplierId),false);
+ const grant={reviewerId:reviewer,scope:'PROCUREMENT',decision:'GRANT',
+  reason:'Owner explicitly nominated CI procurement reviewer only'};
+ assert.equal((await call('/api/reviewer-scopes','POST',grant,'owner',{stepUp:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',grant,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',
+   {...grant,externalAuthorityVerified:true},'owner')).status,400);
+ assert.equal((await call('/api/reviewer-scopes','POST',grant,'reviewer')).status,403);
+ const approved=await call('/api/reviewer-scopes','POST',grant,'owner');
+ assert.equal(approved.status,201);
+ assert.equal(approved.data.state,'ACTIVE');
+ assert.equal(approved.data.productionReleaseAuthorized,false);
+ assert.equal(approved.data.independentAuthorityAuthenticated,false);
+ assert.equal((await call('/api/reviewer-scopes','POST',grant,'owner')).status,409);
+ const scoped=await call('/api/procurement/review/suppliers','GET',undefined,'reviewer');
+ assert.equal(scoped.status,200);
+ assert.equal(scoped.data.items.some((s:any)=>s.id===supplierId),true);
+ const active=await call('/api/reviewer-scopes');
+ assert.equal(active.status,200);
+ assert.equal(active.data.items.some((row:any)=>row.reviewerId===reviewer&&
+  row.scope==='PROCUREMENT'&&row.state==='ACTIVE'),true);
 });
 test('independent reviewer attests supplier evidence; owner cannot self attest',async()=>{
  const query=await call('/api/procurement/review/suppliers','GET',undefined,'reviewer');
@@ -293,4 +320,56 @@ test('1EK known foreign supplier or warehouse UUIDs fail transactional procureme
   'SELECT COUNT(*) AS n FROM proc_po_holds h JOIN proc_requests r ON r.id=h.request_id WHERE r.site_id=?',
   [foreignSite]);
  assert.equal(Number(holds[0].n),0);
+});
+
+
+test('1EL unrelated owners remain invisible to appointed procurement reviewer',async()=>{
+ const [owners]=await db.execute<any[]>(`SELECT created_by AS otherOwner
+  FROM proc_suppliers WHERE legal_name='Another owner internal synthetic supplier'`);
+ assert.equal(owners.length,1);
+ const otherOwner=String(owners[0].otherOwner),foreignSupplier=randomUUID();
+ await db.execute(`INSERT INTO proc_suppliers
+  (id,code,legal_name,created_by) VALUES (?,?,?,?)`,
+  [foreignSupplier,'EL'+randomUUID().replace(/-/g,'').slice(0,15).toUpperCase(),
+   'Out-of-scope private supplier',otherOwner]);
+ const queue=await call('/api/procurement/review/suppliers','GET',undefined,'reviewer');
+ assert.equal(queue.status,200);
+ assert.equal(queue.data.items.some((s:any)=>s.id===foreignSupplier),false);
+ const attempt=await call('/api/procurement/review/suppliers/'+foreignSupplier+'/attest',
+  'POST',{evidenceRef:'EL-SPOOF-REVIEW-2026',attestIdentified:true},'reviewer');
+ assert.equal(attempt.status,404);
+ const [records]=await db.execute<any[]>(
+  'SELECT status,reviewed_by FROM proc_suppliers WHERE id=?',[foreignSupplier]);
+ assert.equal(records[0].status,'UNVERIFIED');
+ assert.equal(records[0].reviewed_by,null);
+});
+test('1EL owner can revoke/regrant review access with transactional audit and no retroactive access',async()=>{
+ const revoke={reviewerId:reviewer,scope:'PROCUREMENT',decision:'REVOKE',
+  reason:'Owner withdraws internal CI reviewer assignment'};
+ const revoked=await call('/api/reviewer-scopes','POST',revoke);
+ assert.equal(revoked.status,201);
+ assert.equal(revoked.data.state,'REVOKED');
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,409);
+ const queue=await call('/api/procurement/review/requests','GET',undefined,'reviewer');
+ assert.equal(queue.status,200);
+ assert.equal(queue.data.items.some((row:any)=>row.id===requestId),false);
+ const hidden=await call('/api/procurement/review/requests/'+requestId,'GET',
+  undefined,'reviewer');
+ assert.equal(hidden.status,404);
+ const restored=await call('/api/reviewer-scopes','POST',{
+  ...revoke,decision:'GRANT',
+  reason:'Owner reassigns same reviewer after isolated revocation test'});
+ assert.equal(restored.status,201);
+ assert.equal(restored.data.state,'ACTIVE');
+ const visible=await call('/api/procurement/review/requests/'+requestId,
+  'GET',undefined,'reviewer');
+ assert.equal(visible.status,200);
+ const [history]=await db.execute<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='PROCUREMENT'
+  ORDER BY recorded_at,id`,[owner,reviewer]);
+ assert.equal(history.length,3);
+ assert.deepEqual(history.map((x:any)=>x.decision).sort(),['GRANT','GRANT','REVOKE']);
+ const [orgRows]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM app_organization_candidates');
+ assert.equal(Number(orgRows[0].n),0);
 });
