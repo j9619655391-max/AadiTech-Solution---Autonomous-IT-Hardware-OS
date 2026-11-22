@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/intake/ownerRouter';
 import reviewRouter from '../server/intake/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
  throw Error('Phase 1AD MySQL suite permitted on disposable CI only');
@@ -105,12 +106,15 @@ test('build independent MySQL users, SKU/site/supplier and held internal PO fixt
   (id,code,legal_name,status,evidence_ref,created_by,reviewed_by)
   VALUES (?,?,?,'REVIEWED_INTERNAL',?,?,?)`,
   [supplierId,'CI_INT_STG','Synthetic internal supplier','CI-ID-TEST-001',owner,reviewer]);
+ // Explicit in-test nomination; REVIEWER role alone grants no intake access.
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'INTAKE')",[owner,reviewer]);
  holdId=await seedHeld([
   {productId,sku:'INT-SER-'+productId,name:'Synthetic Observed Serialized Server',quantity:2,cost:'70.00'},
   {productId:productLotId,sku:'INT-LOT-'+productLotId,name:'Synthetic Observed Lot Accessory',quantity:3,cost:'40.00'}
  ]);
  const app=express();app.use(express.json({limit:'256kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/intake/review',reviewRouter);
  app.use('/api/intake',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -169,6 +173,55 @@ test('held checksum, exact quantities, serial/lot cardinality and idempotency en
  const [custody]=await db.query<any[]>('SELECT COUNT(*) AS n FROM inv_quarantine_custody_events WHERE observation_id=?',[observedId]);
  assert.equal(Number(custody[0].n),0);
 });
+
+test('1EN intake witness is hidden from unassigned or revoked REVIEWER, then restored explicitly',async()=>{
+ const unassigned=randomUUID(),otherToken=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [unassigned,'en-intake-review-'+unassigned+'@example.invalid','Unassigned intake reviewer',
+   'test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(otherToken),unassigned,csrf]);
+ const hdr={cookie:'aaditech_session='+otherToken};
+ const hidden=await fetch(base+'/api/intake/review/observations',{headers:hdr});
+ assert.equal(hidden.status,200);
+ const data=await hidden.json() as {items:{id:string}[]};
+ assert.equal(data.items.some(x=>x.id===observedId),false);
+ assert.equal((await fetch(base+'/api/intake/review/observations/'+observedId,{headers:hdr})).status,404);
+ const current=await call('/api/intake/review/observations','GET',undefined,'reviewer');
+ assert.ok(current.data.items.some((x:any)=>x.id===observedId));
+ const revoke={reviewerId:reviewer,scope:'INTAKE',decision:'REVOKE',
+  reason:'Owner revokes isolated inbound physical witness scope'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ const withdrawn=await call('/api/reviewer-scopes','POST',revoke);
+ assert.equal(withdrawn.status,201);
+ assert.equal(withdrawn.data.state,'REVOKED');
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,409);
+ const q=await call('/api/intake/review/observations','GET',undefined,'reviewer');
+ assert.equal(q.status,200);
+ assert.equal(q.data.items.some((x:any)=>x.id===observedId),false);
+ assert.equal((await call('/api/intake/review/observations/'+observedId,'GET',
+   undefined,'reviewer')).status,404);
+ const attempt=await call('/api/intake/review/observations/'+observedId+'/witness','POST',
+  {outcome:'REJECT_INTERNAL',reason:'Revoked reviewer cannot record physical custody',
+   inspectionEvidenceRef:'EN-REVOKED-WITNESS-REF',physicallyInspected:false},'reviewer');
+ assert.equal(attempt.status,404);
+ const [before]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM inv_inbound_decisions WHERE observation_id=?',[observedId]);
+ assert.equal(Number(before[0].n),0);
+ const regrant=await call('/api/reviewer-scopes','POST',{
+  ...revoke,decision:'GRANT',
+  reason:'Owner explicitly restores only this intake witness scope'});
+ assert.equal(regrant.status,201);
+ assert.equal(regrant.data.state,'ACTIVE');
+ assert.equal((await call('/api/intake/review/observations/'+observedId,'GET',
+   undefined,'reviewer')).status,200);
+ const [events]=await db.execute<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='INTAKE'`,[owner,reviewer]);
+ assert.deepEqual(events.map((x:any)=>x.decision).sort(),['GRANT','REVOKE']);
+});
+
 test('reviewer independently witnesses serialized/lot counts, records custody evidence without availability',async()=>{
  const queue=await call('/api/intake/review/observations','GET',undefined,'reviewer');
  assert.equal(queue.status,200);

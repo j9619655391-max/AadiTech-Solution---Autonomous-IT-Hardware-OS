@@ -96,6 +96,7 @@
     "test:br-provider-bytes-mysql": "tsx --test tests/br-provider-bytes-mysql.integration.ts",
     "db:migrate:bs-signed-revocation": "tsx scripts/migrate-bs-signed-revocation.ts",
     "db:migrate:el-reviewer-scopes": "tsx scripts/migrate-el-reviewer-scopes.ts",
+    "db:migrate:en-reviewer-scopes": "tsx scripts/migrate-en-reviewer-scopes.ts",
     "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts"
   },
   "dependencies": {

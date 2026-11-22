@@ -35,8 +35,17 @@ router.get('/claims',async(req,res)=>{
    c.supplier_ack_ref AS supplierAckRef,c.evidence_ref AS evidenceRef,
    c.document_sha256 AS documentSha256,c.status,c.recorded_by AS recordedBy,
    c.claim_sha256 AS claimSha256
-   FROM proc_ack_claims c WHERE c.recorded_by<>?
-   ORDER BY c.created_at DESC,c.id DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM proc_ack_claims c
+   JOIN proc_dispatch_preparations preparation ON preparation.id=c.preparation_id
+   JOIN proc_po_holds h ON h.id=preparation.hold_id
+   JOIN proc_requests request_record ON request_record.id=h.request_id
+   WHERE c.recorded_by<>? AND preparation.prepared_by=c.recorded_by
+    AND request_record.created_by=c.recorded_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=c.recorded_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='EVIDENCE' AND g.state='ACTIVE')
+   ORDER BY c.created_at DESC,c.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,realSupplierVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -55,6 +64,13 @@ router.post('/claims/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,re
   const source=await checkHeldSource(conn,ident[0].preparationId);
   if(source.ownerId===actor){
    await conn.rollback();res.status(404).json({error:'Independent review only'});return;
+  }
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='EVIDENCE'
+   FOR UPDATE`,[source.ownerId,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
+   await conn.rollback();res.status(404).json({error:'Claim not found'});return;
   }
   const claim=await checkClaim(conn,req.params.id,source);
   if(claim.status!=='AWAITING_INTERNAL_REVIEW')
@@ -84,8 +100,19 @@ router.get('/grn-packs',async(req,res)=>{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT p.id,p.claim_id AS claimId,
    p.observation_id AS observationId,p.status,p.pack_sha256 AS packSha256,
    p.prepared_by AS preparedBy,p.created_at AS createdAt
-   FROM inv_grn_reconciliation_packs p WHERE p.prepared_by<>?
-   ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_grn_reconciliation_packs p
+   JOIN proc_ack_claims c ON c.id=p.claim_id
+   JOIN proc_dispatch_preparations preparation ON preparation.id=c.preparation_id
+   JOIN proc_po_holds h ON h.id=preparation.hold_id
+   JOIN proc_requests request_record ON request_record.id=h.request_id
+   WHERE p.prepared_by<>? AND c.recorded_by=p.prepared_by
+    AND preparation.prepared_by=p.prepared_by
+    AND request_record.created_by=p.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=p.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='EVIDENCE' AND g.state='ACTIVE')
+   ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,officialGrnAvailable:false,stockPostingEnabled:false});
  }catch(e){fail(res,e);}
 });
@@ -93,10 +120,21 @@ router.get('/grn-packs/:id',async(req,res)=>{
  if(!inventoryId(req.params.id)){res.status(400).json({error:'Invalid GRN pack ID'});return;}
  const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(`SELECT id,claim_id AS claimId,
-   observation_id AS observationId,pack_sha256 AS packSha256,
-   pack_json AS packJson,status FROM inv_grn_reconciliation_packs
-   WHERE id=? AND prepared_by<>?`,[req.params.id,res.locals.auth.userId]);
+  const [rows]=await db.query<RowDataPacket[]>(`SELECT p.id,p.claim_id AS claimId,
+   p.observation_id AS observationId,p.pack_sha256 AS packSha256,
+   p.pack_json AS packJson,p.status FROM inv_grn_reconciliation_packs p
+   JOIN proc_ack_claims c ON c.id=p.claim_id
+   JOIN proc_dispatch_preparations preparation ON preparation.id=c.preparation_id
+   JOIN proc_po_holds h ON h.id=preparation.hold_id
+   JOIN proc_requests request_record ON request_record.id=h.request_id
+   WHERE p.id=? AND p.prepared_by<>?
+    AND c.recorded_by=p.prepared_by
+    AND preparation.prepared_by=p.prepared_by
+    AND request_record.created_by=p.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=p.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='EVIDENCE' AND g.state='ACTIVE')`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'GRN pack not found'});return;}
   const row=rows[0];
   res.json({pack:{id:row.id,status:row.status,claimId:row.claimId,
@@ -123,6 +161,16 @@ router.post('/grn-packs/:id/decide',requirePrivilegedMfa,requireStepUp,async(req
    await conn.rollback();res.status(404).json({error:'GRN pack unavailable to independent reviewer'});return;
   }
   const source=await checkHeldSource(conn,rows[0].preparationId);
+  if(source.ownerId===actor||source.ownerId!==rows[0].preparedBy){
+   await conn.rollback();res.status(404).json({error:'GRN pack unavailable to independent reviewer'});return;
+  }
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='EVIDENCE'
+   FOR UPDATE`,[source.ownerId,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
+   await conn.rollback();res.status(404).json({error:'GRN pack unavailable to independent reviewer'});return;
+  }
   const [locked]=await conn.query<RowDataPacket[]>(
    'SELECT status,pack_sha256 AS packSha256,pack_json AS packJson FROM inv_grn_reconciliation_packs WHERE id=? FOR UPDATE',
    [req.params.id]);

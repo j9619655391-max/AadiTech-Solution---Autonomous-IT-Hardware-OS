@@ -31,8 +31,12 @@ router.get('/destinations',async(req,res)=>{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT d.id,d.supplier_id AS supplierId,
    s.code AS supplierCode,d.email,d.status,d.evidence_ref AS evidenceRef,d.review_reason AS reviewReason,d.created_by AS createdBy
    FROM proc_delivery_destinations d JOIN proc_suppliers s ON s.id=d.supplier_id
-   WHERE d.created_by<>? ORDER BY d.created_at DESC,d.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE d.created_by<>? AND s.created_by=d.created_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=d.created_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='DISPATCH' AND g.state='ACTIVE')
+   ORDER BY d.created_at DESC,d.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externallyVerified:false});
  }catch(e){fail(res,e);}
 });
@@ -46,10 +50,18 @@ router.post('/destinations/:id/decide',requirePrivilegedMfa,requireStepUp,async(
   conn=await db.getConnection();await conn.beginTransaction();
   const actor=String(res.locals.auth.userId);
   const [rows]=await conn.query<RowDataPacket[]>(`SELECT d.id,d.status,
-   d.created_by AS createdBy,s.status AS supplierStatus
+   d.created_by AS createdBy,s.status AS supplierStatus,
+   s.created_by AS supplierOwner
    FROM proc_delivery_destinations d JOIN proc_suppliers s ON s.id=d.supplier_id
    WHERE d.id=? FOR UPDATE`,[req.params.id]);
-  if(!rows.length||rows[0].createdBy===actor){
+  if(!rows.length||rows[0].createdBy===actor||
+    rows[0].createdBy!==rows[0].supplierOwner){
+   await conn.rollback();res.status(404).json({error:'Destination not available for independent review'});return;
+  }
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=?
+   AND workflow_scope='DISPATCH' FOR UPDATE`,[rows[0].createdBy,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Destination not available for independent review'});return;
   }
   if(rows[0].status!=='PENDING_INTERNAL')
@@ -81,8 +93,13 @@ router.get('/requests',async(req,res)=>{
    JOIN proc_po_holds h ON h.id=p.hold_id
    JOIN proc_requests r ON r.id=h.request_id
    JOIN proc_suppliers s ON s.id=r.supplier_id
-   WHERE p.prepared_by<>? ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
+   WHERE p.prepared_by<>? AND d.created_by=p.prepared_by
+    AND r.created_by=p.prepared_by AND s.created_by=p.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=p.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='DISPATCH' AND g.state='ACTIVE')
+   ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalPoIssued:false,supplierAcknowledged:false});
  }catch(e){fail(res,e);}
 });
@@ -95,7 +112,16 @@ router.get('/requests/:id',async(req,res)=>{
    p.manifest_json AS manifestJson,d.status AS destinationStatus
    FROM proc_dispatch_preparations p
    JOIN proc_delivery_destinations d ON d.id=p.destination_id
-   WHERE p.id=? AND p.prepared_by<>?`,[req.params.id,res.locals.auth.userId]);
+   JOIN proc_po_holds h ON h.id=p.hold_id
+   JOIN proc_requests r ON r.id=h.request_id
+   JOIN proc_suppliers s ON s.id=r.supplier_id
+   WHERE p.id=? AND p.prepared_by<>?
+    AND d.created_by=p.prepared_by AND r.created_by=p.prepared_by
+    AND s.created_by=p.prepared_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=p.prepared_by AND g.reviewer_user_id=?
+       AND g.workflow_scope='DISPATCH' AND g.state='ACTIVE')`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'Preparation not available'});return;}
   const manifest=verifyManifestJson(rows[0].manifestJson,rows[0].manifestSha256);
   res.json({preparation:{id:rows[0].id,status:rows[0].status,
@@ -117,6 +143,7 @@ router.post('/requests/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
    p.manifest_json AS manifestJson,p.manifest_sha256 AS manifestSha256,
    p.destination_id AS destinationId,p.authorization_evidence_ref AS authorizationEvidenceRef,
    d.supplier_id AS supplierId,d.email,d.status AS destinationStatus,
+   d.created_by AS destinationOwner,s.created_by AS supplierOwner,
    h.snapshot_sha256 AS recordedHoldSha,h.snapshot_json AS holdJson,
    h.status AS holdStatus,h.dispatch_state AS dispatchState,
    r.id AS requestId,r.supplier_id AS heldSupplierId,r.created_by AS ownerId,
@@ -125,8 +152,19 @@ router.post('/requests/:id/decide',requirePrivilegedMfa,requireStepUp,async(req,
    JOIN proc_delivery_destinations d ON d.id=p.destination_id
    JOIN proc_po_holds h ON h.id=p.hold_id
    JOIN proc_requests r ON r.id=h.request_id
+   JOIN proc_suppliers s ON s.id=r.supplier_id
    WHERE p.id=? FOR UPDATE`,[req.params.id]);
-  if(!rows.length||rows[0].preparedBy===actor){
+  if(!rows.length||rows[0].preparedBy===actor||
+     rows[0].preparedBy!==rows[0].ownerId||
+     rows[0].preparedBy!==rows[0].destinationOwner||
+     rows[0].preparedBy!==rows[0].supplierOwner){
+   await conn.rollback();res.status(404).json({error:'Preparation not available for independent review'});return;
+  }
+  // A revoked grant cannot authorize a pending request via stale reviewer UI.
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state FROM app_reviewer_scope_grants
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='DISPATCH'
+   FOR UPDATE`,[rows[0].ownerId,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Preparation not available for independent review'});return;
   }
   const p=rows[0];

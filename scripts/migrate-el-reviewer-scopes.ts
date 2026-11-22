@@ -17,7 +17,7 @@ export function reviewerScopeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stagin
 async function main(){
  reviewerScopeMigrationTarget(process.env);
  const id='0043_el_reviewer_scope_candidates';
- if(MIGRATIONS[42]!==id||MIGRATIONS.length!==43)
+ if(MIGRATIONS[42]!==id||MIGRATIONS.length<43)
   throw Error('1EL exact migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('1EL DB config incomplete');

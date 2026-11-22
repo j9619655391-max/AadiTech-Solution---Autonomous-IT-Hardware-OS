@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/dispatch/ownerRouter';
 import reviewRouter from '../server/dispatch/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import {sha} from '../server/dispatch/validation';
 
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
@@ -81,8 +82,10 @@ test('create disposable actor identity, supplier master and immutable HELD order
   VALUES(?,?,?,'REVIEWED_INTERNAL',?,?,?)`,
   [supplierId,'CI_SUP_AE','Synthetic CI Supplier','IDENTITY-CI-2026',owner,reviewer]);
  holdId=await syntheticHold();
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'DISPATCH')",[owner,reviewer]);
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/po-dispatch/review',reviewRouter);
  app.use('/api/po-dispatch',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -114,6 +117,44 @@ test('roles, CSRF and step-up guard destination capture and review',async()=>{
   {decision:'REVIEWED_INTERNAL',evidenceRef:'REVIEW-EMAIL-REF-2026',
    reason:'Inspected internal supplier account evidence',identityAttested:true},'owner')).status,403);
 });
+
+test('1EN reviewer role alone cannot view private destinations, revoked grant denies writes',async()=>{
+ const outsider=randomUUID(),outsiderToken=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [outsider,'en-dispatch-review-'+outsider+'@example.invalid',
+   'Unassigned dispatch reviewer','test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(outsiderToken),outsider,csrf]);
+ const foreignHdr={cookie:'aaditech_session='+outsiderToken};
+ const outside=await fetch(base+'/api/po-dispatch/review/destinations',{headers:foreignHdr});
+ assert.equal(outside.status,200);
+ assert.equal((await outside.json() as {items:{id:string}[]}).items.some(x=>x.id===destinationId),false);
+ assert.equal((await call('/api/po-dispatch/review/destinations','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.id===destinationId),true);
+ const revoke={reviewerId:reviewer,scope:'DISPATCH',decision:'REVOKE',
+  reason:'Owner withdraws destination dispatch reviewer scope'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'reviewer')).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{stepUp:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ assert.equal((await call('/api/po-dispatch/review/destinations','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.id===destinationId),false);
+ const body={decision:'REVIEWED_INTERNAL',evidenceRef:'EN-REVOKED-DESTINATION-REF',
+  reason:'Revoked witness must be denied before internal attestation',
+  identityAttested:true};
+ const denied=await call('/api/po-dispatch/review/destinations/'+destinationId+'/decide',
+  'POST',body,'reviewer');
+ assert.equal(denied.status,404);
+ const [rows]=await db.query<any[]>('SELECT status FROM proc_delivery_destinations WHERE id=?',[destinationId]);
+ assert.equal(rows[0].status,'PENDING_INTERNAL');
+ const grant=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+  reason:'Owner explicitly grants dispatch destination scope again'});
+ assert.equal(grant.status,201);
+ assert.equal(grant.data.state,'ACTIVE');
+ assert.equal((await call('/api/po-dispatch/review/destinations','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.id===destinationId),true);
+});
+
 test('reviewer independently attests destination; review is immutable and not external validation',async()=>{
  const body={decision:'REVIEWED_INTERNAL',evidenceRef:'REVIEW-EMAIL-REF-2026',
   reason:'Supplier destination proof inspected in internal records',identityAttested:true};
@@ -156,6 +197,39 @@ test('owner creates one checksum-bound internal PO dispatch request and identica
  assert.equal(rows[0].manifest_json.email,'ops@example.invalid');
  assert.equal(rows[0].manifest_json.externalOrderIssued,false);
 });
+
+test('1EN approved destination does not override revoked dispatch review grant',async()=>{
+ const body={decision:'APPROVED_INTERNAL',
+  reason:'Revoked reviewer is forbidden to authorize a held dispatch',
+  evidenceRef:'EN-REVOKED-PO-PREPARATION',destinationAttested:true};
+ const revoke={reviewerId:reviewer,scope:'DISPATCH',decision:'REVOKE',
+  reason:'Owner temporarily revokes held purchase review access'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const queue=await call('/api/po-dispatch/review/requests','GET',undefined,'reviewer');
+  assert.equal(queue.status,200);
+  assert.equal(queue.data.items.some((x:any)=>x.id===preparationId),false);
+  assert.equal((await call('/api/po-dispatch/review/requests/'+preparationId,
+   'GET',undefined,'reviewer')).status,404);
+  assert.equal((await call('/api/po-dispatch/review/requests/'+preparationId+'/decide',
+   'POST',body,'reviewer')).status,404);
+  const [decisions]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM proc_dispatch_review_decisions WHERE preparation_id=?',[preparationId]);
+  assert.equal(Number(decisions[0].n),0);
+ }finally{
+  const restored=await call('/api/reviewer-scopes','POST',{...revoke,
+    decision:'GRANT',reason:'Restore owner-approved internal dispatch review scope'});
+  assert.equal(restored.status,201);
+ }
+ assert.equal((await call('/api/po-dispatch/review/requests/'+preparationId,
+  'GET',undefined,'reviewer')).status,200);
+ const [history]=await db.execute<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='DISPATCH'`,
+  [owner,reviewer]);
+ assert.deepEqual(history.map((x:any)=>x.decision).sort(),
+  ['GRANT','GRANT','REVOKE','REVOKE']);
+});
+
 test('independent approval inserts one immutable DISABLED outbox hold; no actual supplier order',async()=>{
  const detail=await call('/api/po-dispatch/review/requests/'+preparationId,'GET',undefined,'reviewer');
  assert.equal(detail.status,200);

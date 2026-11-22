@@ -44,8 +44,17 @@ router.get('/observations',async(req,res)=>{
    o.request_id AS requestId,o.status,o.recorded_by AS recordedBy,
    o.delivery_evidence_ref AS deliveryEvidenceRef,
    o.physical_count_ref AS physicalCountRef,o.created_at AS createdAt
-   FROM inv_inbound_observations o WHERE o.recorded_by<>?
-   ORDER BY o.created_at DESC,o.id DESC LIMIT 100`,[res.locals.auth.userId]);
+   FROM inv_inbound_observations o
+   JOIN proc_requests r ON r.id=o.request_id
+   JOIN proc_suppliers supplier ON supplier.id=r.supplier_id
+   JOIN inventory_sites site ON site.id=o.site_id
+   WHERE o.recorded_by<>? AND r.created_by=o.recorded_by
+    AND supplier.created_by=o.recorded_by AND site.created_by=o.recorded_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=o.recorded_by AND g.reviewer_user_id=?
+      AND g.workflow_scope='INTAKE' AND g.state='ACTIVE')
+   ORDER BY o.created_at DESC,o.id DESC LIMIT 100`,
+   [res.locals.auth.userId,res.locals.auth.userId]);
   res.json({items:rows,externalReceiptVerified:false,stockAvailable:false});
  }catch(e){fail(res,e);}
 });
@@ -57,8 +66,17 @@ router.get('/observations/:id',async(req,res)=>{
    o.request_id AS requestId,o.recorded_by AS recordedBy,o.status,
    o.delivery_evidence_ref AS deliveryEvidenceRef,
    o.physical_count_ref AS physicalCountRef,o.payload_sha256 AS payloadSha256
-   FROM inv_inbound_observations o WHERE o.id=? AND o.recorded_by<>?`,
-   [req.params.id,res.locals.auth.userId]);
+   FROM inv_inbound_observations o
+   JOIN proc_requests r ON r.id=o.request_id
+   JOIN proc_suppliers supplier ON supplier.id=r.supplier_id
+   JOIN inventory_sites site ON site.id=o.site_id
+   WHERE o.id=? AND o.recorded_by<>?
+    AND r.created_by=o.recorded_by
+    AND supplier.created_by=o.recorded_by AND site.created_by=o.recorded_by
+    AND EXISTS (SELECT 1 FROM app_reviewer_scope_grants g
+      WHERE g.owner_user_id=o.recorded_by AND g.reviewer_user_id=?
+      AND g.workflow_scope='INTAKE' AND g.state='ACTIVE')`,
+   [req.params.id,res.locals.auth.userId,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'Observation unavailable for independent witness'});return;}
   const lines=await details(db,req.params.id);
   res.json({observation:rows[0],items:lines,externalReceiptVerified:false,availableToSell:null});
@@ -78,11 +96,25 @@ router.post('/observations/:id/witness',requirePrivilegedMfa,requireStepUp,async
    o.delivery_evidence_ref AS deliveryEvidenceRef,
    o.physical_count_ref AS physicalCountRef,o.payload_sha256 AS payloadSha256,
    h.status AS holdStatus,h.dispatch_state AS dispatchState,
-   r.status AS requestStatus
+   r.status AS requestStatus,r.created_by AS requestOwner,
+   supplier.created_by AS supplierOwner,site.created_by AS siteOwner
    FROM inv_inbound_observations o JOIN proc_po_holds h ON h.id=o.hold_id
    JOIN proc_requests r ON r.id=o.request_id
+   JOIN proc_suppliers supplier ON supplier.id=r.supplier_id
+   JOIN inventory_sites site ON site.id=o.site_id
    WHERE o.id=? FOR UPDATE`,[req.params.id]);
-  if(!rows.length||rows[0].recordedBy===actor){
+  if(!rows.length||rows[0].recordedBy===actor||
+    rows[0].recordedBy!==rows[0].requestOwner||
+    rows[0].recordedBy!==rows[0].supplierOwner||
+    rows[0].recordedBy!==rows[0].siteOwner){
+   await conn.rollback();res.status(404).json({error:'Observation unavailable for independent witness'});return;
+  }
+  // Serialize a grant REVOKE against every witness write, not only UI queue.
+  const [scope]=await conn.query<RowDataPacket[]>(`SELECT state
+   FROM app_reviewer_scope_grants
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='INTAKE'
+   FOR UPDATE`,[rows[0].recordedBy,actor]);
+  if(scope[0]?.state!=='ACTIVE'){
    await conn.rollback();res.status(404).json({error:'Observation unavailable for independent witness'});return;
   }
   const record=rows[0];

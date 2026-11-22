@@ -7,6 +7,7 @@ import {hashPassword,hashToken,newSecret} from '../server/auth/crypto';
 import authRouter from '../server/auth/router';
 import ownerRouter from '../server/evidenceChain/ownerRouter';
 import reviewRouter from '../server/evidenceChain/reviewRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
 import {dispatchManifest,sha} from '../server/dispatch/validation';
 import {validateInbound,canonicalIntakeHash} from '../server/intake/validation';
 
@@ -168,9 +169,11 @@ test('create independent synthetic owner/reviewer, held source and witnessed qua
    VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
    [hashToken(token),id,csrf]);
  }
+ await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'EVIDENCE')",[owner,reviewer]);
  a=await fixture('MAIN');b=await fixture('SECOND');c=await fixture('THIRD');
  const app=express();app.use(express.json({limit:'128kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/reviewer-scopes',reviewerScopeRouter);
  app.use('/api/evidence-chain/review',reviewRouter);
  app.use('/api/evidence-chain',ownerRouter);
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown API endpoint'}));
@@ -222,6 +225,44 @@ test('claim source integrity, duplicate request replay, and tampering refused wi
  assert.equal((await call('/api/evidence-chain/grn-packs','POST',
   {claimId:a.claimId,observationId:a.observationId})).status,409);
 });
+
+test('1EN unrelated REVIEWER and revoked EVIDENCE grant cannot view or decide claim',async()=>{
+ const unrelated=randomUUID(),unrelatedToken=newSecret();
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES(?,?,?,?,?)',
+  [unrelated,'en-evidence-review-'+unrelated+'@example.invalid',
+   'Unassigned GRN evidence reviewer','test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES(?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(unrelatedToken),unrelated,csrf]);
+ const unassigned=await fetch(base+'/api/evidence-chain/review/claims',
+  {headers:{cookie:'aaditech_session='+unrelatedToken}});
+ assert.equal(unassigned.status,200);
+ assert.equal((await unassigned.json() as {items:{id:string}[]}).items.some(x=>x.id===a.claimId),false);
+ assert.equal((await call('/api/evidence-chain/review/claims','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.id===a.claimId),true);
+ const revoke={reviewerId:reviewer,scope:'EVIDENCE',decision:'REVOKE',
+  reason:'Owner withdraws synthetic GRN claim review scope'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke,'owner',{csrf:false})).status,403);
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const q=await call('/api/evidence-chain/review/claims','GET',undefined,'reviewer');
+  assert.equal(q.status,200);
+  assert.equal(q.data.items.some((x:any)=>x.id===a.claimId),false);
+  const refused=await call('/api/evidence-chain/review/claims/'+a.claimId+'/decide',
+   'POST',attest,'reviewer');
+  assert.equal(refused.status,404);
+  const [records]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM proc_ack_claim_decisions WHERE claim_id=?',[a.claimId]);
+  assert.equal(Number(records[0].n),0);
+ }finally{
+  const gr=await call('/api/reviewer-scopes','POST',{...revoke,decision:'GRANT',
+   reason:'Explicitly restore scoped internal GRN evidence reviewer'});
+  assert.equal(gr.status,201);
+ }
+ assert.equal((await call('/api/evidence-chain/review/claims','GET',
+  undefined,'reviewer')).data.items.some((x:any)=>x.id===a.claimId),true);
+});
+
 test('independent claim review captures untrusted document attestation; never supplier verified',async()=>{
  assert.equal((await call('/api/evidence-chain/review/claims/'+a.claimId+'/decide','POST',
   attest,'owner')).status,403);
@@ -264,6 +305,37 @@ test('grn pack refuses mismatched held source, serial discrepancies, missing cus
  assert.equal(replay.data.id,created.data.id);
  a.claimId=created.data.id;
 });
+
+test('1EN revoked GRN pack review scope denies snapshot and held decision atomically',async()=>{
+ const revoke={reviewerId:reviewer,scope:'EVIDENCE',decision:'REVOKE',
+  reason:'Owner revokes synthetic GRN pack reviewer access'};
+ assert.equal((await call('/api/reviewer-scopes','POST',revoke)).status,201);
+ try{
+  const list=await call('/api/evidence-chain/review/grn-packs','GET',undefined,'reviewer');
+  assert.equal(list.status,200);
+  assert.equal(list.data.items.some((x:any)=>x.id===a.claimId),false);
+  assert.equal((await call('/api/evidence-chain/review/grn-packs/'+a.claimId,
+   'GET',undefined,'reviewer')).status,404);
+  assert.equal((await call('/api/evidence-chain/review/grn-packs/'+a.claimId+'/decide',
+   'POST',holdDecision,'reviewer')).status,404);
+  const [decisions]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_grn_reconciliation_decisions WHERE pack_id=?',[a.claimId]);
+  assert.equal(Number(decisions[0].n),0);
+  const [holds]=await db.query<any[]>(
+   'SELECT COUNT(*) AS n FROM inv_grn_held_records WHERE pack_id=?',[a.claimId]);
+  assert.equal(Number(holds[0].n),0);
+ }finally{
+  assert.equal((await call('/api/reviewer-scopes','POST',{...revoke,
+   decision:'GRANT',reason:'Owner restores only internal GRN evidence review'})).status,201);
+ }
+ assert.equal((await call('/api/evidence-chain/review/grn-packs/'+a.claimId,
+   'GET',undefined,'reviewer')).status,200);
+ const [audit]=await db.query<any[]>(`SELECT decision FROM app_reviewer_scope_events
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='EVIDENCE'`,
+  [owner,reviewer]);
+ assert.deepEqual(audit.map((x:any)=>x.decision).sort(),['GRANT','GRANT','REVOKE','REVOKE']);
+});
+
 test('independent GRN review detects stored pack mutation, only creates HELD/DISABLED record',async()=>{
  assert.equal((await call('/api/evidence-chain/review/grn-packs/'+a.claimId+'/decide','POST',
   holdDecision,'owner')).status,403);

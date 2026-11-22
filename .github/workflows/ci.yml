@@ -535,6 +535,10 @@ jobs:
         run: bun run db:migrate:el-reviewer-scopes
       - name: Phase 1EL verify checksum-locked migration rerun and no retrospective grants
         run: bun run db:migrate:el-reviewer-scopes
+      - name: Phase 1EN add bounded intake, dispatch and evidence review scopes in disposable CI
+        run: bun run db:migrate:en-reviewer-scopes
+      - name: Phase 1EN verify schema checksum/idempotent rerun and no retroactive grants
+        run: bun run db:migrate:en-reviewer-scopes
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL

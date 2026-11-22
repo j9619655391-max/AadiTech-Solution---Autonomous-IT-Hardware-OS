@@ -29,7 +29,7 @@ test('1EL additive reviewer migration refuses all production and unauthorized ta
   EL_REVIEW_SCOPE_MIGRATION_APPROVED:'YES'}),'staging');
 });
 test('1EL registered 0043 schema has no implicit reviewer grants or business-activated tenants',()=>{
- assert.equal(MIGRATIONS.length,43);
+ assert.ok(MIGRATIONS.length>=43);
  assert.equal(MIGRATIONS[42],'0043_el_reviewer_scope_candidates');
  const source=readFileSync('database/migrations/0043_el_reviewer_scope_candidates.sql','utf8');
  assert.match(source,/CREATE TABLE IF NOT EXISTS app_reviewer_scope_grants/i);
