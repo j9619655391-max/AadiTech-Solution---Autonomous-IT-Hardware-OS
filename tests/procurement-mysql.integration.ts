@@ -47,9 +47,9 @@ async function reauthenticateOwnerAfterSqlTransition(){
  assert.equal(Number(old[0].n),0,'SQL identity change must revoke the owner session');
  await db.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
   [hashToken(ownerToken),owner,csrf]);
- const stepped=await call('/api/auth/step-up','POST',{currentPassword:ownerPass});
- assert.equal(stepped.status,200);
- ownerStep=String(stepped.data.stepUpToken);
+ // Discard the previous session's step-up. A new password proof is obtained
+ // only when the next privileged mutation actually needs it.
+ ownerStep='';
 }
 test('establish disposable real MySQL identities and supplier/catalog/site fixtures',async()=>{
  await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
@@ -445,6 +445,9 @@ test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',a
    await reauthenticateOwnerAfterSqlTransition();
   }
  }
+ const nominatedStep=await call('/api/auth/step-up','POST',{currentPassword:ownerPass});
+ assert.equal(nominatedStep.status,200);
+ ownerStep=String(nominatedStep.data.stepUpToken);
  const granted=await call('/api/reviewer-scopes','POST',grant);
  assert.equal(granted.status,201);
  assert.equal(granted.data.productionReleaseAuthorized,false);
@@ -482,6 +485,9 @@ test('1ET reviewer disable withdraws every scope; enable never resurrects them; 
    await reauthenticateOwnerAfterSqlTransition();
   }
  }
+ const statusStep=await call('/api/auth/step-up','POST',{currentPassword:ownerPass});
+ assert.equal(statusStep.status,200);
+ ownerStep=String(statusStep.data.stepUpToken);
  const disabled=await call(target,'PATCH',{status:'DISABLED'});
  assert.equal(disabled.status,200);
  assert.equal(disabled.data.revokedWorkflowNominations,1);
