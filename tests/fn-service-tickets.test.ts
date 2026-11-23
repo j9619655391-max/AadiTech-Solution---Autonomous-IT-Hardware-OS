@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor
 } from '../server/serviceDesk/validation';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
@@ -98,18 +98,53 @@ test('1FP ticket audit detail bounds newest events and retains chronological dis
  const over=boundedInternalTicketHistory(newest);
  assert.equal(over.historyLimit,100);
  assert.equal(over.historyHasMore,true);
+ assert.equal(over.nextBeforeVersion,2);
  assert.equal(over.history.length,100);
  assert.deepEqual(over.history.map(x=>x.versionAfter),Array.from({length:100},(_,i)=>i+2));
  const small=boundedInternalTicketHistory(newest.slice(-5));
  assert.equal(small.historyHasMore,false);
+ assert.equal(small.nextBeforeVersion,null);
  assert.deepEqual(small.history.map(x=>x.versionAfter),[1,2,3,4,5]);
  assert.deepEqual(boundedInternalTicketHistory([]),{
-  history:[],historyLimit:100,historyHasMore:false
+  history:[],historyLimit:100,historyHasMore:false,nextBeforeVersion:null
  });
  assert.throws(()=>boundedInternalTicketHistory(Array(102).fill({versionAfter:1})),/bound/);
  const route=readFileSync('server/serviceDesk/router.ts','utf8');
- assert.match(route,/ORDER BY version_after DESC LIMIT 101/);
+ assert.match(route,/ORDER BY a\.version_after DESC LIMIT 101/);
  assert.match(route,/boundedInternalTicketHistory\(newestFirst\)/);
  assert.equal((route.match(/db\.getConnection\(\)\.catch\(\(\)=>null\)/g)||[]).length,2);
  assert.match(route,/historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false/);
+});
+
+test('1FQ keyset history cursor rejects array, query pollution, zero and noncanonical integer',()=>{
+ assert.equal(parseInternalTicketHistoryCursor({beforeVersion:'1'}),1);
+ assert.equal(parseInternalTicketHistoryCursor({beforeVersion:'2147483647'}),2147483647);
+ for(const query of [null,{},[],{beforeVersion:''},{beforeVersion:0},
+  {beforeVersion:'0'},{beforeVersion:'01'},{beforeVersion:'-1'},
+  {beforeVersion:'1.0'},{beforeVersion:'1e2'},{beforeVersion:' 1'},
+  {beforeVersion:'2147483648'},{beforeVersion:'99999999999'},
+  {beforeVersion:['3','4']},{beforeVersion:{gt:3}},
+  {beforeVersion:'4',limit:'99999'},{beforeVersion:'4',offset:'200'}
+ ])assert.throws(()=>parseInternalTicketHistoryCursor(query),ServiceTicketInputError);
+});
+test('1FQ bounded history fails closed on inconsistent event version order',()=>{
+ const corrupt=[[{versionAfter:2},{versionAfter:2}],
+  [{versionAfter:2},{versionAfter:3}],
+  [{versionAfter:0}],[{versionAfter:1.1}],[{versionAfter:NaN}]];
+ for(const rows of corrupt)assert.throws(()=>boundedInternalTicketHistory(rows),/integrity/);
+ const safe=boundedInternalTicketHistory(Array.from({length:101},(_,i)=>({versionAfter:201-i})));
+ assert.equal(safe.history.length,100);
+ assert.equal(safe.nextBeforeVersion,102);
+ assert.equal(safe.historyHasMore,true);
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ assert.match(route,/router\.get\('\/:id\/history'/);
+ assert.match(route,/parseInternalTicketHistoryCursor\(req\.query\)/);
+ assert.match(route,/a\.version_after<\?/);
+ assert.match(route,/t\.owner_user_id=\?/);
+ assert.match(route,/creator\.actor_user_id=t\.owner_user_id/);
+ assert.match(route,/ORDER BY a\.version_after DESC LIMIT 101/);
+ const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
+ assert.match(ui,/history\?beforeVersion=/);
+ assert.match(ui,/Load older 100 entries/);
+ assert.match(ui,/Return to latest/);
 });
