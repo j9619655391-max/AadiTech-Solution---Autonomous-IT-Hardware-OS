@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {checkPreflightTarget,migrationChecksums,MIGRATIONS} from '../scripts/lib/stagingPreflight';
 import {checkInstalledEwTriggerIntegrity,checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
+import {authDatabaseCredentialState} from '../server/db';
 import type {EwInstalledTrigger} from '../scripts/migrate-ew-role-cycle';
 test('read-only readiness is denied by default and outside disposable DB',()=>{
  assert.throws(()=>checkPreflightTarget({}),/STAGING_PREFLIGHT/);
@@ -184,4 +185,48 @@ test('1FJ same-session base-table metadata denies DEFINER views and ambiguous ob
  }
  const {db}=observedRuntimeGrants();
  assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(db,'aaditech_staging_disposable')).dataGrantCount,1);
+});
+
+// 1FL does not pretend this configuration check authenticates effective grants.
+test('1FL auth pool only permits explicit distinct credential candidate outside developer CI',()=>{
+ const common={DB_USER:'runtime_ci',DB_PASSWORD:'runtime_secret',DB_SSL:'true',
+  DB_NAME:'aaditech_staging_safe'};
+ assert.equal(authDatabaseCredentialState({...common,NODE_ENV:'test'}),'DEV_SHARED');
+ assert.equal(authDatabaseCredentialState({...common,NODE_ENV:'development'}),'DEV_SHARED');
+ assert.equal(authDatabaseCredentialState({...common,NODE_ENV:'production'}),'HOLD');
+ assert.equal(authDatabaseCredentialState({...common,NODE_ENV:'staging'}),'HOLD');
+ const separate={...common,NODE_ENV:'staging',AUTH_DB_USER:'auth_ci',
+  AUTH_DB_PASSWORD:'auth_secret'};
+ assert.equal(authDatabaseCredentialState(separate),'SEPARATE_CANDIDATE');
+ for(const env of [
+  {...separate,AUTH_DB_USER:''},
+  {...separate,AUTH_DB_PASSWORD:''},
+  {...separate,AUTH_DB_USER:common.DB_USER},
+  {...separate,AUTH_DB_PASSWORD:common.DB_PASSWORD},
+  {...separate,AUTH_DB_USER:' auth_ci'},
+  {...separate,AUTH_DB_USER:'auth\\nci'},
+  {...separate,DB_USER:''},
+  {...separate,DB_PASSWORD:''}
+ ])assert.equal(authDatabaseCredentialState(env),'HOLD');
+});
+test('1FL production/staging authority handlers cannot fall back to the runtime pool',()=>{
+ const db=readFileSync('server/db.ts','utf8');
+ assert.match(db,/if\(state==='HOLD'\)return null/);
+ assert.match(db,/if\(state==='DEV_SHARED'\)return getPool\(\)/);
+ assert.match(db,/user:process\.env\.AUTH_DB_USER!,password:process\.env\.AUTH_DB_PASSWORD!/);
+ for(const file of [
+  'server/auth/router.ts',
+  'server/auth/mfaRouter.ts',
+  'server/security/adminRouter.ts',
+  'server/security/reviewerScopeRouter.ts'
+ ]){
+  const src=readFileSync(file,'utf8');
+  assert.match(src,/\bgetAuthPool\(\)/,file);
+  assert.doesNotMatch(src,/\bgetPool\(\)/,file);
+ }
+ const preflight=readFileSync('scripts/staging-preflight.ts','utf8');
+ assert.match(preflight,/authFunctionalSeparationVerified:false/);
+ assert.match(preflight,/authCredentialSeparation/);
+ assert.match(preflight,/&&target==='ci'/);
+ assert.match(preflight,/1FL auth\/runtime credential and end-to-end service separation not independently verified/);
 });
