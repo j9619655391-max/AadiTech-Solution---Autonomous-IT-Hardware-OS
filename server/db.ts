@@ -24,11 +24,13 @@ export type AuthDatabaseCredentialState = 'DEV_SHARED' | 'SEPARATE_CANDIDATE' | 
 export function authDatabaseCredentialState(env:NodeJS.ProcessEnv):AuthDatabaseCredentialState {
   const user=env.AUTH_DB_USER??'';
   const password=env.AUTH_DB_PASSWORD??'';
-  const isStagingOrProduction=env.NODE_ENV==='staging'||env.NODE_ENV==='production';
+  const mode=env.NODE_ENV??'development';
+  if(!['development','test','staging','production'].includes(mode))return 'HOLD';
+  const isStagingOrProduction=mode==='staging'||mode==='production';
   if(!user&&!password)return isStagingOrProduction?'HOLD':'DEV_SHARED';
   if(!user||!password||!env.DB_USER||!env.DB_PASSWORD||
     user===env.DB_USER||password===env.DB_PASSWORD||
-    user.trim()!==user||user.length>128||/[\r\n\0]/.test(user))
+    !/^[A-Za-z0-9_.-]{1,32}$/.test(user))
     return 'HOLD';
   return 'SEPARATE_CANDIDATE';
 }
