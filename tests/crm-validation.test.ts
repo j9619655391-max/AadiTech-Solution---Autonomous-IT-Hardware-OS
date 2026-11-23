@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { InputError, parsePagination,parseVersion,validate } from '../server/crm/validation';
+import { InputError, crmMoneyPaise, isMinPriceAboveSellingPrice, parsePagination,parseVersion,validate } from '../server/crm/validation';
 import { validId } from '../server/crm/repository';
 
 test('Customer validation trims strings and denies unknown or privileged balances',()=>{
@@ -22,6 +22,22 @@ test('Product amounts must be fixed-precision strings; inventory fields cannot b
   assert.throws(()=>validate('products',{...p,stockBhiwandi:300}),InputError);
   assert.throws(()=>validate('products',{...p,sellingPrice:'11000'}),InputError);
   assert.throws(()=>validate('products',{...p,unitCost:-3}),InputError);
+});
+test('1FI exact paise prevents large DECIMAL(18,2) product price-floor rounding bypass',()=>{
+ const p={sku:'FI-DECIMAL',brand:'Example',model:'Precision test',category:'SERVER',
+  specs:'Synthetic fixture',unitCost:'0.01',minPrice:'9007199254740992.01',
+  sellingPrice:'9007199254740992.02',hsn:'8471'};
+ assert.equal(crmMoneyPaise('9007199254740992.01'),900719925474099201n);
+ assert.equal(crmMoneyPaise('9999999999999999.99'),999999999999999999n);
+ assert.equal(crmMoneyPaise('0'),0n);
+ assert.equal(crmMoneyPaise('0.1'),10n);
+ assert.equal(isMinPriceAboveSellingPrice('9007199254740992.01','9007199254740992.00'),true);
+ assert.equal(isMinPriceAboveSellingPrice('9007199254740992.01','9007199254740992.01'),false);
+ assert.equal(validate('products',p).minPrice,'9007199254740992.01');
+ assert.throws(()=>validate('products',{...p,sellingPrice:'9007199254740992.00'}),/minPrice cannot exceed sellingPrice/);
+ assert.throws(()=>validate('products',{...p,minPrice:'9007199254740992.03'}),/minPrice cannot exceed sellingPrice/);
+ for(const value of ['1e3','01.00','-1.00','0.001','10000000000000000.00','',123,null])
+  assert.throws(()=>crmMoneyPaise(value),InputError);
 });
 test('Patches require specific fields; paging and optimistic version validated',()=>{
   assert.equal(validate('leads',{status:'QUALIFIED'},true).status,'QUALIFIED');
