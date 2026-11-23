@@ -342,7 +342,7 @@ test('1FU mask risky legacy ticket fields without modifying source records or di
  const route=readFileSync('server/serviceDesk/router.ts','utf8');
  assert.match(route,/function maskedTicket\(row:RowDataPacket\)/);
  assert.match(route,/function maskedAuditHistory/);
- assert.match(route,/rows\.map\(maskedTicket\)/);
+ assert.match(route,/items:page\.items\.map\(maskedTicket\)/);
  assert.match(route,/ticket:maskedTicket\(data\.ticket\)/);
  assert.equal((route.match(/history:maskedAuditHistory\(data\.history\)/g)||[]).length,2,
   'Both current detail and historic cursor API must mask audit notes');
