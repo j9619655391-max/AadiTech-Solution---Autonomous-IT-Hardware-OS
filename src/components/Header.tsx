@@ -17,7 +17,8 @@ import {
   TrendingUp,
   Server,
   RotateCcw,
-  Database
+  Database,
+  BookOpen
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { DEFAULT_COMPANY_PROFILE } from '../services/storageService';
@@ -59,6 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'workflows', label: 'Workflows & RAG', icon: GitBranch },
     { id: 'system', label: 'System Hub & API', icon: Server },
     { id: 'finance', label: 'Finance & Service', icon: ShieldCheck },
+    { id: 'troubleshooting', label: 'Windows Troubleshooting', icon: BookOpen },
     { id: 'marketing', label: 'Marketing & Agents', icon: Sparkles },
   ];
 
