@@ -96,7 +96,8 @@ test('1FO reviewed routine body cannot disclose raw auth, write role or enable d
  assert.match(sql,/SQL SECURITY DEFINER/);
  assert.match(sql,/WHERE id=p_actor FOR UPDATE/);
  assert.match(sql,/SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='AUTH_OWNER_INACTIVE'/);
- assert.doesNotMatch(sql,/GRANT|UPDATE auth_users|DELETE FROM|INSERT INTO|SELECT \*|DROP TABLE/i);
+ const executable=sql.replace(/^\s*--.*$/gm,'');
+ assert.doesNotMatch(executable,/GRANT|UPDATE auth_users|DELETE FROM|INSERT INTO|SELECT \*|DROP TABLE/i);
  const staging=readFileSync('scripts/staging-preflight.ts','utf8');
  assert.match(staging,/requireOwnerGuard:true/);
  assert.match(staging,/verifiedRuntimeDefinerOwnerGuard/);
