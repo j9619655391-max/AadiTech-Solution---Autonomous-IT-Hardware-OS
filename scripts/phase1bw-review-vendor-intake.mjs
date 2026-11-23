@@ -123,6 +123,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'server/security/adminRouter.ts',
  'server/procurement/reviewRouter.ts',
  'scripts/lib/stagingPreflight.ts',
+ 'scripts/staging-preflight.ts',
  'package.json',
  'server.ts',
  'scripts/phase1ei-independent-admission-prerequisites.mjs',
