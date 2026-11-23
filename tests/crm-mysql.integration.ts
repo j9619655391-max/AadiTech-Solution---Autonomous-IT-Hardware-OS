@@ -89,7 +89,11 @@ test('1FM real MySQL sessions can read 20 Windows guides but cannot mutate servi
  assert.equal((await call('/api/help/troubleshooting?category=DROP')).status,400);
  assert.equal((await call('/api/help/troubleshooting?q=a&q=b')).status,400);
  assert.equal((await call('/api/help/troubleshooting/not-a-guide')).status,404);
- assert.equal((await call('/api/help/troubleshooting', 'POST',{})).status,404);
+ // Express returns its default HTML 404 for an undefined POST; do not parse it as JSON.
+ const deniedPost=await fetch(base+'/api/help/troubleshooting',{
+  method:'POST',headers:{cookie,'x-csrf-token':csrf,'content-type':'application/json'},body:'{}'
+ });
+ assert.equal(deniedPost.status,404,'no troubleshooting write endpoint exists');
  assert.equal((await call('/api/help/troubleshooting','GET',undefined,false)).status,401);
  const reviewer=await call('/api/help/troubleshooting','GET',undefined,true,true,{cookie:reviewerCookie});
  assert.equal(reviewer.status,200,'authenticated reviewer may read public first-response guidance');
