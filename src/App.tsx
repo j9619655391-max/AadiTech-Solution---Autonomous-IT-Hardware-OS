@@ -28,6 +28,7 @@ import { OrdersAndLogisticsView } from './components/OrdersAndLogisticsView';
 import { PortalsAndResellersView } from './components/PortalsAndResellersView';
 import { WorkflowsAndRAGView } from './components/WorkflowsAndRAGView';
 import { FinanceAndServiceView } from './components/FinanceAndServiceView';
+import { WindowsTroubleshootingWorkspace } from './components/WindowsTroubleshootingWorkspace';
 import { MarketingAndAgentView } from './components/MarketingAndAgentView';
 import { PredictiveAnalyticsView } from './components/PredictiveAnalyticsView';
 import { SystemHubView } from './components/SystemHubView';
@@ -405,7 +406,7 @@ export default function App() {
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
         {activeTab !== 'crm' && <div role="note" className="mb-5 rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm text-amber-200">
-          Preview modules: most reports, orders and inventory still use browser or demo data. Only Live MySQL CRM has server-backed master records.
+          Preview modules: many business reports, orders and inventory still use browser or demo data. The troubleshooting tab uses authenticated read-only guidance, not device inspection or real ticket records. Do not treat preview figures as verified operational data.
           Do not treat other dashboard figures or claimed automation as verified live business operations.
         </div>}
         {activeTab === 'dashboard' && (
@@ -641,6 +642,8 @@ export default function App() {
             apiEndpoints={INITIAL_API_ENDPOINTS}
           />
         )}
+
+        {activeTab === 'troubleshooting' && <WindowsTroubleshootingWorkspace />}
 
         {activeTab === 'finance' && (
           <FinanceAndServiceView
