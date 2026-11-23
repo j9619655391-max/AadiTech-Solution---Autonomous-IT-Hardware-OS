@@ -186,3 +186,52 @@ export function verifyInternalTicketAuditWindow<T extends InternalTicketAuditEve
  }
  return window;
 }
+
+
+// Phase 1FV: ticket list must not strand owner-scoped tickets after 100.
+// Cursor is a strict, untrusted *position*, never an authorization token.
+// SQL performs its own owner/customer-provenance checks on every page.
+export const INTERNAL_TICKET_LIST_LIMIT=100;
+export type InternalTicketListCursor={beforeCreatedAt:string;beforeId:string};
+export function parseInternalTicketListCursor(query:unknown):InternalTicketListCursor|null{
+ if(!query||typeof query!=='object'||Array.isArray(query))
+  throw new ServiceTicketInputError('Invalid internal ticket list query');
+ const fields=Object.keys(query);
+ if(fields.length===0)return null;
+ if(fields.length!==2||!fields.includes('beforeCreatedAt')||!fields.includes('beforeId'))
+  throw new ServiceTicketInputError('Exact ticket list cursor fields required');
+ const q=query as Record<string,unknown>;
+ const beforeCreatedAt=q.beforeCreatedAt,beforeId=q.beforeId;
+ if(typeof beforeCreatedAt!=='string'||typeof beforeId!=='string'||
+    !/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$/.test(beforeCreatedAt)||
+    !validId(beforeId))
+  throw new ServiceTicketInputError('Invalid ticket list cursor');
+ const canonicalDate=new Date(beforeCreatedAt.slice(0,19).replace(' ','T')+'Z');
+ if(Number.isNaN(canonicalDate.getTime())||
+   canonicalDate.toISOString().slice(0,19).replace('T',' ')!==beforeCreatedAt.slice(0,19))
+  throw new ServiceTicketInputError('Invalid ticket list timestamp');
+ return {beforeCreatedAt,beforeId};
+}
+export function boundedInternalTicketList<T extends {id:string;createdAtKey:string}>(
+ newestFirst:readonly T[],cursor:InternalTicketListCursor|null
+){
+ if(!Array.isArray(newestFirst)||newestFirst.length>INTERNAL_TICKET_LIST_LIMIT+1)
+  throw Error('1FV ticket list query bound unverified');
+ const rows=newestFirst.slice(0,INTERNAL_TICKET_LIST_LIMIT);
+ let previous:InternalTicketListCursor|null=cursor;
+ for(const row of newestFirst){
+  const key=parseInternalTicketListCursor({beforeCreatedAt:row.createdAtKey,beforeId:row.id});
+  if(!key||previous&&!(
+   row.createdAtKey<previous.beforeCreatedAt||
+   row.createdAtKey===previous.beforeCreatedAt&&row.id<previous.beforeId))
+   throw Error('1FV ticket list order or cursor integrity unverified');
+  previous=key;
+ }
+ const hasMore=newestFirst.length>INTERNAL_TICKET_LIST_LIMIT;
+ const last=rows[rows.length-1];
+ return {
+  items:rows,limit:INTERNAL_TICKET_LIST_LIMIT,hasMore,
+  nextBeforeCreatedAt:hasMore?last.createdAtKey:null,
+  nextBeforeId:hasMore?last.id:null
+ };
+}
