@@ -13,6 +13,12 @@ export function runtimePrivilegePreflightTarget(env:NodeJS.ProcessEnv):'staging'
   return 'staging';
  throw Error('1FB privilege observation refused without explicit isolated TLS staging');
 }
+// Phase 1FG: MySQL 8 CURRENT_ROLE() returns NONE only when no session roles
+// are active. Fail closed on null/empty/unknown values rather than granting
+// effective role privileges to a service session.
+export function inactiveRuntimeRoles(observed:unknown):boolean{
+ return observed==='NONE';
+}
 export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;reasons:string[]};
 const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
 // Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
@@ -77,7 +83,7 @@ async function main(){
  try{
   // Both statements are read-only; identify the connection's actual principal.
   const [who]=await conn.query<RowDataPacket[]>(
-   'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema');
+   'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema, CURRENT_ROLE() AS active_roles');
   const authenticatedUser=String(who[0]?.authenticated_user??'');
   const selectedSchema=String(who[0]?.selected_schema??'');
   const [rows]=await conn.query<RowDataPacket[]>('SHOW GRANTS FOR CURRENT_USER()');
@@ -88,6 +94,8 @@ async function main(){
   const receipt=assessRuntimeGrantEnvelope(grants,cfg.database);
   if(!authenticatedUser||selectedSchema!==cfg.database)
    receipt.reasons.push('Connected DB identity/schema did not match expected target');
+  if(!inactiveRuntimeRoles(who[0]?.active_roles))
+   receipt.reasons.push('1FG active runtime DB roles present or unverified');
   const allowed=receipt.reasons.length===0;
   // Never print raw grants, DB usernames, passwords or host names.
   process.stdout.write(JSON.stringify({
