@@ -35,6 +35,20 @@ test('1FC actual MySQL grants: bounded SELECT passes, added TRIGGER privilege fa
    /1FC runtime database grant envelope unverified/,
    'Wildcard schema reads must fail even when writes remain table-scoped');
   await admin.query('REVOKE SELECT ON \x60aaditech_ci\x60.* FROM '+literal);
+  // Phase 1FH: table-specific SELECT is not an exemption for secret-bearing
+  // identity/MFA tables; this uses actual SHOW GRANTS from disposable MySQL.
+  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.\x60auth_users\x60 TO '+literal);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FC runtime database grant envelope unverified/,
+   'Explicit auth_users SELECT must fail before separate auth-reader design');
+  await admin.query('REVOKE SELECT ON \x60aaditech_ci\x60.\x60auth_users\x60 FROM '+literal);
+  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.\x60auth_totp_credentials\x60 TO '+literal);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FC runtime database grant envelope unverified/,
+   'Explicit TOTP material read must fail');
+  await admin.query('REVOKE SELECT ON \x60aaditech_ci\x60.\x60auth_totp_credentials\x60 FROM '+literal);
   await admin.query('GRANT TRIGGER ON \x60aaditech_ci\x60.* TO '+literal);
   await assert.rejects(
    checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
