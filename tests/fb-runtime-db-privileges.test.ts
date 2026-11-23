@@ -7,7 +7,8 @@ const schema='aaditech_staging_safe';
 const account="'runtime'@'%'";
 const tick=String.fromCharCode(96);
 const usage='GRANT USAGE ON *.* TO '+account;
-const scoped='GRANT SELECT ON '+tick+schema+tick+'.* TO '+account;
+const scoped='GRANT SELECT ON '+tick+schema+tick+'.'+tick+'crm_customers'+tick+' TO '+account;
+const schemaWideRead='GRANT SELECT ON '+tick+schema+tick+'.* TO '+account;
 const scopedWrite='GRANT SELECT, INSERT, UPDATE, DELETE ON '+tick+schema+tick+'.* TO '+account;
 const ordinaryWrite='GRANT INSERT, UPDATE ON '+tick+schema+tick+'.'+tick+'crm_leads'+tick+' TO '+account;
 const table='GRANT SELECT ON '+tick+schema+tick+'.'+tick+'auth_users'+tick+' TO '+account;
@@ -25,7 +26,7 @@ test('1FB rejects production, CI, unapproved staging, missing TLS and ambiguous 
   {...valid,STAGING_DISPOSABLE_CONFIRMED:'NO'}
  ])assert.throws(()=>runtimePrivilegePreflightTarget(env),/refused/);
 });
-test('1FE accepts global USAGE, read-only schema access and non-authority table-scoped writes',()=>{
+test('1FF accepts global USAGE, explicit table read and non-authority table-scoped writes',()=>{
  for(const grants of [[usage,scoped],[usage,table],[scoped],[usage,scoped,table],
   [usage,scoped,ordinaryWrite]]){
   const a=assessRuntimeGrantEnvelope(grants,schema);
@@ -34,8 +35,19 @@ test('1FE accepts global USAGE, read-only schema access and non-authority table-
   assert.equal(a.grantCount,grants.length);
  }
 });
+test('1FF schema-wide read cannot expose unreviewed auth, MFA, CRM and evidence tables',()=>{
+ const wide=assessRuntimeGrantEnvelope([usage,schemaWideRead],schema);
+ assert.equal(wide.allowed,false);
+ assert.ok(wide.reasons.includes('Runtime schema-wide data access forbidden'));
+ const focused=assessRuntimeGrantEnvelope([usage,table,scoped,ordinaryWrite],schema);
+ assert.equal(focused.allowed,true);
+ assert.equal(focused.dataGrantCount,3);
+});
 test('1FB denies global SELECT, admin/DDL, roles, non-target scopes and unrecognized grant shapes',()=>{
  const bad=[
+  schemaWideRead,
+  'GRANT SELECT ON '+schema+'.* TO '+account,
+  'GRANT SELECT, UPDATE ON '+schema+'.* TO '+account,
   scopedWrite,
   'GRANT UPDATE ON '+schema+'.auth_users TO '+account,
   'GRANT DELETE ON '+schema+'.auth_sessions TO '+account,
