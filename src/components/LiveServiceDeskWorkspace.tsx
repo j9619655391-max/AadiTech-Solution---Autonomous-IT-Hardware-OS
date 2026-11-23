@@ -175,6 +175,11 @@ export function LiveServiceDeskWorkspace(){
     Owner-only internal ticket notes for CRM customers. No customer consent, contractual SLA,
     technician assignment, warranty claim or completed repair has been independently verified.
    </p>
+   <p className="mt-2 text-xs text-slate-300" role="note">
+    Never paste passwords, access tokens, private keys or session cookies into subject, observations
+    or audit notes. Recognizable credential strings are rejected by the server, but this check cannot
+    guarantee detection of every secret or personal identifier.
+   </p>
    <p className="mt-2 flex gap-2 text-sm text-amber-200" role="note">
     <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"/>
     HARD HOLD: customer contact, external dispatch and automatic repair are disabled.
