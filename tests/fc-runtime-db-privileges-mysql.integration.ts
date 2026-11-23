@@ -73,7 +73,7 @@ test('1FG real MySQL activated default role is denied on the observed runtime se
  try{
   await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);
   userCreated=true;
-  await admin.query('GRANT SELECT ON \\x60aaditech_ci\\x60.\\x60crm_customers\\x60 TO '+account);
+  await admin.query('GRANT SELECT ON aaditech_ci.crm_customers TO '+account);
   await admin.query('CREATE ROLE '+delegatedRole);
   roleCreated=true;
   await admin.query('GRANT SELECT ON \\x60aaditech_ci\\x60.\\x60auth_users\\x60 TO '+delegatedRole);
