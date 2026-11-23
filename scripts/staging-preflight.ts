@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {checkPreflightTarget,runStagingPreflight} from './lib/stagingPreflight';
 import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-cycle';
-import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget} from './phase1fb-runtime-db-privileges';
+import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets} from './phase1fb-runtime-db-privileges';
 
 // Phase 1EZ: read installed enforcement metadata without running migrations,
 // repairing triggers, opening reviewer scopes or elevating release status.
@@ -36,6 +36,12 @@ export async function checkStagingRuntimeDbPrivilegeIntegrity(
   });
   const assessment=assessRuntimeGrantEnvelope(grants,database);
   if(!assessment.allowed)throw Error('1FC runtime database grant envelope unverified');
+  // 1FJ: a narrow GRANT may target a DEFINER view instead of a base table.
+  // Observe type on the same authenticated connection without reading data.
+  const [objects]=await conn.query<mysql.RowDataPacket[]>(
+   'SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
+  if(!verifiedRuntimeBaseTableTargets(assessment.dataGrantTables,objects))
+   throw Error('1FJ runtime grant target base-table metadata unverified');
   return {grantCount:assessment.grantCount,
    dataGrantCount:assessment.dataGrantCount};
  }finally{conn.release();}
