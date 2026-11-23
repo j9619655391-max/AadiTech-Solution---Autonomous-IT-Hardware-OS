@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
-import { definitions, type CRMEntity, type Input } from './validation';
+import { definitions, isMinPriceAboveSellingPrice, type CRMEntity, type Input } from './validation';
 
 export interface CRMRepository {
   list(entity: CRMEntity, limit: number, offset: number, actor: string): Promise<{ items: object[]; total: number }>;
@@ -86,7 +86,7 @@ export class MySQLCRMRepository implements CRMRepository {
       if(entity==='products'){
         const min=fields.minPrice??beforeRows[0].minPrice;
         const sell=fields.sellingPrice??beforeRows[0].sellingPrice;
-        if(Number(min)>Number(sell)){await connection.rollback();return 'conflict';}
+        if(isMinPriceAboveSellingPrice(min,sell)){await connection.rollback();return 'conflict';}
       }
       await connection.execute(`UPDATE ${tables[entity]} SET ${keys.map(k=>k+'=?').join(',')},version=version+1 WHERE id=?`,[...keys.map(k=>fields[k] as string | number | null),id]);
       const [rows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=?`,[id]);const after=clean(entity,rows[0]);
