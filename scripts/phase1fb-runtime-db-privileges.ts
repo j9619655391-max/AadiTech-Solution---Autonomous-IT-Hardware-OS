@@ -19,7 +19,7 @@ export function runtimePrivilegePreflightTarget(env:NodeJS.ProcessEnv):'staging'
 export function inactiveRuntimeRoles(observed:unknown):boolean{
  return observed==='NONE';
 }
-export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;reasons:string[]};
+export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;dataGrantTables:string[];reasons:string[]};
 const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
 // Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
 // quarantine by writing authority or authentication state tables directly.
@@ -37,6 +37,7 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
  if(!Array.isArray(grants)||grants.length===0||grants.length>128)
   reasons.push('Grant inventory missing or oversized');
  let dataGrantCount=0;
+ const dataGrantTables=new Set<string>();
  for(const line of grants){
   if(typeof line!=='string'||line.length>8192||/[\r\n\0]/.test(line)){
    reasons.push('Grant entry malformed');continue;
@@ -76,9 +77,34 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
    reasons.push('Runtime authority/authentication table mutation forbidden');continue;
   }
   dataGrantCount++;
+  dataGrantTables.add(parts[1].toLowerCase());
  }
  if(!dataGrantCount)reasons.push('No bounded target-schema DML grant observed');
- return {allowed:reasons.length===0,grantCount:grants.length,dataGrantCount,reasons};
+ return {allowed:reasons.length===0,grantCount:grants.length,dataGrantCount,
+  dataGrantTables:[...dataGrantTables].sort(),reasons};
+}
+
+// Phase 1FJ: a table-scoped grant may actually target a SQL SECURITY DEFINER
+// VIEW that reads otherwise quarantined tables. Classify every granted object
+// from same-session information_schema metadata; absence, duplicates, denied
+// metadata, or any VIEW are non-acceptance. No data or view body is read.
+export function verifiedRuntimeBaseTableTargets(
+ targetTables:readonly string[],metadata:readonly unknown[]
+):boolean{
+ if(!Array.isArray(targetTables)||!targetTables.length||targetTables.length>128||
+    !Array.isArray(metadata)||metadata.length>4096)return false;
+ const objects=new Map<string,string>();
+ for(const candidate of metadata){
+  if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return false;
+  const row=candidate as {TABLE_NAME?:unknown;TABLE_TYPE?:unknown};
+  if(typeof row.TABLE_NAME!=='string'||typeof row.TABLE_TYPE!=='string'||
+     !/^[A-Za-z0-9_]{1,64}$/.test(row.TABLE_NAME))return false;
+  const key=row.TABLE_NAME.toLowerCase();
+  if(objects.has(key))return false; // case-collision or duplicate metadata
+  objects.set(key,row.TABLE_TYPE);
+ }
+ return targetTables.every(table=>typeof table==='string'&&
+  /^[a-z0-9_]{1,64}$/.test(table)&&objects.get(table)==='BASE TABLE');
 }
 async function main(){
  runtimePrivilegePreflightTarget(process.env);
@@ -98,6 +124,12 @@ async function main(){
    return values.length===1&&typeof values[0]==='string'?values[0]:'';
   });
   const receipt=assessRuntimeGrantEnvelope(grants,cfg.database);
+  if(receipt.allowed){
+   const [objects]=await conn.query<RowDataPacket[]>(
+    'SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
+   if(!verifiedRuntimeBaseTableTargets(receipt.dataGrantTables,objects))
+    receipt.reasons.push('1FJ runtime grant object type unverified');
+  }
   if(!authenticatedUser||selectedSchema!==cfg.database)
    receipt.reasons.push('Connected DB identity/schema did not match expected target');
   if(!inactiveRuntimeRoles(who[0]?.active_roles))
