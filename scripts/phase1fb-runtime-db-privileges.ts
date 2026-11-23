@@ -53,10 +53,13 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
   if(!privileges.length||privileges.some(priv=>!DML.has(priv))){
    reasons.push('Grant includes schema/DDL/admin/unknown privilege');continue;
   }
-  const hasWrite=privileges.some(priv=>priv!=='SELECT');
-  if(hasWrite&&parts[1]==='*'){
-   reasons.push('Runtime schema-wide data mutation grant forbidden');continue;
+  // Phase 1FF: schema-wide SELECT exposes passwords, MFA secrets,
+  // private customer data and internal authority evidence on every table.
+  // Runtime principals need explicit, reviewed table-level access.
+  if(parts[1]==='*'){
+   reasons.push('Runtime schema-wide data access forbidden');continue;
   }
+  const hasWrite=privileges.some(priv=>priv!=='SELECT');
   if(hasWrite&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
    reasons.push('Runtime authority/authentication table mutation forbidden');continue;
   }
