@@ -399,6 +399,74 @@ test('1FS real MySQL owner-only unsigned 103-event audit fingerprint and cap',as
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[pagedTicketId]),103);
 });
 
+test('1FV real MySQL owner-scoped ticket list walks past 100 with no duplicate, gap or BOLA',async()=>{
+ // Build real application ticket/audit records through authenticated OWNER
+ // HTTP using a disposable CI customer. No customer consent or dispatch.
+ const produced:string[]=[];
+ for(let index=0;index<102;index++){
+  const created=await request('/','POST',{
+   ...payload(otherCustomer),subject:'CI bounded internal ticket list '+String(index).padStart(3,'0')
+  },'other');
+  assert.equal(created.status,201,'legitimate owner ticket '+index);
+  produced.push(String(created.data.ticket.id));
+ }
+ const first=await request('/','GET',undefined,'other');
+ assert.equal(first.status,200);
+ assert.equal(first.cache,'no-store');
+ assert.equal(first.data.mode,'INTERNAL_HELD');
+ assert.equal(first.data.externalDispatchEnabled,false);
+ assert.equal(first.data.limit,100);
+ assert.equal(first.data.items.length,100);
+ assert.equal(first.data.hasMore,true);
+ assert.match(first.data.nextBeforeCreatedAt,
+  /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$/);
+ assert.match(first.data.nextBeforeId,/^[0-9a-f-]{36}$/);
+ assert.equal(first.data.items[99].id,first.data.nextBeforeId);
+ const cursor='?beforeCreatedAt='+encodeURIComponent(first.data.nextBeforeCreatedAt)+
+  '&beforeId='+encodeURIComponent(first.data.nextBeforeId);
+ const second=await request('/'+cursor,'GET',undefined,'other');
+ assert.equal(second.status,200);
+ assert.equal(second.data.hasMore,false);
+ assert.equal(second.data.nextBeforeCreatedAt,null);
+ assert.equal(second.data.nextBeforeId,null);
+ assert.ok(second.data.items.length>=2&&second.data.items.length<100);
+ const all=[...first.data.items,...second.data.items];
+ assert.equal(all.length,await count('service_tickets_internal','owner_user_id=?',[other.id]));
+ assert.equal(new Set(all.map((x:any)=>x.id)).size,all.length);
+ for(let i=1;i<all.length;i++){
+  const a=all[i-1],b=all[i];
+  assert.ok(a.createdAtKey>b.createdAtKey||
+   a.createdAtKey===b.createdAtKey&&a.id>b.id,
+   'ticket keyset ordering must be strictly descending');
+ }
+ for(const id of produced)assert.ok(all.some((x:any)=>x.id===id));
+ for(const page of [first,second])for(const ticket of page.data.items){
+  assert.equal(ticket.customerConsentState,'UNVERIFIED');
+  assert.equal(ticket.externalDispatchState,'DISABLED');
+  assert.equal(ticket.subjectRedacted,false);
+ }
+ const ownerPage=await request('/');
+ assert.equal(ownerPage.status,200);
+ for(const id of produced)assert.ok(!ownerPage.data.items.some((x:any)=>x.id===id),
+  'other OWNER ticket may not appear in default OWNER page');
+ assert.equal((await request('/'+cursor)).status,200,
+  'foreign OWNER uses own scoped list even with stolen cursor');
+ assert.equal((await request('/'+cursor,'GET',undefined,'reviewer')).status,403);
+ assert.equal((await request('/'+cursor,'GET',undefined,'anon')).status,401);
+ for(const bad of [
+  '?beforeCreatedAt='+encodeURIComponent(first.data.nextBeforeCreatedAt),
+  '?beforeId='+first.data.nextBeforeId,
+  '?beforeCreatedAt=2026-02-30%2001%3A00%3A00.000000&beforeId='+first.data.nextBeforeId,
+  cursor+'&limit=10000',cursor+'&beforeId='+first.data.nextBeforeId,
+  '?beforeCreatedAt%5Bgt%5D=x&beforeId='+first.data.nextBeforeId,
+  '?beforeCreatedAt=now&beforeId=not-a-uuid'
+ ]){
+  const denied=await request('/'+bad,'GET',undefined,'other');
+  assert.equal(denied.status,400,'invalid list cursor accepted: '+bad);
+ }
+ assert.equal((await request('/','GET',undefined,'other')).data.items.length,100);
+});
+
 test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and tampered events',async()=>{
  const created=await request('/','POST',payload(otherCustomer),'other');
  assert.equal(created.status,201);
