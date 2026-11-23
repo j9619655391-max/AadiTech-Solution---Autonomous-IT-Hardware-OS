@@ -15,6 +15,23 @@ export interface DatabaseStatus {
 }
 
 let pool: Pool | null = null;
+let authPool: Pool | null = null;
+
+// Phase 1FL: explicit credential separation candidate, not a verified DBA
+// role or independently accepted service architecture. Shared credentials
+// remain permitted only for disposable CI/local developer workflows.
+export type AuthDatabaseCredentialState = 'DEV_SHARED' | 'SEPARATE_CANDIDATE' | 'HOLD';
+export function authDatabaseCredentialState(env:NodeJS.ProcessEnv):AuthDatabaseCredentialState {
+  const user=env.AUTH_DB_USER??'';
+  const password=env.AUTH_DB_PASSWORD??'';
+  const isStagingOrProduction=env.NODE_ENV==='staging'||env.NODE_ENV==='production';
+  if(!user&&!password)return isStagingOrProduction?'HOLD':'DEV_SHARED';
+  if(!user||!password||!env.DB_USER||!env.DB_PASSWORD||
+    user===env.DB_USER||password===env.DB_PASSWORD||
+    user.trim()!==user||user.length>128||/[\r\n\0]/.test(user))
+    return 'HOLD';
+  return 'SEPARATE_CANDIDATE';
+}
 
 export function getDatabaseConfig() {
   const host = process.env.DB_HOST || '';
@@ -73,6 +90,28 @@ export function getPool(): Pool | null {
   }
 
   return pool;
+}
+
+// Auth, session, MFA and first-party reviewer-authority operations can use
+// a dedicated credential. Never silently fall back to the general runtime
+// account in staging/production or with malformed partial AUTH_DB_* settings.
+// MySQL CURRENT_USER(), grants and real end-to-end functioning remain pending.
+export function getAuthPool(): Pool | null {
+  const state=authDatabaseCredentialState(process.env);
+  if(state==='HOLD')return null;
+  if(state==='DEV_SHARED')return getPool();
+  const config=getDatabaseConfig();
+  if(!config.host||!config.database||!config.user||!config.password||
+     ((process.env.NODE_ENV==='production'||process.env.NODE_ENV==='staging')&&!config.ssl))
+    return null;
+  if(!authPool){
+    authPool=mysql.createPool({
+      ...config,user:process.env.AUTH_DB_USER!,password:process.env.AUTH_DB_PASSWORD!,
+      waitForConnections:true,connectionLimit:5,queueLimit:0,
+      enableKeepAlive:true,keepAliveInitialDelay:10000
+    });
+  }
+  return authPool;
 }
 
 export async function checkDatabaseConnection(): Promise<DatabaseStatus> {
