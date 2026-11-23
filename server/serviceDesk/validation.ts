@@ -29,6 +29,14 @@ export function rejectCredentialLikeTicketText(value:string):void{
   throw new ServiceTicketInputError(
    'Credential-like content is not allowed in internal ticket text; omit secrets and retry');
 }
+// Phase 1FU: deny direct reads of HIGH-CONFIDENCE credential-bearing legacy
+// text without mutating the original stored audit or claiming full DLP.
+export const INTERNAL_TICKET_MASK='[REDACTED: possible credential in legacy internal text]';
+export function maskCredentialLikeTicketText(value:unknown){
+ if(typeof value!=='string')throw Error('Internal ticket projection text integrity unverified');
+ const redacted=credentialIndicators.some(re=>re.test(value));
+ return {text:redacted?INTERNAL_TICKET_MASK:value,redacted};
+}
 function textValue(value:unknown,max:number,label:string){
  if(typeof value!=='string')throw new ServiceTicketInputError('Invalid '+label);
  const v=value.trim();
