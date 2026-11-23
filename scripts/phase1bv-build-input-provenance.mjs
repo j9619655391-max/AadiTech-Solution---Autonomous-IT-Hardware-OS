@@ -136,6 +136,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'server/security/adminRouter.ts',
  'server/procurement/reviewRouter.ts',
  'scripts/lib/stagingPreflight.ts',
+ 'scripts/staging-preflight.ts',
  'server.ts',
  'server/security/deploymentGuards.ts',
  'server/security/devToolExposure.ts',
