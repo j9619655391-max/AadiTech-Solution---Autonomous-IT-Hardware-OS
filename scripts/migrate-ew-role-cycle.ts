@@ -26,10 +26,11 @@ const expectedTriggerBodies=new Map([
  ['trg_ew_reviewer_session_quarantine',
   'DELETE FROM auth_sessions WHERE user_id=NEW.id AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)']
 ]);
-// MySQL can preserve formatting differently. Ignore ONLY whitespace, case and
+// MySQL can preserve formatting differently. Ignore ONLY whitespace and
 // identifier quoting, never operators, predicates, tables or string literals.
+// In particular preserve string literal case; do not mask a changed grant state.
 function canonicalTriggerStatement(sql:string){
- return sql.replace(/`/g,'').replace(/\s+/g,' ').replace(/\s*([=<>(),])\s*/g,'$1').trim().toUpperCase();
+ return sql.replace(/`/g,'').replace(/\s+/g,' ').replace(/\s*([=<>(),])\s*/g,'$1').trim();
 }
 export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  if(rows.length!==expectedTriggerBodies.size)
