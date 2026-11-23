@@ -155,7 +155,8 @@ test('1FC privilege checks fail-closed on unexpected identity/schema, global gra
 });
 test('1FC staging CLI requires grant PASS; CI result explicitly declines actual staging privilege certification',()=>{
  const src=readFileSync('scripts/staging-preflight.ts','utf8');
- assert.match(src,/await checkStagingRuntimeDbPrivilegeIntegrity\(connection,cfg\.database\)/);
+ assert.match(src,/await checkStagingRuntimeDbPrivilegeIntegrity\(connection,cfg\.database,\s*\{requireOwnerGuard:true\}\)/);
+ assert.match(src,/ownerGuardMode\(process\.env\)!=='DEFINER_PROCEDURE'/);
  assert.match(src,/CURRENT_ROLE\(\) AS active_roles/);
  assert.match(src,/!inactiveRuntimeRoles\(identity\[0\]\.active_roles\)/);
  assert.match(src,/runtimePrivilegePreflightTarget\(process\.env\)/);
