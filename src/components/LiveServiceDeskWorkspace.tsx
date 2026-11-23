@@ -1,7 +1,8 @@
-import React,{useCallback,useEffect,useState} from 'react';
+import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ClipboardList,RefreshCw,ShieldAlert} from 'lucide-react';
 import {authenticatedFetch} from '../services/authClient';
 import {crmClient,type CRMRecord} from '../services/crmClient';
+import {verifyServiceDeskCustomerPage,customerSelectionForPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE} from '../services/serviceDeskCustomerPaging';
 
 type Status='OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD';
 type Priority='LOW'|'NORMAL'|'HIGH';
@@ -47,6 +48,10 @@ export function LiveServiceDeskWorkspace(){
  const [ticketCursor,setTicketCursor]=useState<{createdAt:string;id:string}|null>(null);
  const [ticketsOlderPage,setTicketsOlderPage]=useState(false);
  const [customers,setCustomers]=useState<CRMRecord[]>([]);
+ const [customerPage,setCustomerPage]=useState(1);
+ const [customerTotal,setCustomerTotal]=useState(0);
+ const [loadingCustomerPage,setLoadingCustomerPage]=useState(false);
+ const customerRequestSequence=useRef(0);
  const [guides,setGuides]=useState<{id:string;title:string}[]>([]);
  const [customerId,setCustomerId]=useState('');
  const [guideId,setGuideId]=useState('pc-slow');
@@ -67,7 +72,6 @@ export function LiveServiceDeskWorkspace(){
  const [loadingOlderTickets,setLoadingOlderTickets]=useState(false);
  const [error,setError]=useState('');
  const [success,setSuccess]=useState('');
- const [customerTruncated,setCustomerTruncated]=useState(false);
  const verifyList=(list:TicketList)=>{
   if(list.mode!=='INTERNAL_HELD'||list.externalDispatchEnabled!==false||
      list.limit!==100||!Array.isArray(list.items)||list.items.length>100||
@@ -78,6 +82,7 @@ export function LiveServiceDeskWorkspace(){
   return list;
  };
  const refresh=useCallback(async()=>{
+  const requestSequence=++customerRequestSequence.current;
   setLoading(true);setError('');
   try{
    const [list,crm,catalog]=await Promise.all([
@@ -90,13 +95,38 @@ export function LiveServiceDeskWorkspace(){
    setTickets(list.items);
    setTicketCursor(list.hasMore?{createdAt:list.nextBeforeCreatedAt!,id:list.nextBeforeId!}:null);
    setTicketsOlderPage(false);
-   setCustomers(crm.items);setGuides(catalog.items);
-   setCustomerTruncated(crm.total>100);
-   setCustomerId(prev=>prev&&crm.items.some(c=>c.id===prev)?prev:crm.items[0]?.id??'');
+   const customerResult=verifyServiceDeskCustomerPage(crm,1);
+   if(requestSequence===customerRequestSequence.current){
+    setCustomers(customerResult.items);
+    setCustomerPage(1);setCustomerTotal(customerResult.total);
+    setCustomerId(prev=>customerSelectionForPage(prev,customerResult.items));
+   }
+   setGuides(catalog.items);
   }catch(e){setError(e instanceof Error?e.message:'Service desk unavailable');}
   finally{setLoading(false);}
  },[]);
  useEffect(()=>{void refresh();},[refresh]);
+ const loadCustomerPage=async(requestedPage:number)=>{
+  const totalPages=Math.max(1,Math.ceil(customerTotal/SERVICE_DESK_CUSTOMER_PAGE_SIZE));
+  if(loading||busy||loadingCustomerPage||requestedPage===customerPage||
+     requestedPage<1||requestedPage>totalPages)return;
+  const requestSequence=++customerRequestSequence.current;
+  setLoadingCustomerPage(true);setError('');
+  try{
+   const result=verifyServiceDeskCustomerPage(
+    await crmClient.list('customers',requestedPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE),
+    requestedPage);
+   if(requestSequence!==customerRequestSequence.current)return;
+   setCustomers(result.items);
+   setCustomerPage(result.page);setCustomerTotal(result.total);
+   setCustomerId(prev=>customerSelectionForPage(prev,result.items));
+  }catch(e){
+   if(requestSequence===customerRequestSequence.current)
+    setError(e instanceof Error?e.message:'CRM customer page unavailable');
+  }finally{
+   if(requestSequence===customerRequestSequence.current)setLoadingCustomerPage(false);
+  }
+ };
  const loadOlderTickets=async()=>{
   if(!ticketCursor||loadingOlderTickets||loading)return;
   const cursor=ticketCursor;
@@ -168,6 +198,7 @@ export function LiveServiceDeskWorkspace(){
  };
  const createTicket=async(event:React.FormEvent)=>{
   event.preventDefault();
+  if(loadingCustomerPage){setError('Finish selecting an authorized CRM customer before saving.');return;}
   if(!acknowledge){setError('Acknowledge that customer consent is not verified.');return;}
   setBusy(true);setError('');setSuccess('');
   try{
@@ -234,7 +265,24 @@ export function LiveServiceDeskWorkspace(){
       {customers.map(c=><option key={c.id} value={c.id}>{String(c.name??c.id)}</option>)}
      </select>
     </label>
-    {customerTruncated&&<p className="text-xs text-amber-300">Showing the first 100 CRM customers. Filter your CRM catalog before using a customer beyond this list.</p>}
+    {customerTotal>SERVICE_DESK_CUSTOMER_PAGE_SIZE&&
+     <div className="space-y-2 text-xs text-slate-300" aria-label="Owner CRM customer pages">
+      <p>Customer page {customerPage} of {Math.max(1,Math.ceil(customerTotal/SERVICE_DESK_CUSTOMER_PAGE_SIZE))} · {customerTotal} owner-scoped CRM records. No customer consent verified.</p>
+      <div className="flex flex-wrap gap-2">
+       <button type="button" disabled={busy||loading||loadingCustomerPage||customerPage<=1}
+        onClick={()=>void loadCustomerPage(customerPage-1)}
+        className="rounded border border-slate-700 px-3 py-1.5 disabled:opacity-50">
+        Previous 100 customers
+       </button>
+       <button type="button" disabled={busy||loading||loadingCustomerPage||
+        customerPage>=Math.ceil(customerTotal/SERVICE_DESK_CUSTOMER_PAGE_SIZE)}
+        onClick={()=>void loadCustomerPage(customerPage+1)}
+        className="rounded border border-slate-700 px-3 py-1.5 disabled:opacity-50">
+        Next 100 customers
+       </button>
+      </div>
+      {loadingCustomerPage&&<p role="status">Checking owner-scoped CRM customer page…</p>}
+     </div>}
     <label className="block text-xs text-slate-300">Troubleshooting topic
      <select required value={guideId} onChange={e=>setGuideId(e.target.value)}
       className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">
@@ -261,7 +309,7 @@ export function LiveServiceDeskWorkspace(){
       className="mt-0.5"/>
      I understand that this ticket is an unverified internal observation; customer consent and SLA are NOT confirmed.
     </label>
-    <button type="submit" disabled={busy||loading||!customerId||!acknowledge||!guides.length}
+    <button type="submit" disabled={busy||loading||loadingCustomerPage||!customerId||!acknowledge||!guides.length}
      className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
      Save internal ticket
     </button>
