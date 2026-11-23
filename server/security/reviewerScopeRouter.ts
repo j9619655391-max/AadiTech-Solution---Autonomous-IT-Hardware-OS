@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {Router} from 'express';
 import type {RowDataPacket} from 'mysql2/promise';
-import {getPool} from '../db';
+import {getAuthPool} from '../db';
 import {requireOwner,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
 
@@ -14,7 +14,7 @@ const validId=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Scope='QUOTES'|'PROCUREMENT'|'INTAKE'|'DISPATCH'|'EVIDENCE'|'STOCK'|'JOURNAL'|'PROOF'|'KEY_LIFECYCLE'|'EXTERNAL_TRUST'|'PROVIDER_BRIDGE'|'PROVIDER_SANDBOX'|'PROVIDER_SELECTION'|'PROVIDER_ONBOARDING';
 type Decision='GRANT'|'REVOKE';
 router.get('/',async(_req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.execute<RowDataPacket[]>(`SELECT reviewer_user_id AS reviewerId,
    workflow_scope AS scope,state,nominated_at AS nominatedAt
@@ -42,7 +42,7 @@ router.post('/',requirePrivilegedMfa,requireStepUp,async(req,res)=>{
   decision=body.decision as Decision,reason=body.reason.trim() as string,
   owner=String(res.locals.auth.userId);
  if(reviewerId===owner){res.status(400).json({error:'Owner cannot be own independent reviewer'});return;}
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
