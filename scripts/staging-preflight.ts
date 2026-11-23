@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {checkPreflightTarget,runStagingPreflight} from './lib/stagingPreflight';
 import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-cycle';
-import {assessRuntimeGrantEnvelope,runtimePrivilegePreflightTarget} from './phase1fb-runtime-db-privileges';
+import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget} from './phase1fb-runtime-db-privileges';
 
 // Phase 1EZ: read installed enforcement metadata without running migrations,
 // repairing triggers, opening reviewer scopes or elevating release status.
@@ -23,9 +23,10 @@ export async function checkStagingRuntimeDbPrivilegeIntegrity(
  const conn=await db.getConnection();
  try{
   const [identity]=await conn.query<mysql.RowDataPacket[]>(
-   'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema');
+   'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema, CURRENT_ROLE() AS active_roles');
   if(identity.length!==1||typeof identity[0]?.authenticated_user!=='string'||
-     !identity[0].authenticated_user||identity[0].selected_schema!==database)
+     !identity[0].authenticated_user||identity[0].selected_schema!==database||
+     !inactiveRuntimeRoles(identity[0].active_roles))
    throw Error('1FC runtime database identity/schema mismatch');
   const [rows]=await conn.query<mysql.RowDataPacket[]>(
    'SHOW GRANTS FOR CURRENT_USER()');
