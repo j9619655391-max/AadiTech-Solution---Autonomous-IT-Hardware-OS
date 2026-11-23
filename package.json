@@ -106,7 +106,9 @@
     "db:migrate:ep-reviewer-scopes": "tsx scripts/migrate-ep-reviewer-scopes.ts",
     "db:migrate:eq-provider-scopes": "tsx scripts/migrate-eq-provider-scopes.ts",
     "db:migrate:ew-role-cycle": "tsx scripts/migrate-ew-role-cycle.ts",
-    "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts"
+    "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts",
+    "db:migrate:service-tickets": "tsx scripts/migrate-service-tickets.ts",
+    "test:service-tickets-mysql": "tsx --test tests/fn-service-tickets-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
