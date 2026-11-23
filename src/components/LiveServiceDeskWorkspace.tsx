@@ -18,6 +18,11 @@ type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHa
  nextBeforeVersion:number|null;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 type HistoryPage={ticketId:string;history:History[];historyLimit:number;historyHasMore:boolean;
  nextBeforeVersion:number|null;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
+type InternalAuditFingerprint={ticketId:string;algorithm:'SHA-256';
+ format:'aaditech/internal-ticket-audit/sha256/v1';auditDigestSha256:string;
+ eventCount:number;latestVersion:number;scope:'APPLICATION_UNATTESTED';
+ signatureVerified:false;externalAnchorVerified:false;customerConsentVerified:false;
+ mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 const nextStates:Record<Status,{status:Status;label:string}[]>={
  OPEN_INTERNAL:[{status:'TRIAGED_INTERNAL',label:'Triaged (internal)'}],
  TRIAGED_INTERNAL:[
@@ -50,6 +55,8 @@ export function LiveServiceDeskWorkspace(){
  const [transitionNote,setTransitionNote]=useState('');
  const [busy,setBusy]=useState(false);
  const [loadingHistory,setLoadingHistory]=useState(false);
+ const [fingerprintBusy,setFingerprintBusy]=useState(false);
+ const [fingerprint,setFingerprint]=useState<InternalAuditFingerprint|null>(null);
  const [historyIsLatest,setHistoryIsLatest]=useState(true);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
@@ -80,7 +87,7 @@ export function LiveServiceDeskWorkspace(){
     '/api/service-desk/internal-tickets/'+encodeURIComponent(id)));
    if(data.mode!=='INTERNAL_HELD'||data.externalDispatchEnabled!==false)
     throw Error('Unverified internal ticket response');
-   setSelectedId(id);setDetail(data);setHistoryIsLatest(true);setNextStatus(' ');setTransitionNote('');
+   setSelectedId(id);setDetail(data);setFingerprint(null);setHistoryIsLatest(true);setNextStatus(' ');setTransitionNote('');
   }catch(e){setError(e instanceof Error?e.message:'Ticket unavailable');}
  };
  const loadOlderHistory=async()=>{
@@ -103,6 +110,25 @@ export function LiveServiceDeskWorkspace(){
    setHistoryIsLatest(false);
   }catch(e){setError(e instanceof Error?e.message:'Older audit history unavailable');}
   finally{setLoadingHistory(false);}
+ };
+ const computeFingerprint=async()=>{
+  if(!detail||fingerprintBusy)return;
+  const ticketId=detail.ticket.id,version=detail.ticket.version;
+  setFingerprintBusy(true);setError('');setFingerprint(null);
+  try{
+   const data=await responseBody<InternalAuditFingerprint>(await authenticatedFetch(
+    '/api/service-desk/internal-tickets/'+encodeURIComponent(ticketId)+'/audit-fingerprint'));
+   if(data.ticketId!==ticketId||data.latestVersion!==version||data.mode!=='INTERNAL_HELD'||
+      data.externalDispatchEnabled!==false||data.scope!=='APPLICATION_UNATTESTED'||
+      data.signatureVerified!==false||data.externalAnchorVerified!==false||
+      data.customerConsentVerified!==false||data.algorithm!=='SHA-256'||
+      data.format!=='aaditech/internal-ticket-audit/sha256/v1'||
+      !/^[a-f0-9]{64}$/.test(data.auditDigestSha256)||
+      !Number.isSafeInteger(data.eventCount)||data.eventCount!==version||data.eventCount>1000)
+    throw Error('Unsigned internal audit fingerprint response invalid');
+   setFingerprint(data);
+  }catch(e){setError(e instanceof Error?e.message:'Internal audit fingerprint unavailable');}
+  finally{setFingerprintBusy(false);}
  };
  const createTicket=async(event:React.FormEvent)=>{
   event.preventDefault();
@@ -242,6 +268,17 @@ export function LiveServiceDeskWorkspace(){
      <button type="submit" disabled={busy||nextStatus===' '||!transitionNote.trim()}
       className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Record status</button>
     </form>}
+   <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-950 p-3">
+    <p className="text-xs text-amber-300">Optional internal database fingerprint only. Not an independent signature, immutable/WORM attestation, or verified customer consent.</p>
+    <button type="button" disabled={fingerprintBusy||busy} onClick={()=>void computeFingerprint()}
+     className="rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
+     {fingerprintBusy?'Checking bounded ledger…':'Compute unsigned audit fingerprint'}
+    </button>
+    {fingerprint?.ticketId===detail.ticket.id&&<div className="space-y-1 text-xs text-slate-300">
+     <p>Internal events checked: {fingerprint.eventCount} · SHA-256, application-generated · Signature: NOT VERIFIED</p>
+     <p className="break-all font-mono" aria-label="Unsigned internal audit SHA-256 fingerprint">{fingerprint.auditDigestSha256}</p>
+    </div>}
+   </div>
    <h4 className="text-sm font-semibold text-white">Versioned internal audit</h4>
    <p className="text-xs text-slate-400">Showing {historyIsLatest?'latest':'older'} {detail.history.length} internal audit entries (limit {detail.historyLimit}). {detail.historyHasMore?'Earlier entries remain.':'No earlier entries reported by this bounded read.'} This is a single page, not immutable external evidence.</p>
    <div className="flex flex-wrap gap-2">
