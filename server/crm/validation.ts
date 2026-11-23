@@ -32,7 +32,7 @@ export class InputError extends Error {}
 // IEEE-754 Number. Compare integer minor units, never floating point.
 // Both HTTP validation and the transaction-time price floor call this helper.
 export function crmMoneyPaise(value:unknown):bigint{
- if(typeof value!=='string'||!/^(0|[1-9]\\d{0,15})(\\.\\d{1,2})?$/.test(value))
+ if(typeof value!=='string'||!/^(0|[1-9]\d{0,15})(\.\d{1,2})?$/.test(value))
   throw new InputError('Invalid stored monetary value');
  const [whole,fraction='']=value.split('.');
  return BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
