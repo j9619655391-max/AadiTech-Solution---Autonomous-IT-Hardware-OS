@@ -19,7 +19,7 @@ export function ewRoleCycleMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'
 // trigger still revokes reviewer grants and invalidates sessions. This validates
 // observed MySQL ACTION_STATEMENT bodies; it is NOT an external attestation or
 // protection against privileged SQL actors changing them after this check.
-export type EwInstalledTrigger={TRIGGER_NAME:string;ACTION_STATEMENT:string|null};
+export type EwInstalledTrigger={TRIGGER_NAME:string;ACTION_STATEMENT:string|null;ACTION_TIMING:string};
 const expectedTriggerBodies=new Map([
  ['trg_ew_reviewer_grant_quarantine',
   "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)"],
@@ -30,7 +30,24 @@ const expectedTriggerBodies=new Map([
 // identifier quoting, never operators, predicates, tables or string literals.
 // In particular preserve string literal case; do not mask a changed grant state.
 function canonicalTriggerStatement(sql:string){
- return sql.replace(/`/g,'').replace(/\s+/g,' ').replace(/\s*([=<>(),])\s*/g,'$1').trim();
+ // Preserve SQL string-literal bytes; only identifier quotes may be erased.
+ const pieces=/'(?:''|\\.|[^'\\])*'|`(?:``|[^`])*`|[^'`]+/gy;
+ let normalized='';
+ for(let offset=0;offset<sql.length;){
+  pieces.lastIndex=offset;
+  const hit=pieces.exec(sql);
+  if(!hit)throw Error('1EY malformed trigger SQL quoting');
+  const part=hit[0];
+  if(part.startsWith("'"))normalized+=part;
+  else if(part.startsWith('`')){
+   const identifier=part.slice(1,-1);
+   if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier))
+    throw Error('1EY unexpected quoted SQL identifier');
+   normalized+=identifier;
+  }else normalized+=part.replace(/\s+/g,' ').replace(/\s*([=<>(),])\s*/g,'$1');
+  offset=pieces.lastIndex;
+ }
+ return normalized.trim();
 }
 export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  if(rows.length!==expectedTriggerBodies.size)
@@ -39,7 +56,8 @@ export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  for(const row of rows){
   const name=String(row.TRIGGER_NAME??'').toLowerCase();
   const expected=expectedTriggerBodies.get(name);
-  if(!expected||seen.has(name))throw Error('1EX unknown or duplicate auth_users AFTER UPDATE trigger');
+  if(!expected||seen.has(name))throw Error('1EX unknown or duplicate auth_users UPDATE trigger');
+  if(row.ACTION_TIMING!=='AFTER')throw Error('1EY unexpected auth_users BEFORE UPDATE trigger');
   if(canonicalTriggerStatement(String(row.ACTION_STATEMENT??''))!==canonicalTriggerStatement(expected))
    throw Error('1EX trigger ACTION_STATEMENT drift: '+name);
   seen.add(name);
@@ -47,9 +65,9 @@ export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  if(seen.size!==expectedTriggerBodies.size)throw Error('1EX required trigger missing');
 }
 async function assertInstalled(conn:mysql.Connection){
- const [rows]=await conn.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT FROM information_schema.TRIGGERS
+ const [rows]=await conn.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema.TRIGGERS
   WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'
-    AND ACTION_TIMING='AFTER' AND EVENT_MANIPULATION='UPDATE'`);
+    AND EVENT_MANIPULATION='UPDATE'`);
  verifyEwTriggerBodies(rows);
 }
 async function main(){
