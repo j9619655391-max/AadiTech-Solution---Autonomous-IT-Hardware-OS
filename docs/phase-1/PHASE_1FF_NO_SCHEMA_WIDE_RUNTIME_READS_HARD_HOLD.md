@@ -2,6 +2,8 @@
 
 Date: 23 November 2026. Engineering only, `chore/phase0-foundation-20261106` development branch; Draft PR #1, not production acceptance.
 
+**Current superseding control (Phase 1FH):** explicit table SELECT on authentication, MFA, security event and reviewer-authority tables is also denied. The historical Phase 1FF description below describes the prior narrower state; use [Phase 1FH](PHASE_1FH_PROTECTED_AUTHORITY_TABLE_READ_HARD_HOLD.md) and the current source for the effective grant policy. This does not resolve the required operational auth credential split.
+
 ## Finding
 
 Phase 1FE correctly blocked schema-wide INSERT/UPDATE/DELETE, but the read-only staging runtime grant classifier still accepted `GRANT SELECT ON <target_schema>.*`. Any compromised runtime connection with that grant could potentially read **all** tables, including password hashes, MFA credential material and recovery metadata, app reviewer/authorization state, customer contacts and confidential source evidence. Blocked DML/DDL privileges alone do not enforce read confidentiality or the principle of least privilege.
