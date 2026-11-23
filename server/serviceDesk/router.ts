@@ -6,7 +6,7 @@ import {requireOwner} from '../auth/router';
 import {computeInternalAuditFingerprint,type InternalAuditFingerprintRow,InternalAuditFingerprintLimitError} from './fingerprint';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent,maskCredentialLikeTicketText
 } from './validation';
 
 const router=Router();
@@ -45,6 +45,20 @@ export async function readInternalTicketSnapshot<T>(
   throw error;
  }finally{conn.release();}
 }
+// Phase 1FU: response-side defensive projection for pre-existing legacy rows.
+// No mutation/redaction of the stored source audit; note masking is disclosed.
+function maskedTicket(row:RowDataPacket){
+ const subject=maskCredentialLikeTicketText(row.subject);
+ const description=maskCredentialLikeTicketText(row.description);
+ return {...row,subject:subject.text,description:description.text,
+  subjectRedacted:subject.redacted,descriptionRedacted:description.redacted};
+}
+function maskedAuditHistory<T extends RowDataPacket>(rows:readonly T[]){
+ return rows.map(entry=>{
+  const note=maskCredentialLikeTicketText(entry.note);
+  return {...entry,note:note.text,noteRedacted:note.redacted};
+ });
+}
 const listProjection=`t.id,t.customer_id AS customerId,c.name AS customerName,
  t.guide_id AS guideId,t.subject,t.description,t.priority,t.status,t.version,
  t.customer_consent_state AS customerConsentState,
@@ -62,7 +76,7 @@ router.get('/',async(_req,res)=>{
    `SELECT ${listProjection} FROM service_tickets_internal t ${ownerScope}
     WHERE t.owner_user_id=? ORDER BY t.created_at DESC,t.id DESC LIMIT 100`,
    [res.locals.auth.userId]);
-  res.json({items:rows,limit:100,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+  res.json({items:rows.map(maskedTicket),limit:100,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
@@ -90,7 +104,7 @@ router.get('/:id',async(req,res)=>{
    return {ticket:rows[0],...historyWindow};
   });
   if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
-  res.json({...data,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+  res.json({...data,ticket:maskedTicket(data.ticket),history:maskedAuditHistory(data.history),mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
@@ -125,7 +139,7 @@ router.get('/:id/history',async(req,res)=>{
    return {ticketId:req.params.id,...historyWindow};
   });
   if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
-  res.json({...data,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+  res.json({...data,history:maskedAuditHistory(data.history),mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
