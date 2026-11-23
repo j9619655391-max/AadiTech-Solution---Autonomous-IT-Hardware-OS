@@ -5,12 +5,12 @@ import {searchTroubleGuides,troubleGuideById,validateTroubleSearch,TroubleQueryE
 // Internal static knowledge-base only. No device scanning, command execution,
 // operating-system privileges, local uploads or customer service ticket writes.
 const router=Router();
-router.use(requireAuthenticated);
 router.use((_req,res,next)=>{
  res.setHeader('Cache-Control','no-store');
  res.setHeader('X-Content-Type-Options','nosniff');
  next();
 });
+router.use(requireAuthenticated);
 router.get('/',(req,res)=>{
  try{
   const {query,category}=validateTroubleSearch(req.query.q,req.query.category);
