@@ -1,6 +1,6 @@
 import {Router} from 'express';
 import type {RowDataPacket,ResultSetHeader} from 'mysql2/promise';
-import {getPool} from '../db';
+import {getAuthPool} from '../db';
 import {requireAuthenticated,requireStepUp} from './router';
 import {hashToken,newSecret} from './crypto';
 import {reserveStepUpAttempt} from './limiter';
@@ -22,14 +22,14 @@ function error(res:import('express').Response,e:unknown){
  res.status(503).json({error:'MFA service unavailable'});
 }
 router.get('/status',requireAuthenticated,async(_req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.execute<RowDataPacket[]>('SELECT enabled_at FROM auth_totp_credentials WHERE user_id=?',[res.locals.auth.userId]);
   res.json({enabled:!!rows[0]?.enabled_at});
  }catch(e){error(res,e);}
 });
 router.post('/enroll/start',requireAuthenticated,requireStepUp,async(_req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const secret=generateTotpSecret(),cipher=encryptSecret(secret);
   const conn=await db.getConnection();
@@ -52,7 +52,7 @@ router.post('/enroll/activate',requireAuthenticated,requireStepUp,async(req,res)
  if(!req.body||Object.keys(req.body).join(',')!=='code'||typeof code!=='string'||!/^\d{6}$/.test(code)){
   res.status(400).json({error:'A six-digit authenticator code is required'});return;
  }
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   if(!await reserveStepUpAttempt(db,res.locals.auth.userId)){
    res.status(429).json({error:'Too many enrollment verification attempts'});return;
@@ -89,7 +89,7 @@ router.post('/recovery/rotate',requireAuthenticated,requireStepUp,async(req,res)
  if(!res.locals.auth.mfaVerifiedAt){
   res.status(403).json({error:'An MFA-verified session is required'});return;
  }
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   if(!await reserveStepUpAttempt(db,res.locals.auth.userId)){
    res.status(429).json({error:'Too many MFA verification attempts'});return;
@@ -131,7 +131,7 @@ router.post('/challenge/verify',async(req,res)=>{
    typeof body.code!=='string'||!(/^\d{6}$/.test(body.code)||/^[A-F0-9]{20}$/i.test(body.code))){
   res.status(400).json({error:'MFA challenge and code required'});return;
  }
- const db=getPool();if(!db){res.status(503).json({error:'MFA service unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'MFA service unavailable'});return;}
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
