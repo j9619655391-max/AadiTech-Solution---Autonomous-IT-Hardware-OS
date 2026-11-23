@@ -5,7 +5,7 @@ import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,boundedInternalTicketHistory
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor
 } from './validation';
 
 const router=Router();
@@ -50,12 +50,47 @@ router.get('/:id',async(req,res)=>{
    `SELECT ${listProjection} FROM service_tickets_internal t ${ownerScope}
     WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,[req.params.id,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'Internal ticket not found'});return;}
-  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT operation,from_status AS fromStatus,
-    to_status AS toStatus,note,version_after AS versionAfter,created_at AS createdAt
-    FROM service_ticket_audit_internal WHERE ticket_id=?
-    ORDER BY version_after DESC LIMIT 101`,[req.params.id]);
+  // Re-apply owner/customer provenance scope on the history query itself
+  // rather than trusting an earlier read if access changes between queries.
+  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT a.operation,
+    a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
+    a.version_after AS versionAfter,a.created_at AS createdAt
+    FROM service_ticket_audit_internal a
+    JOIN service_tickets_internal t ON t.id=a.ticket_id ${ownerScope}
+    WHERE t.id=? AND t.owner_user_id=?
+    ORDER BY a.version_after DESC LIMIT 101`,[req.params.id,res.locals.auth.userId]);
   const historyWindow=boundedInternalTicketHistory(newestFirst);
   res.json({ticket:rows[0],...historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+ }catch(e){fail(res,e);}
+});
+
+
+ 
+// Phase 1FQ: older audit history is keyset-paged, never OFFSET-scanned or
+// authorized by a ticket ID alone. This is internal operator readback only.
+router.get('/:id/history',async(req,res)=>{
+ if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
+ let beforeVersion:number;
+ try{beforeVersion=parseInternalTicketHistoryCursor(req.query);}
+ catch(e){fail(res,e);return;}
+ const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
+ try{
+  const [eligible]=await db.query<RowDataPacket[]>(`SELECT t.id
+   FROM service_tickets_internal t ${ownerScope}
+   WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,
+   [req.params.id,res.locals.auth.userId]);
+  if(eligible.length!==1){res.status(404).json({error:'Internal ticket not found'});return;}
+  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT a.operation,
+    a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
+    a.version_after AS versionAfter,a.created_at AS createdAt
+    FROM service_ticket_audit_internal a
+    JOIN service_tickets_internal t ON t.id=a.ticket_id ${ownerScope}
+    WHERE t.id=? AND t.owner_user_id=? AND a.version_after<?
+    ORDER BY a.version_after DESC LIMIT 101`,
+   [req.params.id,res.locals.auth.userId,beforeVersion]);
+  const historyWindow=boundedInternalTicketHistory(newestFirst);
+  res.json({ticketId:req.params.id,...historyWindow,
+   mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
