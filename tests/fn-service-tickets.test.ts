@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK,parseInternalTicketListCursor,boundedInternalTicketList
 } from '../server/serviceDesk/validation';
 import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
@@ -350,4 +350,61 @@ test('1FU mask risky legacy ticket fields without modifying source records or di
  const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
  assert.match(ui,/legacy credential risk masked/);
  assert.match(ui,/subjectRedacted/);
+});
+
+test('1FV M16 owner ticket listing uses canonical exact-pair time+UUID keyset cursor',()=>{
+ const last='123e4567-e89b-42d3-a456-426614174000';
+ const timestamp='2026-11-24 03:42:12.000000';
+ assert.equal(parseInternalTicketListCursor({}),null);
+ assert.deepEqual(parseInternalTicketListCursor({beforeCreatedAt:timestamp,beforeId:last}),
+  {beforeCreatedAt:timestamp,beforeId:last});
+ for(const invalid of [
+  null,[],{beforeId:last},{beforeCreatedAt:timestamp},
+  {beforeCreatedAt:timestamp,beforeId:last,limit:'10000'},
+  {beforeCreatedAt:[timestamp,timestamp],beforeId:last},
+  {beforeCreatedAt:timestamp,beforeId:[last,last]},
+  {beforeCreatedAt:'2026-02-30 12:00:00.000000',beforeId:last},
+  {beforeCreatedAt:'2026-11-24T03:42:12.000000',beforeId:last},
+  {beforeCreatedAt:'2026-11-24 25:42:12.000000',beforeId:last},
+  {beforeCreatedAt:'2026-11-24 03:42:12.000Z',beforeId:last},
+  {beforeCreatedAt:timestamp,beforeId:'../../auth_users'},
+  {beforeCreatedAt:timestamp,beforeId:last,offset:'100'}
+ ])assert.throws(()=>parseInternalTicketListCursor(invalid),ServiceTicketInputError);
+ const rows=Array.from({length:101},(_,i)=>({
+  id:'123e4567-e89b-42d3-a456-'+String(999999999999-i).padStart(12,'0'),
+  createdAtKey:timestamp
+ }));
+ const first=boundedInternalTicketList(rows,null);
+ assert.equal(first.items.length,100);
+ assert.equal(first.limit,100);
+ assert.equal(first.hasMore,true);
+ assert.equal(first.nextBeforeCreatedAt,timestamp);
+ assert.equal(first.nextBeforeId,rows[99].id);
+ const second=boundedInternalTicketList(rows.slice(100),
+  {beforeCreatedAt:timestamp,beforeId:rows[99].id});
+ assert.equal(second.items.length,1);
+ assert.equal(second.hasMore,false);
+ assert.equal(second.nextBeforeCreatedAt,null);
+ assert.equal(second.nextBeforeId,null);
+ assert.throws(()=>boundedInternalTicketList([...rows].reverse(),null),/order/);
+ assert.throws(()=>boundedInternalTicketList([...rows,rows[100]],null),/bound/);
+ assert.throws(()=>boundedInternalTicketList([rows[0],rows[0]],null),/order/);
+ assert.throws(()=>boundedInternalTicketList([rows[0]],
+  {beforeCreatedAt:timestamp,beforeId:rows[0].id}),/order/);
+});
+test('1FV list SQL and UI retain scoped proof, bounded 101 sentinel, tie-break and masking',()=>{
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
+ assert.match(route,/parseInternalTicketListCursor\(req\.query\)/);
+ assert.match(route,/boundedInternalTicketList\(rows,cursor\)/);
+ assert.match(route,/DATE_FORMAT\(t\.created_at,/);
+ assert.match(route,/t\.created_at<\?/);
+ assert.match(route,/t\.created_at=\? AND t\.id<\?/);
+ assert.match(route,/ORDER BY t\.created_at DESC,t\.id DESC LIMIT 101/);
+ assert.match(route,/creator\.actor_user_id=t\.owner_user_id/);
+ assert.match(route,/t\.owner_user_id=\?/);
+ assert.match(route,/items:page\.items\.map\(maskedTicket\)/);
+ assert.match(ui,/Load older 100 tickets/);
+ assert.match(ui,/Return to latest tickets/);
+ assert.match(ui,/nextBeforeCreatedAt/);
 });
