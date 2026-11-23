@@ -844,7 +844,7 @@ test('1EW: direct SQL REVIEWER-OWNER-REVIEWER cycle revokes grants and sessions 
   const grant=await call('/api/reviewer-scopes','POST',{
     reviewerId,scope:'QUOTES',decision:'GRANT',
     reason:'CI-only role transition quarantine regression nomination'
-  });
+  },true,true,{'x-step-up-token':stepUpToken});
   assert.equal(grant.status,201,JSON.stringify(grant.data));
   assert.equal(grant.data.productionReleaseAuthorized,false);
   const roleCycleToken='n'.repeat(43),roleCycleCookie='aaditech_session='+roleCycleToken;
@@ -882,7 +882,7 @@ test('1EW: direct SQL REVIEWER-OWNER-REVIEWER cycle revokes grants and sessions 
   const renominated=await call('/api/reviewer-scopes','POST',{
     reviewerId,scope:'QUOTES',decision:'GRANT',
     reason:'CI-only independently explicit post-cycle nomination'
-  });
+  },true,true,{'x-step-up-token':stepUpToken});
   assert.equal(renominated.status,201,JSON.stringify(renominated.data));
   assert.equal(renominated.data.releaseDecision,'HOLD');
 });
