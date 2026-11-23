@@ -11,11 +11,30 @@ const transitions:Record<InternalTicketStatus,readonly InternalTicketStatus[]>={
  WAITING_INTERNAL:['TRIAGED_INTERNAL'],
  RESOLVED_HELD:[]
 };
+// Phase 1FT: block HIGH-CONFIDENCE credential material at admission.
+// This is not a DLP/PII guarantee. Do not attempt to redact-and-store secrets;
+// reject the whole request so raw credentials cannot enter service ticket audit.
+const credentialIndicators:readonly RegExp[]=[
+ /-----BEGIN (?:[A-Z ]{0,24})?PRIVATE KEY-----/i,
+ /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
+ /\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}\b/,
+ /\bxox[baprs]-[A-Za-z0-9-]{16,}\b/,
+ /\baaditech_session=[A-Za-z0-9_-]{16,}\b/i,
+ /\bauthorization\s*:\s*(?:bearer|basic)\s+[A-Za-z0-9._~+/-]{18,}={0,2}\b/i,
+ /\b(?:password|passwd|pwd|api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|private[_-]?key)\s*[:=]\s*['"]?[A-Za-z0-9_+/.!@#$%&*=-]{12,}/i,
+ /(?:^|[\s"'(])eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?=$|[\s"')])/
+];
+export function rejectCredentialLikeTicketText(value:string):void{
+ if(credentialIndicators.some(re=>re.test(value)))
+  throw new ServiceTicketInputError(
+   'Credential-like content is not allowed in internal ticket text; omit secrets and retry');
+}
 function textValue(value:unknown,max:number,label:string){
  if(typeof value!=='string')throw new ServiceTicketInputError('Invalid '+label);
  const v=value.trim();
  if(!v||v.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v))
   throw new ServiceTicketInputError('Invalid '+label);
+ rejectCredentialLikeTicketText(v);
  return v;
 }
 function keys(value:unknown,allowed:readonly string[]){
