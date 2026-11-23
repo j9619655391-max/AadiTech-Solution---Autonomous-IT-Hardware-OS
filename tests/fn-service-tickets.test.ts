@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {
  validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow
 } from '../server/serviceDesk/validation';
+import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
 const customerId='123e4567-e89b-42d3-a456-426614174000';
@@ -203,4 +204,69 @@ test('1FR ticket detail and older pages use same read-only consistent snapshot, 
  assert.equal((route.match(/await readInternalTicketSnapshot\(db,async\(conn\)=>/g)||[]).length,2);
  assert.equal((route.match(/verifyInternalTicketAuditWindow\(newestFirst,/g)||[]).length,2);
  assert.match(route,/beforeVersion>eligible\[0\]\.version\+1/);
+});
+
+test('1FS bounded unsigned audit fingerprint is reproducible, sensitive to edits and never a real signature',async()=>{
+ type State='OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD';
+ const status=(v:number):State=>v===1?'OPEN_INTERNAL':v%2===0?'TRIAGED_INTERNAL':'WAITING_INTERNAL';
+ type Audit={versionAfter:number;operation:'CREATE'|'STATUS_CHANGE';fromStatus:State|null;
+  toStatus:State;note:string;createdAtSql:string};
+ const records:Audit[]=Array.from({length:103},(_,i)=>{
+  const v=i+1;
+  return {versionAfter:v,operation:v===1?'CREATE':'STATUS_CHANGE',
+   fromStatus:v===1?null:status(v-1),toStatus:status(v),
+   note:'Synthetic internal event '+v,createdAtSql:'2026-11-24 00:01:01.000000'};
+ });
+ const ticket={id:customerId,version:103,status:status(103)};
+ let windows=0;
+ const scan=async(beforeVersion?:number)=>{
+  windows++;
+  return [...records].reverse().filter(e=>beforeVersion===undefined||e.versionAfter<beforeVersion).slice(0,101);
+ };
+ const a=await computeInternalAuditFingerprint(ticket,scan);
+ assert.equal(a.eventCount,103);assert.equal(a.latestVersion,103);
+ assert.equal(a.mode,'INTERNAL_HELD');assert.equal(a.externalDispatchEnabled,false);
+ assert.equal(a.scope,'APPLICATION_UNATTESTED');assert.equal(a.signatureVerified,false);
+ assert.equal(a.externalAnchorVerified,false);assert.equal(a.customerConsentVerified,false);
+ assert.equal(a.algorithm,'SHA-256');assert.match(a.auditDigestSha256,/^[a-f0-9]{64}$/);
+ assert.equal(windows,2);
+ const duplicate=await computeInternalAuditFingerprint(ticket,scan);
+ assert.equal(a.auditDigestSha256,duplicate.auditDigestSha256);
+ records[41].note='Synthetic correction: note content changed';
+ const changed=await computeInternalAuditFingerprint(ticket,scan);
+ assert.notEqual(a.auditDigestSha256,changed.auditDigestSha256,
+  'A local hash can detect edited data only if the previous digest is independently trusted');
+ records[41].note='Synthetic internal event 42';
+ const record=records.splice(40,1)[0];
+ await assert.rejects(computeInternalAuditFingerprint(ticket,scan),/1FR|1FS|integrity/);
+ records.splice(40,0,record);
+ const original=records[0].createdAtSql;records[0].createdAtSql='24/11/2026';
+ await assert.rejects(computeInternalAuditFingerprint(ticket,scan),/1FS/);
+ records[0].createdAtSql=original;
+ assert.equal((await computeInternalAuditFingerprint(ticket,scan)).eventCount,103);
+ let read=false;
+ await assert.rejects(computeInternalAuditFingerprint({
+  ...ticket,version:MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS+1},async()=>{
+  read=true;return records;
+ }),InternalAuditFingerprintLimitError);
+ assert.equal(read,false,'oversized audit must reject before issuing unbounded SQL');
+});
+test('1FS SHA256 audit endpoint source enforces owner, bounded query, unsigned scope and no DML',()=>{
+ const router=readFileSync('server/serviceDesk/router.ts','utf8');
+ const fingerprint=readFileSync('server/serviceDesk/fingerprint.ts','utf8');
+ assert.match(router,/router\.get\('\/:id\/audit-fingerprint'/);
+ assert.match(router,/await readInternalTicketSnapshot\(db,async\(conn\)=>/);
+ assert.match(router,/computeInternalAuditFingerprint\(/);
+ assert.match(router,/DATE_FORMAT\(a\.created_at,/);
+ assert.match(router,/a\.version_after DESC LIMIT 101/);
+ assert.match(router,/JOIN service_tickets_internal t ON t\.id=a\.ticket_id/);
+ assert.match(router,/t\.owner_user_id=\?/);
+ assert.match(router,/creator\.actor_user_id=t\.owner_user_id/);
+ assert.match(router,/InternalAuditFingerprintLimitError/);
+ assert.match(fingerprint,/MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS=1000/);
+ assert.match(fingerprint,/scope:'APPLICATION_UNATTESTED'/);
+ assert.match(fingerprint,/signatureVerified:false/);
+ assert.match(fingerprint,/externalAnchorVerified:false/);
+ assert.match(fingerprint,/customerConsentVerified:false/);
+ assert.doesNotMatch(fingerprint,/INSERT INTO|UPDATE service_ticket|DELETE FROM|nodemailer|smtp|sendEmail/);
 });
