@@ -555,6 +555,10 @@ jobs:
         run: bun run db:migrate:ew-role-cycle
       - name: Phase 1EW verify checksum and installed triggers on migration rerun
         run: bun run db:migrate:ew-role-cycle
+      - name: Phase 1FN apply additive owner-only internal service ticket schema 0049 in disposable CI
+        run: bun run db:migrate:service-tickets
+      - name: Phase 1FN verify 0049 migration checksum and idempotent rerun
+        run: bun run db:migrate:service-tickets
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Phase 1FA adversarial InnoDB reviewer role/grant transaction orderings (CI only)
@@ -565,6 +569,8 @@ jobs:
         run: bun run test:fd-crm-owner-mysql
       - name: Phase 1FK M04 quote OWNER role transition, replay and revision real MySQL regression
         run: bun run test:fk-quote-owner-mysql
+      - name: Phase 1FN real MySQL customer-scoped internal ticket lifecycle, BOLA and audit
+        run: bun run test:service-tickets-mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
         run: bun run test:inventory-mysql
       - name: Verify supplier attestation, independent purchase review and held PO
