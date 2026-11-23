@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory
 } from '../server/serviceDesk/validation';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
@@ -91,4 +91,25 @@ test('1FN routes have no external action and lock actor before internal mutation
  assert.match(api,/externalDispatchEnabled:false/);
  assert.doesNotMatch(api,/router\.delete|child_process|fetch\(|axios|nodemailer|twilio|smtp|sendEmail/);
  assert.match(app,/app\.use\("\/api\/service-desk\/internal-tickets",internalServiceDeskRouter\)/);
+});
+
+test('1FP ticket audit detail bounds newest events and retains chronological display order',()=>{
+ const newest=Array.from({length:101},(_,index)=>({versionAfter:101-index}));
+ const over=boundedInternalTicketHistory(newest);
+ assert.equal(over.historyLimit,100);
+ assert.equal(over.historyHasMore,true);
+ assert.equal(over.history.length,100);
+ assert.deepEqual(over.history.map(x=>x.versionAfter),Array.from({length:100},(_,i)=>i+2));
+ const small=boundedInternalTicketHistory(newest.slice(-5));
+ assert.equal(small.historyHasMore,false);
+ assert.deepEqual(small.history.map(x=>x.versionAfter),[1,2,3,4,5]);
+ assert.deepEqual(boundedInternalTicketHistory([]),{
+  history:[],historyLimit:100,historyHasMore:false
+ });
+ assert.throws(()=>boundedInternalTicketHistory(Array(102).fill({versionAfter:1})),/bound/);
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ assert.match(route,/ORDER BY version_after DESC LIMIT 101/);
+ assert.match(route,/boundedInternalTicketHistory\(newestFirst\)/);
+ assert.equal((route.match(/db\.getConnection\(\)\.catch\(\(\)=>null\)/g)||[]).length,2);
+ assert.match(route,/historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false/);
 });
