@@ -557,6 +557,8 @@ jobs:
         run: bun run db:migrate:ew-role-cycle
       - name: Run real MySQL integration tests
         run: bun run test:mysql
+      - name: Phase 1FA adversarial InnoDB reviewer role/grant transaction orderings (CI only)
+        run: bun run test:fa-role-cycle-mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
         run: bun run test:inventory-mysql
       - name: Verify supplier attestation, independent purchase review and held PO
