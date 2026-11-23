@@ -1,6 +1,6 @@
 import {Router} from 'express';
 import {randomUUID} from 'node:crypto';
-import type {RowDataPacket} from 'mysql2/promise';
+import type {RowDataPacket,PoolConnection} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
@@ -66,7 +66,7 @@ router.post('/',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
  // Acquire failures must return a bounded service error, not an unhandled
  // Express 4 async rejection before the transaction try/finally starts.
- const conn=await db.getConnection().catch(()=>null);
+ const conn:PoolConnection|null=await db.getConnection().catch(()=>null);
  if(!conn){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
   await conn.beginTransaction();
@@ -103,7 +103,7 @@ router.patch('/:id/status',async(req,res)=>{
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
  // Acquire failures must return a bounded service error, not an unhandled
  // Express 4 async rejection before the transaction try/finally starts.
- const conn=await db.getConnection().catch(()=>null);
+ const conn:PoolConnection|null=await db.getConnection().catch(()=>null);
  if(!conn){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
   await conn.beginTransaction();
