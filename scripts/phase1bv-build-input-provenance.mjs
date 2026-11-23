@@ -123,6 +123,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'tests/staging-preflight.test.ts',
  'tests/el-reviewer-scope-migration.test.ts',
  'tests/crm-mysql.integration.ts',
+ 'tests/fa-role-cycle-concurrency-mysql.integration.ts',
  'tests/procurement-mysql.integration.ts',
  'database/migrations/0043_el_reviewer_scope_candidates.sql',
  'scripts/migrate-el-reviewer-scopes.ts',
