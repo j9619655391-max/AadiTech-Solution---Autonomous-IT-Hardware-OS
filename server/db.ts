@@ -102,18 +102,25 @@ export function getAuthPool(): Pool | null {
   const state=authDatabaseCredentialState(process.env);
   if(state==='HOLD')return null;
   if(state==='DEV_SHARED')return getPool();
-  const config=getDatabaseConfig();
-  if(!config.host||!config.database||!config.user||!config.password||
-     ((process.env.NODE_ENV==='production'||process.env.NODE_ENV==='staging')&&!config.ssl))
+  // Configuration failures must not escape Express 4 async handlers (which
+  // can otherwise yield unhandled rejections before route-level try/catch).
+  try{
+    const config=getDatabaseConfig();
+    if(!config.host||!config.database||!config.user||!config.password||
+       ((process.env.NODE_ENV==='production'||process.env.NODE_ENV==='staging')&&!config.ssl))
+      return null;
+    if(!authPool){
+      authPool=mysql.createPool({
+        ...config,user:process.env.AUTH_DB_USER!,password:process.env.AUTH_DB_PASSWORD!,
+        waitForConnections:true,connectionLimit:5,queueLimit:0,
+        enableKeepAlive:true,keepAliveInitialDelay:10000
+      });
+    }
+    return authPool;
+  }catch{
+    // Do not include DB connection strings or credential-bearing exceptions.
     return null;
-  if(!authPool){
-    authPool=mysql.createPool({
-      ...config,user:process.env.AUTH_DB_USER!,password:process.env.AUTH_DB_PASSWORD!,
-      waitForConnections:true,connectionLimit:5,queueLimit:0,
-      enableKeepAlive:true,keepAliveInitialDelay:10000
-    });
   }
-  return authPool;
 }
 
 export async function checkDatabaseConnection(): Promise<DatabaseStatus> {
