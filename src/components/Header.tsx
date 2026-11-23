@@ -18,7 +18,8 @@ import {
   Server,
   RotateCcw,
   Database,
-  BookOpen
+  BookOpen,
+  ClipboardList
 } from 'lucide-react';
 import { CompanyProfile } from '../types';
 import { DEFAULT_COMPANY_PROFILE } from '../services/storageService';
@@ -61,6 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'system', label: 'System Hub & API', icon: Server },
     { id: 'finance', label: 'Finance & Service', icon: ShieldCheck },
     { id: 'troubleshooting', label: 'Windows Troubleshooting', icon: BookOpen },
+    { id: 'service-desk', label: 'Internal Service Desk', icon: ClipboardList },
     { id: 'marketing', label: 'Marketing & Agents', icon: Sparkles },
   ];
 
