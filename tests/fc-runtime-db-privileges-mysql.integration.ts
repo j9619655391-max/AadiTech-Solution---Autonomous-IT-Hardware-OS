@@ -62,3 +62,38 @@ test('1FC actual MySQL grants: bounded SELECT passes, added TRIGGER privilege fa
   if(userCreated)await admin.query('DROP USER '+literal);
  }
 });
+
+test('1FG real MySQL activated default role is denied on the observed runtime session',async()=>{
+ const user='ci_fg_user_'+randomBytes(7).toString('hex');
+ const role='ci_fg_role_'+randomBytes(7).toString('hex');
+ const password=randomBytes(32).toString('base64url');
+ const account="'"+user+"'@'%'",delegatedRole="'"+role+"'@'%'";
+ let userCreated=false,roleCreated=false;
+ let rolePool:mysql.Pool|undefined;
+ try{
+  await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);
+  userCreated=true;
+  await admin.query('GRANT SELECT ON \\x60aaditech_ci\\x60.\\x60crm_customers\\x60 TO '+account);
+  await admin.query('CREATE ROLE '+delegatedRole);
+  roleCreated=true;
+  await admin.query('GRANT SELECT ON \\x60aaditech_ci\\x60.\\x60auth_users\\x60 TO '+delegatedRole);
+  await admin.query('GRANT '+delegatedRole+' TO '+account);
+  await admin.query('SET DEFAULT ROLE '+delegatedRole+' TO '+account);
+  // Fresh login activates the default role; prior test's pooled account
+  // session cannot be reused to make this assertion meaningful.
+  rolePool=mysql.createPool({...getDatabaseConfig(),user,password,
+   connectionLimit:1,waitForConnections:true});
+  const [identity]=await rolePool.query<any[]>('SELECT CURRENT_ROLE() AS active_roles');
+  assert.equal(identity.length,1);
+  assert.equal(typeof identity[0].active_roles,'string');
+  assert.notEqual(identity[0].active_roles,'NONE','MySQL role must actually be active');
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(rolePool,'aaditech_ci'),
+   /1FC runtime database identity\/schema mismatch/,
+   'active default role must deny staging grant preflight');
+ }finally{
+  if(rolePool)await rolePool.end();
+  if(userCreated)await admin.query('DROP USER '+account);
+  if(roleCreated)await admin.query('DROP ROLE '+delegatedRole);
+ }
+});
