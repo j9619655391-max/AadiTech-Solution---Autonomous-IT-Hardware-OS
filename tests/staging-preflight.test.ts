@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {checkPreflightTarget,migrationChecksums,MIGRATIONS} from '../scripts/lib/stagingPreflight';
-import {checkInstalledEwTriggerIntegrity,checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
+import {checkInstalledEwTriggerIntegrity,checkStagingRuntimeDbPrivilegeIntegrity,checkStagingAuthPrincipalBoundary} from '../scripts/staging-preflight';
 import {authDatabaseCredentialState} from '../server/db';
 import type {EwInstalledTrigger} from '../scripts/migrate-ew-role-cycle';
 test('read-only readiness is denied by default and outside disposable DB',()=>{
@@ -234,4 +234,88 @@ test('1FL production/staging authority handlers cannot fall back to the runtime 
  assert.match(preflight,/authCredentialSeparation/);
  assert.match(preflight,/&&target==='ci'/);
  assert.match(preflight,/1FL auth\/runtime credential and end-to-end service separation not independently verified/);
+});
+
+// 1FO: claimed separate AUTH_DB_USER strings are not accepted as MySQL proof.
+// Both checked-out sessions must match their expected actual principal, have
+// no active roles, and exhibit opposite zero-row auth_users SELECT behavior.
+function observedAuthBoundary({
+ user,roles='NONE',schema='aaditech_staging_safe',
+ protectedTableDenied=false,denialCode='ER_TABLEACCESS_DENIED_ERROR',
+ identityRows=1,failAcquire=false
+}:{user:string;roles?:unknown;schema?:string;protectedTableDenied?:boolean;
+  denialCode?:string;identityRows?:number;failAcquire?:boolean}){
+ let released=0;const statements:string[]=[];
+ const db={getConnection:async()=>{
+  if(failAcquire)throw Error('connection unavailable');
+  return {query:async(sql:string)=>{
+   statements.push(sql);
+   if(sql.startsWith('SELECT CURRENT_USER() AS principal_name')){
+    return [Array.from({length:identityRows},()=>({
+     principal_name:user,selected_schema:schema,active_roles:roles})),[]];
+   }
+   if(sql==='SELECT id FROM auth_users LIMIT 0'){
+    if(protectedTableDenied)throw Object.assign(new Error('privilege denied'),{code:denialCode});
+    return [[],[]];
+   }
+   throw Error('Unexpected SQL');
+  },release:()=>{released++;}};
+ }} as unknown as Parameters<typeof checkStagingAuthPrincipalBoundary>[0];
+ return {db,statements,released:()=>released};
+}
+test('1FO actual two-session principal observer requires opposite bounded auth SELECT privileges',async()=>{
+ const rt=observedAuthBoundary({user:'runtime_ci@%',protectedTableDenied:true});
+ const au=observedAuthBoundary({user:'auth_ci@%'});
+ const result=await checkStagingAuthPrincipalBoundary(rt.db,au.db,
+  'aaditech_staging_safe','runtime_ci','auth_ci');
+ assert.match(result.runtimeFingerprint,/^[0-9a-f]{16}$/);
+ assert.match(result.authFingerprint,/^[0-9a-f]{16}$/);
+ assert.notEqual(result.runtimeFingerprint,result.authFingerprint);
+ assert.equal(rt.released(),1);assert.equal(au.released(),1);
+ assert.deepEqual(rt.statements,[
+  'SELECT CURRENT_USER() AS principal_name, DATABASE() AS selected_schema, CURRENT_ROLE() AS active_roles',
+  'SELECT id FROM auth_users LIMIT 0'
+ ]);
+ assert.deepEqual(au.statements,rt.statements);
+ assert.doesNotMatch(JSON.stringify(result),/runtime_ci|auth_ci|@/);
+});
+test('1FO dual-principal observer rejects shared identity, missing metadata, active roles and unexpected SQL errors',async()=>{
+ const scenarios=[
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:false},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true,denialCode:'ER_PARSE_ERROR'},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true},auth:{user:'auth_ci@%',protectedTableDenied:true}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true,roles:'role@%'},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true},auth:{user:'auth_ci@%',roles:'role@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true,schema:'aaditech_production'},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true,identityRows:0},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true},auth:{user:'auth_ci@%',identityRows:2}},
+  {runtime:{user:'auth_ci@%',protectedTableDenied:true},auth:{user:'auth_ci@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true},auth:{user:'bad_auth@%'}},
+  {runtime:{user:'runtime_ci@%',protectedTableDenied:true},auth:{user:'auth_ci@%',failAcquire:true}}
+ ];
+ for(const scenario of scenarios){
+  const rt=observedAuthBoundary(scenario.runtime);
+  const au=observedAuthBoundary(scenario.auth);
+  await assert.rejects(checkStagingAuthPrincipalBoundary(rt.db,au.db,
+   'aaditech_staging_safe','runtime_ci','auth_ci'));
+  assert.equal(rt.released(),1,'runtime connection must always release');
+  assert.equal(au.released(),scenario.auth.failAcquire?0:1,'auth connection must release when acquired');
+ }
+ for(const [runtime,auth] of [['bad@name','auth_ci'],['runtime_ci','runtime_ci'],['runtime_ci','']] ){
+  const rt=observedAuthBoundary({user:'runtime_ci@%',protectedTableDenied:true});
+  const au=observedAuthBoundary({user:'auth_ci@%'});
+  await assert.rejects(checkStagingAuthPrincipalBoundary(rt.db,au.db,
+   'aaditech_staging_safe',runtime,auth),/1FO/);
+  assert.equal(rt.released(),0);assert.equal(au.released(),0);
+ }
+});
+test('1FO staging reports technical dual-principal observation but never promotes release-ready',()=>{
+ const src=readFileSync('scripts/staging-preflight.ts','utf8');
+ assert.match(src,/authPrincipalBoundary:'PASS'\|'HOLD'\|'NOT_EVALUATED_CI'/);
+ assert.match(src,/await checkStagingAuthPrincipalBoundary\(/);
+ assert.match(src,/authPrincipalFingerprints/);
+ assert.match(src,/1FO authenticated dual-principal and runtime protected-table denial unverified/);
+ assert.match(src,/&&target==='ci'/);
+ assert.match(src,/authFunctionalSeparationVerified:false/);
+ assert.match(src,/independentDbaApprovalVerified:false/);
 });
