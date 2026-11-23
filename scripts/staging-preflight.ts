@@ -4,7 +4,8 @@ import {createHash} from 'node:crypto';
 import {getDatabaseConfig,authDatabaseCredentialState} from '../server/db';
 import {checkPreflightTarget,runStagingPreflight} from './lib/stagingPreflight';
 import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-cycle';
-import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets} from './phase1fb-runtime-db-privileges';
+import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets,verifiedRuntimeDefinerOwnerGuard} from './phase1fb-runtime-db-privileges';
+import {ownerGuardMode} from '../server/crm/repository';
 
 // Phase 1EZ: read installed enforcement metadata without running migrations,
 // repairing triggers, opening reviewer scopes or elevating release status.
@@ -19,7 +20,8 @@ export async function checkInstalledEwTriggerIntegrity(db: Pick<mysql.Pool,'quer
 // CURRENT_USER and SHOW GRANTS must run on the SAME checked-out connection;
 // issuing them separately on a pool could observe different sessions.
 export async function checkStagingRuntimeDbPrivilegeIntegrity(
- db:Pick<mysql.Pool,'getConnection'>,database:string
+ db:Pick<mysql.Pool,'getConnection'>,database:string,
+ options:{requireOwnerGuard?:boolean}={}
 ):Promise<{grantCount:number;dataGrantCount:number}>{
  const conn=await db.getConnection();
  try{
@@ -43,6 +45,14 @@ export async function checkStagingRuntimeDbPrivilegeIntegrity(
    'SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
   if(!verifiedRuntimeBaseTableTargets(assessment.dataGrantTables,objects))
    throw Error('1FJ runtime grant target base-table metadata unverified');
+  if(options.requireOwnerGuard||assessment.routineGrantCount>0){
+   if(assessment.routineGrantCount!==1)
+    throw Error('1FO runtime OWNER guard EXECUTE grant absent or duplicated');
+   const [routines]=await conn.query<mysql.RowDataPacket[]>(
+    'SELECT ROUTINE_NAME,ROUTINE_SCHEMA,ROUTINE_TYPE,SECURITY_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE()');
+   if(!verifiedRuntimeDefinerOwnerGuard(routines,database))
+    throw Error('1FO OWNER guard metadata is not a unique scoped DEFINER procedure');
+  }
   return {grantCount:assessment.grantCount,
    dataGrantCount:assessment.dataGrantCount};
  }finally{conn.release();}
@@ -120,7 +130,12 @@ async function main(){
    try{
     runtimePrivilegePreflightTarget(process.env);
     if(!cfg.ssl)throw Error('1FC staging TLS configuration absent');
-    await checkStagingRuntimeDbPrivilegeIntegrity(connection,cfg.database);
+    // Staging cannot pass grant checks without the narrow call-only
+    // authorization mode and exact routine-level SQL EXECUTE entitlement.
+    if(ownerGuardMode(process.env)!=='DEFINER_PROCEDURE')
+     throw Error('1FO staging OWNER guard procedure mode absent');
+    await checkStagingRuntimeDbPrivilegeIntegrity(connection,cfg.database,
+     {requireOwnerGuard:true});
     runtimeDbPrivileges='PASS';
    }catch{ /* denied metadata, wide grants, missing opt-in, wrong DB: HOLD */ }
   }
