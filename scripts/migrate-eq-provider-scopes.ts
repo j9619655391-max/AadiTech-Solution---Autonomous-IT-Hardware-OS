@@ -17,7 +17,7 @@ export function eqProviderScopeMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stag
 async function main(){
  eqProviderScopeMigrationTarget(process.env);
  const id='0047_eq_provider_review_scopes';
- if(MIGRATIONS[46]!==id||MIGRATIONS.length!==47)
+ if(MIGRATIONS[46]!==id||MIGRATIONS.length<47)
   throw Error('1EQ exact schema-migration registry mismatch');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('1EQ DB config incomplete');

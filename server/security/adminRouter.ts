@@ -76,25 +76,29 @@ async function change(req:import('express').Request,res:import('express').Respon
    await conn.rollback();res.status(409).json({error:'Reviewer is already in requested state'});return;
   }
   let revokedWorkflowNominations=0;
+  let revokedSessions=0;
   if(action==='status'){
-   // Quarantine latent scopes on both disable and re-enable. A direct database
-   // suspension might have bypassed the ordinary reviewer-disable API cleanup.
-   // Keep the reviewer identity locked until the status and session changes commit.
+   // Revoke app-local scopes AND sessions before updating auth_users. The
+   // database role/status transition triggers then cover direct-SQL changes;
+   // ordering here preserves accurate session-revocation audit counts.
    const [grants]=await conn.execute<ResultSetHeader>(
     "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=? AND state='ACTIVE'",
     [req.params.id]);
    revokedWorkflowNominations=grants.affectedRows;
+   const [revoked]=await conn.execute<ResultSetHeader>('DELETE FROM auth_sessions WHERE user_id=?',[req.params.id]);
+   revokedSessions=revoked.affectedRows;
    await conn.execute('UPDATE auth_users SET status=? WHERE id=? AND role=?',[input.status,req.params.id,'REVIEWER']);
+  }else{
+   // Explicit session revocation leaves role and status unchanged.
+   const [revoked]=await conn.execute<ResultSetHeader>('DELETE FROM auth_sessions WHERE user_id=?',[req.params.id]);
+   revokedSessions=revoked.affectedRows;
   }
-  // Every status change and explicit session-revocation operation invalidates all
-  // previously issued reviewer sessions, including other devices.
-  const [revoked]=await conn.execute<ResultSetHeader>('DELETE FROM auth_sessions WHERE user_id=?',[req.params.id]);
   const eventType=action==='revoke'?'SESSIONS_REVOKED':input.status==='DISABLED'?'REVIEWER_DISABLED':'REVIEWER_ENABLED';
   await conn.execute('INSERT INTO auth_security_events (id,actor_user_id,target_user_id,event_type,revoked_session_count) VALUES (?,?,?,?,?)',
-   [randomUUID(),res.locals.auth.userId,req.params.id,eventType,revoked.affectedRows]);
+   [randomUUID(),res.locals.auth.userId,req.params.id,eventType,revokedSessions]);
   await conn.commit();
   res.json({reviewerId:req.params.id,status:action==='status'?input.status:target.status,
-   revokedSessions:revoked.affectedRows,revokedWorkflowNominations,eventType,
+   revokedSessions,revokedWorkflowNominations,eventType,
    productionReleaseAuthorized:false,releaseDecision:'HOLD'});
  }catch(e){await conn.rollback();fail(res,e);}finally{conn.release();}
 }

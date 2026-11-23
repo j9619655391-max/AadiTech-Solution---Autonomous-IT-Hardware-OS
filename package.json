@@ -100,6 +100,7 @@
     "db:migrate:eo-reviewer-scopes": "tsx scripts/migrate-eo-reviewer-scopes.ts",
     "db:migrate:ep-reviewer-scopes": "tsx scripts/migrate-ep-reviewer-scopes.ts",
     "db:migrate:eq-provider-scopes": "tsx scripts/migrate-eq-provider-scopes.ts",
+    "db:migrate:ew-role-cycle": "tsx scripts/migrate-ew-role-cycle.ts",
     "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts"
   },
   "dependencies": {

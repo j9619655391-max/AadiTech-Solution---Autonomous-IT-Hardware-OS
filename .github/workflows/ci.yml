@@ -551,6 +551,10 @@ jobs:
         run: bun run db:migrate:eq-provider-scopes
       - name: Phase 1EQ verify checksum-locked migration rerun
         run: bun run db:migrate:eq-provider-scopes
+      - name: Phase 1EW install SQL role/status transition quarantine in disposable MySQL
+        run: bun run db:migrate:ew-role-cycle
+      - name: Phase 1EW verify checksum and installed triggers on migration rerun
+        run: bun run db:migrate:ew-role-cycle
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL

@@ -792,11 +792,12 @@ test('owner-only reviewer administration revokes sessions and appends immutable 
 test('1EV: out-of-band SQL reviewer suspension quarantines dormant grants on HTTP re-enable',async()=>{
   const baseRoute='/api/security/reviewers/'+reviewerId;
   const staleToken='y'.repeat(43),staleCookie='aaditech_session='+staleToken;
-  // CI-only regression: simulate an external SQL operator who bypassed the
-  // application disable route, leaving an ACTIVE grant and a pre-disable session.
+  // CI-only hostile SQL fixture: the 1EW trigger normally revokes the grant
+  // when status changes. Deliberately corrupt the grant AFTER suspension to
+  // retain 1EV's API re-enable repair coverage against privileged SQL tampering.
+  await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewerId]);
   await db.execute("UPDATE app_reviewer_scope_grants SET state='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
     [actor,reviewerId]);
-  await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewerId]);
   await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
     [hashToken(staleToken),reviewerId,csrf]);
   const [before]=await db.execute<any[]>(
@@ -834,6 +835,56 @@ test('1EV: out-of-band SQL reviewer suspension quarantines dormant grants on HTT
   assert.equal(Number(sessions[0].n),0,'stale sessions must be removed transactionally');
   assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:staleCookie})).status,401,
     'pre-disable session must stay invalid after re-enable');
+});
+
+test('1EW: direct SQL REVIEWER-OWNER-REVIEWER cycle revokes grants and sessions without restoration',async()=>{
+  const freshStepUp=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(freshStepUp.status,200);
+  stepUpToken=freshStepUp.data.stepUpToken;
+  const grant=await call('/api/reviewer-scopes','POST',{
+    reviewerId,scope:'QUOTES',decision:'GRANT',
+    reason:'CI-only role transition quarantine regression nomination'
+  });
+  assert.equal(grant.status,201,JSON.stringify(grant.data));
+  assert.equal(grant.data.productionReleaseAuthorized,false);
+  const roleCycleToken='n'.repeat(43),roleCycleCookie='aaditech_session='+roleCycleToken;
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(roleCycleToken),reviewerId,csrf]);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:roleCycleCookie})).status,200);
+  const [before]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(before[0].state,'ACTIVE');
+  // No app router is involved in either role change. Database triggers must
+  // enforce revocation even when status remains ACTIVE throughout.
+  await db.execute("UPDATE auth_users SET role='OWNER' WHERE id=? AND role='REVIEWER'",[reviewerId]);
+  const [demoted]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(demoted[0].state,'REVOKED');
+  const [oldSessions]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[reviewerId]);
+  assert.equal(Number(oldSessions[0].n),0);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:roleCycleCookie})).status,401);
+  await db.execute("UPDATE auth_users SET role='REVIEWER' WHERE id=? AND role='OWNER'",[reviewerId]);
+  const [restored]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(restored[0].state,'REVOKED','returning to REVIEWER role cannot recover historic nomination');
+  const [remaining]=await db.execute<any[]>(
+    "SELECT COUNT(*) AS n FROM app_reviewer_scope_grants WHERE reviewer_user_id=? AND state='ACTIVE'",[reviewerId]);
+  assert.equal(Number(remaining[0].n),0);
+  const renewedToken='w'.repeat(43),renewedCookie='aaditech_session='+renewedToken;
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(renewedToken),reviewerId,csrf]);
+  const queue=await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:renewedCookie});
+  if(queue.status===200)assert.equal(queue.data.items.length,0,'no previous owner scope can be listed');
+  else assert.equal(queue.status,403,'reviewer cannot see nominee queue before a new grant');
+  const renominated=await call('/api/reviewer-scopes','POST',{
+    reviewerId,scope:'QUOTES',decision:'GRANT',
+    reason:'CI-only independently explicit post-cycle nomination'
+  });
+  assert.equal(renominated.status,201,JSON.stringify(renominated.data));
+  assert.equal(renominated.data.releaseDecision,'HOLD');
 });
 
 test('authenticated self-revocation invalidates current owner session and is recorded',async()=>{

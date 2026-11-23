@@ -25,3 +25,7 @@ The test is intentionally executed by the **existing** `bun run test:mysql` comm
 Out-of-band REVIEWER→OWNER→REVIEWER role cycles without status changes, hostile direct SQL writes, concurrent database interleavings, and any independent audited reviewer-identity epoch/reconciliation remain **pending**. No check here grants corporate/CCA/eMudhra authority, satisfies full M01–M30 scope, or closes Issue #2.
 
 **Release decision:** `productionReleaseAuthorized=false`; `productionReleaseBlocked=true`; `releaseDecision=HOLD`. PR #1 remains Draft/unmerged, `main` unchanged. No deployment, supplier/customer communications, quotes, stock/finance/tax postings or live provider onboarding.
+
+## Phase 1EW follow-up (2026-11-23)
+
+The 1EW forward-only disposable-DB trigger migration revokes grants on actual role/status changes. To preserve the earlier 1EV repair test, its hostile direct-SQL fixture now intentionally reactivates the grant **after** the SQL suspension (simulating privileged database tampering), then asserts API re-enable still quarantines it. This is not evidence that administrators with arbitrary SQL privileges cannot bypass database controls.
