@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow
 } from '../server/serviceDesk/validation';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
@@ -111,7 +111,7 @@ test('1FP ticket audit detail bounds newest events and retains chronological dis
  assert.throws(()=>boundedInternalTicketHistory(Array(102).fill({versionAfter:1})),/bound/);
  const route=readFileSync('server/serviceDesk/router.ts','utf8');
  assert.match(route,/ORDER BY a\.version_after DESC LIMIT 101/);
- assert.match(route,/boundedInternalTicketHistory\(newestFirst\)/);
+ assert.match(route,/verifyInternalTicketAuditWindow\(newestFirst,/);
  assert.equal((route.match(/db\.getConnection\(\)\.catch\(\(\)=>null\)/g)||[]).length,2);
  assert.match(route,/historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false/);
 });
@@ -147,4 +147,60 @@ test('1FQ bounded history fails closed on inconsistent event version order',()=>
  assert.match(ui,/history\?beforeVersion=/);
  assert.match(ui,/Load older 100 entries/);
  assert.match(ui,/Return to latest/);
+});
+
+test('1FR every bounded audit window is a contiguous permitted status chain anchored to ticket version',()=>{
+ type Event={versionAfter:number;operation:'CREATE'|'STATUS_CHANGE';
+  fromStatus:'OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD'|null;
+  toStatus:'OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD'};
+ const state=(v:number):Event['toStatus']=>v===1?'OPEN_INTERNAL':
+  v%2===0?'TRIAGED_INTERNAL':'WAITING_INTERNAL';
+ const newest:Event[]=Array.from({length:101},(_,i)=>{
+  const v=101-i;
+  return {versionAfter:v,operation:v===1?'CREATE':'STATUS_CHANGE',
+   fromStatus:v===1?null:state(v-1),toStatus:state(v)};
+ });
+ const first=verifyInternalTicketAuditWindow(newest,{currentVersion:101,currentStatus:state(101)});
+ assert.equal(first.historyHasMore,true);
+ assert.equal(first.nextBeforeVersion,2);
+ assert.deepEqual(first.history.map(e=>e.versionAfter),Array.from({length:100},(_,i)=>i+2));
+ const older=verifyInternalTicketAuditWindow(newest.slice(-1),{
+  currentVersion:101,currentStatus:state(101),beforeVersion:2});
+ assert.deepEqual(older.history.map(e=>e.versionAfter),[1]);
+ assert.equal(older.historyHasMore,false);
+ assert.deepEqual(verifyInternalTicketAuditWindow([],{
+  currentVersion:101,currentStatus:state(101),beforeVersion:1}).history,[]);
+ for(const scenario of [
+  {rows:newest,ctx:{currentVersion:102,currentStatus:state(101)}},
+  {rows:newest,ctx:{currentVersion:101,currentStatus:'TRIAGED_INTERNAL' as const}},
+  {rows:newest.slice(0,-1),ctx:{currentVersion:101,currentStatus:state(101)}},
+  {rows:newest.slice(-1),ctx:{currentVersion:101,currentStatus:state(101)}},
+  {rows:[] as Event[],ctx:{currentVersion:101,currentStatus:state(101)}},
+  {rows:newest.slice(-1),ctx:{currentVersion:101,currentStatus:state(101),beforeVersion:3}},
+  {rows:newest,ctx:{currentVersion:101,currentStatus:state(101),beforeVersion:102}}
+ ])assert.throws(()=>verifyInternalTicketAuditWindow(scenario.rows,scenario.ctx),/1FR/);
+ const tamper=(index:number,patch:Partial<Event>)=>newest.map((e,i)=>i===index?{...e,...patch}:e);
+ for(const rows of [
+  tamper(100,{versionAfter:0}),
+  tamper(1,{toStatus:'OPEN_INTERNAL'}),
+  tamper(0,{operation:'CREATE'}),
+  tamper(0,{fromStatus:'OPEN_INTERNAL'}),
+  tamper(100,{operation:'STATUS_CHANGE'}),
+  tamper(20,{versionAfter:79}),
+  tamper(40,{toStatus:'RESOLVED_HELD'}),
+  tamper(50,{fromStatus:'RESOLVED_HELD'})
+ ])assert.throws(()=>verifyInternalTicketAuditWindow(rows,{
+  currentVersion:101,currentStatus:state(101)}),/1FR|integrity/);
+});
+test('1FR ticket detail and older pages use same read-only consistent snapshot, no cross-pool mixing',()=>{
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ assert.match(route,/export async function readInternalTicketSnapshot/);
+ assert.match(route,/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/);
+ assert.match(route,/START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY/);
+ assert.match(route,/await conn\.commit\(\);started=false/);
+ assert.match(route,/if\(started\)await conn\.rollback\(\)\.catch\(\(\)=>\{\}\)/);
+ assert.match(route,/finally\{conn\.release\(\);\}/);
+ assert.equal((route.match(/await readInternalTicketSnapshot\(db,async\(conn\)=>/g)||[]).length,2);
+ assert.equal((route.match(/verifyInternalTicketAuditWindow\(newestFirst,/g)||[]).length,2);
+ assert.match(route,/beforeVersion>eligible\[0\]\.version\+1/);
 });
