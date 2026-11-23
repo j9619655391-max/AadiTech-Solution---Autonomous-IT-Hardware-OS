@@ -6,11 +6,10 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import {getPool,getAuthPool,getDatabaseConfig} from '../server/db';
 import {hashToken} from '../server/auth/crypto';
-import {lockActiveCrmOwner,CRMOwnerInactiveError,MySQLCRMRepository} from '../server/crm/repository';
+import {lockActiveCrmOwner,CRMOwnerInactiveError} from '../server/crm/repository';
 import crmRouter from '../server/crm/router';
 import quoteRouter from '../server/quotes/router';
 import ticketRouter from '../server/serviceDesk/router';
-import {validate} from '../server/crm/validation';
 import {checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
 
 if(process.env.NODE_ENV!=='test'||process.env.CRM_TEST_DB!=='1'||
@@ -64,7 +63,7 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
    ['SELECT, INSERT','service_ticket_audit_internal']
   ];
   for(const [privileges,table] of grants){
-   await admin.query('GRANT '+privileges+' ON '+BT+'aaditech_ci'+BT+'.'+BT+table+BT+' TO '+account);
+   await admin.query('GRANT '+privileges+' ON aaditech_ci.'+table+' TO '+account);
   }
   await admin.query('GRANT EXECUTE ON PROCEDURE aaditech_ci.aaditech_guard_active_owner TO '+account);
   await admin.execute(
