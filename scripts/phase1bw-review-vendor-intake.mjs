@@ -113,6 +113,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'tests/fa-role-cycle-concurrency-mysql.integration.ts',
  'tests/fb-runtime-db-privileges.test.ts',
  'tests/fc-runtime-db-privileges-mysql.integration.ts',
+ 'tests/fd-crm-owner-race-mysql.integration.ts',
  'tests/procurement-mysql.integration.ts',
  'database/migrations/0043_el_reviewer_scope_candidates.sql',
  'scripts/migrate-el-reviewer-scopes.ts',
