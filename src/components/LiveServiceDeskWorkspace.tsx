@@ -14,7 +14,10 @@ type History={operation:'CREATE'|'STATUS_CHANGE';fromStatus:Status|null;toStatus
  note:string;versionAfter:number;createdAt:string};
 type Catalog={mode:'GUIDANCE_ONLY';items:{id:string;title:string}[]};
 type TicketList={items:Ticket[];mode:'INTERNAL_HELD';externalDispatchEnabled:false};
-type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHasMore:boolean;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
+type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHasMore:boolean;
+ nextBeforeVersion:number|null;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
+type HistoryPage={ticketId:string;history:History[];historyLimit:number;historyHasMore:boolean;
+ nextBeforeVersion:number|null;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 const nextStates:Record<Status,{status:Status;label:string}[]>={
  OPEN_INTERNAL:[{status:'TRIAGED_INTERNAL',label:'Triaged (internal)'}],
  TRIAGED_INTERNAL:[
@@ -46,6 +49,8 @@ export function LiveServiceDeskWorkspace(){
  const [nextStatus,setNextStatus]=useState<Status|' '>(' ');
  const [transitionNote,setTransitionNote]=useState('');
  const [busy,setBusy]=useState(false);
+ const [loadingHistory,setLoadingHistory]=useState(false);
+ const [historyIsLatest,setHistoryIsLatest]=useState(true);
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState('');
  const [success,setSuccess]=useState('');
@@ -75,8 +80,29 @@ export function LiveServiceDeskWorkspace(){
     '/api/service-desk/internal-tickets/'+encodeURIComponent(id)));
    if(data.mode!=='INTERNAL_HELD'||data.externalDispatchEnabled!==false)
     throw Error('Unverified internal ticket response');
-   setSelectedId(id);setDetail(data);setNextStatus(' ');setTransitionNote('');
+   setSelectedId(id);setDetail(data);setHistoryIsLatest(true);setNextStatus(' ');setTransitionNote('');
   }catch(e){setError(e instanceof Error?e.message:'Ticket unavailable');}
+ };
+ const loadOlderHistory=async()=>{
+  if(!detail||!detail.historyHasMore||detail.nextBeforeVersion===null||loadingHistory)return;
+  const ticketId=detail.ticket.id,cursor=detail.nextBeforeVersion;
+  setLoadingHistory(true);setError('');
+  try{
+   const response=await authenticatedFetch('/api/service-desk/internal-tickets/'+
+    encodeURIComponent(ticketId)+'/history?beforeVersion='+cursor);
+   const page=await responseBody<HistoryPage>(response);
+   if(page.mode!=='INTERNAL_HELD'||page.externalDispatchEnabled!==false||
+      page.ticketId!==ticketId||page.historyLimit!==100||!Array.isArray(page.history)||
+      page.history.length>100||
+      page.history.some(e=>!Number.isSafeInteger(e.versionAfter)||e.versionAfter>=cursor)||
+      (page.historyHasMore&&(page.nextBeforeVersion===null||page.nextBeforeVersion>=cursor)))
+    throw Error('Invalid bounded history response');
+   setDetail(prev=>prev?.ticket.id===ticketId?{...prev,history:page.history,
+    historyLimit:page.historyLimit,historyHasMore:page.historyHasMore,
+    nextBeforeVersion:page.nextBeforeVersion}:prev);
+   setHistoryIsLatest(false);
+  }catch(e){setError(e instanceof Error?e.message:'Older audit history unavailable');}
+  finally{setLoadingHistory(false);}
  };
  const createTicket=async(event:React.FormEvent)=>{
   event.preventDefault();
@@ -217,7 +243,17 @@ export function LiveServiceDeskWorkspace(){
       className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Record status</button>
     </form>}
    <h4 className="text-sm font-semibold text-white">Versioned internal audit</h4>
-   <p className="text-xs text-slate-400">Showing latest {detail.history.length} internal audit entries (limit {detail.historyLimit}). {detail.historyHasMore?'Older entries exist but are not loaded; no complete-history attestation is implied.':'No older entries reported by this bounded read.'}</p>
+   <p className="text-xs text-slate-400">Showing {historyIsLatest?'latest':'older'} {detail.history.length} internal audit entries (limit {detail.historyLimit}). {detail.historyHasMore?'Earlier entries remain.':'No earlier entries reported by this bounded read.'} This is a single page, not immutable external evidence.</p>
+   <div className="flex flex-wrap gap-2">
+    {detail.historyHasMore&&<button type="button" disabled={loadingHistory||busy}
+     onClick={()=>void loadOlderHistory()}
+     className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
+     {loadingHistory?'Loading…':'Load older 100 entries'}
+    </button>}
+    {!historyIsLatest&&<button type="button" disabled={loadingHistory||busy}
+     onClick={()=>void openTicket(detail.ticket.id)}
+     className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">Return to latest</button>}
+   </div>
    <ol className="space-y-1 text-xs text-slate-300">
     {detail.history.map(e=><li key={e.versionAfter} className="rounded border border-slate-800 p-2">
      v{e.versionAfter} · {e.operation} · {e.toStatus} · {e.note}
