@@ -84,7 +84,7 @@ test('1EZ CLI keeps failed live trigger checks as HOLD and never treats checksum
 function observedRuntimeGrants({
  user="runtime_service@%",schema='aaditech_staging_disposable',
  grants=["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
-  "GRANT SELECT ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"],
+  "GRANT SELECT ON aaditech_staging_disposable.crm_customers TO 'runtime_service'@'%'"],
  deny=false
 }:{user?:string;schema?:string;grants?:string[];deny?:boolean}={}){
  const sql:string[]=[];
@@ -122,6 +122,8 @@ test('1FC privilege checks fail-closed on unexpected identity/schema, global gra
   {grants:["GRANT ALL PRIVILEGES ON *.* TO 'runtime_service'@'%'"]},
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
    "GRANT CREATE, INSERT ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"]},
+  {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+   "GRANT SELECT ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"]},
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
    "GRANT SELECT, UPDATE ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"]},
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
