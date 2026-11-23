@@ -565,6 +565,8 @@ jobs:
         run: bun run test:fa-role-cycle-mysql
       - name: Phase 1FC real disposable MySQL runtime-grant widening denial
         run: bun run test:fc-runtime-privileges-mysql
+      - name: Phase 1FO restricted runtime SQL SECURITY DEFINER OWNER guard, CRM/quote/tickets HTTP smoke
+        run: bun run test:fo-owner-guard-mysql
       - name: Phase 1FD live MySQL CRM owner demotion/mutation lock regression
         run: bun run test:fd-crm-owner-mysql
       - name: Phase 1FK M04 quote OWNER role transition, replay and revision real MySQL regression
