@@ -1,0 +1,30 @@
+# Phase 1FB — runtime MySQL grant envelope preflight (HARD HOLD)
+
+Date: 2026-11-23. Scope: offline adversarial code tests and a **separately approved isolated TLS staging runtime database account**. This feature does not change production SQL, install database permissions, rotate secrets, grant users access, authorize deployment or claim independent Security/DBA approval.
+
+## Observed risk
+
+The Phase 1EW database triggers and Phase 1EZ installed-trigger integrity checks provide app-controlled defense-in-depth. If an application runtime DB principal is overprivileged (global grants, DDL/TRIGGER, GRANT OPTION, administrative role delegation) a compromised connection can modify the enforcement mechanism. Phase 1FA's deterministic transaction ordering does not itself restrict privileged SQL actors.
+
+## Implemented technical observation
+
+- scripts/phase1fb-runtime-db-privileges.ts runs **only** with RUNTIME_DB_PRIVILEGE_PREFLIGHT=YES, STAGING_DISPOSABLE_CONFIRMED=YES, NODE_ENV=staging, DB_SSL=true, a database named aaditech_staging_*, and without CRM_TEST_DB=1. By default it refuses to connect. Uses the existing trusted TLS database settings and requires an explicit database principal.
+- Performs SELECT CURRENT_USER(), DATABASE() and SHOW GRANTS FOR CURRENT_USER() on **the authenticated connection**. No DDL/DML/revocation/permission change.
+- Deny-by-default grant classifier allows only global USAGE and bounded target-schema / target-table SELECT, INSERT, UPDATE and DELETE. It rejects global DML, CREATE, ALTER, DROP, TRIGGER, dynamic/unknown privileges, excessive scopes, GRANT/ADMIN OPTION, unexpanded role delegation, malformed/surprising quote or grant syntax, missing DML and unidentified connection schema/principal.
+- The machine-readable receipt contains only a truncated SHA-256 fingerprint of the observed account, counts and generic denial reasons, never the full username, connection string, password or raw grants. Technical result PASS does **not** enable production. It still prints productionReleaseAuthorized=false, releaseDecision=HOLD, outsideDbaControlVerified=false and independentSecurityApproval=false.
+- tests/fb-runtime-db-privileges.test.ts exercises safe and hostile grant syntax, strict target opt-in and deny-only CLI contract. package.json registers db:runtime-privileges:preflight. The source and tests are tracked in 1BV and 1BW inventories, and unit tests run in the standard baseline without staging credentials.
+
+## Explicit operator handoff (NOT run in CI)
+
+1. Independently provision an approved **disposable** TLS staging MySQL instance, a dedicated runtime account and separate migration/DBA identities. Never put credentials in Git or test receipts.
+2. Under secured operator custody, ensure DB_NAME matches the isolated schema and DB_SSL=true with a trusted CA; then set the explicit observation guard flags and run the new command using that **runtime principal's credentials** (not a privileged migrator's).
+3. Independently compare the bounded technical receipt against DB administrative grant inventory and effective/current roles with a different appropriately authorized DBA. Capture outside-app timestamped evidence and signed witness approval. Do not treat app-produced output as an external audit.
+4. If the command reports HOLD, preserve evidence; change privileges only under separately authorized DBA change control and re-run. Do not weaken the classifier to accept unexpected grants as a shortcut.
+
+## Residual risk / release hold
+
+This is conservative text classification of MySQL SHOW GRANTS, not cryptographically authenticated account authority or a complete privilege graph. Database roles, definer routines, proxy users, alternate sessions, account changes after observation, MySQL privilege metadata tampering and compromised DB administration can evade or invalidate a point-in-time check. Its accepted schema-wide DML does **not** prevent an attacker with direct write rights from altering app_reviewer_scope_grants after a trigger has revoked rows. Real per-table least-privilege design, protected administrative APIs and independent DBA privilege separation remain required and **unverified**.
+
+Likewise, Issue #2 and M01–M30 operational workflows, actual legal/MCA corporate authority, licensed eMudhra/CCA/RCAI trust and CRL/OCSP, protected main/CODEOWNERS, independent nonauthor Security/Business/Operations signoffs, signed workload provenance, WORM/CAS and independent encrypted DR, provider agreements, and isolated staging business acceptance remain OPEN.
+
+**HARD HOLD:** productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD; PR #1 Draft/unmerged; main unchanged. No production migration, actual customer/supplier communication, quote/PO/GRN, stock/finance/tax posting or live provider activation.
