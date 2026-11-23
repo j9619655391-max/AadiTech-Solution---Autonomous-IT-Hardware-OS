@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {checkPreflightTarget,migrationChecksums,MIGRATIONS} from '../scripts/lib/stagingPreflight';
-import {checkInstalledEwTriggerIntegrity} from '../scripts/staging-preflight';
+import {checkInstalledEwTriggerIntegrity,checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
 import type {EwInstalledTrigger} from '../scripts/migrate-ew-role-cycle';
 test('read-only readiness is denied by default and outside disposable DB',()=>{
  assert.throws(()=>checkPreflightTarget({}),/STAGING_PREFLIGHT/);
@@ -79,4 +79,70 @@ test('1EZ CLI keeps failed live trigger checks as HOLD and never treats checksum
  assert.match(src,/1EZ installed auth_users UPDATE trigger integrity unverified/);
  assert.match(src,/if\(!inspected\.ready\)process\.exitCode=1/);
  assert.match(src,/checkPreflightTarget\(process\.env\)/);
+});
+
+function observedRuntimeGrants({
+ user="runtime_service@%",schema='aaditech_staging_disposable',
+ grants=["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+  "GRANT SELECT, INSERT, UPDATE, DELETE ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"],
+ deny=false
+}:{user?:string;schema?:string;grants?:string[];deny?:boolean}={}){
+ const sql:string[]=[];
+ let acquire=0,release=0;
+ const db={getConnection:async()=>{
+  acquire++;
+  return {query:async(query:string)=>{
+   sql.push(query);
+   if(deny)throw Error("ACCESS DENIED to account 'secret'@'private'");
+   if(query.startsWith('SELECT CURRENT_USER()'))
+    return [[{authenticated_user:user,selected_schema:schema}],[]];
+   if(query==='SHOW GRANTS FOR CURRENT_USER()')
+    return [grants.map(value=>({'Grants for CURRENT_USER()':value})),[]];
+   throw Error('Unexpected SQL');
+  },release:()=>{release++;}};
+ }} as unknown as Parameters<typeof checkStagingRuntimeDbPrivilegeIntegrity>[0];
+ return {db,sql,acquired:()=>acquire,released:()=>release};
+}
+test('1FC read-only staging runtime privilege gate observes authenticated current user and grants on same SQL connection',async()=>{
+ const {db,sql,acquired,released}=observedRuntimeGrants();
+ const value=await checkStagingRuntimeDbPrivilegeIntegrity(db,'aaditech_staging_disposable');
+ assert.deepEqual(value,{grantCount:2,dataGrantCount:1});
+ assert.equal(acquired(),1);
+ assert.equal(released(),1);
+ assert.deepEqual(sql,[
+  'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema',
+  'SHOW GRANTS FOR CURRENT_USER()'
+ ]);
+});
+test('1FC privilege checks fail-closed on unexpected identity/schema, global grants, role grants and SQL denial',async()=>{
+ const hostile=[
+  {schema:'aaditech_production'},
+  {user:''},
+  {grants:[]},
+  {grants:["GRANT ALL PRIVILEGES ON *.* TO 'runtime_service'@'%'"]},
+  {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+   "GRANT CREATE, INSERT ON aaditech_staging_disposable.* TO 'runtime_service'@'%'"]},
+  {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+   "GRANT 'role_admin'@'%' TO 'runtime_service'@'%'"]},
+  {deny:true}
+ ];
+ for(const scenario of hostile){
+  const {db,released}=observedRuntimeGrants(scenario);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(db,'aaditech_staging_disposable'),
+   /1FC|ACCESS DENIED/);
+  assert.equal(released(),1,'connection must release even on denied metadata');
+ }
+});
+test('1FC staging CLI requires grant PASS; CI result explicitly declines actual staging privilege certification',()=>{
+ const src=readFileSync('scripts/staging-preflight.ts','utf8');
+ assert.match(src,/await checkStagingRuntimeDbPrivilegeIntegrity\(connection,cfg\.database\)/);
+ assert.match(src,/runtimePrivilegePreflightTarget\(process\.env\)/);
+ assert.match(src,/target==='ci'\?'NOT_EVALUATED_CI':'HOLD'/);
+ assert.match(src,/target==='ci'\|\|runtimeDbPrivileges==='PASS'/);
+ assert.match(src,/1FC staging runtime DB grant envelope unverified/);
+ assert.match(src,/independentDbaApprovalVerified:false/);
+ assert.match(src,/const conn=await db\.getConnection\(\)/);
+ assert.match(src,/finally\{conn\.release\(\);\}/);
+ assert.match(src,/if\(!inspected\.ready\)process\.exitCode=1/);
 });
