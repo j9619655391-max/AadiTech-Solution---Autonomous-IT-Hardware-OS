@@ -1,11 +1,11 @@
 import {Router} from 'express';
 import {randomUUID} from 'node:crypto';
-import type {RowDataPacket,PoolConnection} from 'mysql2/promise';
+import type {RowDataPacket,PoolConnection,Pool} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent
 } from './validation';
 
 const router=Router();
@@ -22,7 +22,28 @@ function fail(res:import('express').Response,error:unknown){
  res.status(503).json({error:'Internal service desk unavailable'});
 }
 // MySQL RowDataPacket alone does not assert selected numeric audit aliases.
-interface InternalTicketAuditRow extends RowDataPacket {versionAfter:number}
+interface InternalTicketAuditRow extends RowDataPacket, InternalTicketAuditEvent {}
+interface InternalTicketAnchor extends RowDataPacket {version:number;status:string}
+// Repeatable-read transaction snapshot is required: separate pool.query calls
+// can return mismatched ticket status and audit versions if mutations commit
+// between the two authorization and history reads.
+export async function readInternalTicketSnapshot<T>(
+ db:Pick<Pool,'getConnection'>,fn:(conn:PoolConnection)=>Promise<T>
+):Promise<T>{
+ const conn=await db.getConnection();
+ let started=false;
+ try{
+  await conn.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+  await conn.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+  started=true;
+  const result=await fn(conn);
+  await conn.commit();started=false;
+  return result;
+ }catch(error){
+  if(started)await conn.rollback().catch(()=>{});
+  throw error;
+ }finally{conn.release();}
+}
 const listProjection=`t.id,t.customer_id AS customerId,c.name AS customerName,
  t.guide_id AS guideId,t.subject,t.description,t.priority,t.status,t.version,
  t.customer_consent_state AS customerConsentState,
@@ -44,32 +65,36 @@ router.get('/',async(_req,res)=>{
  }catch(e){fail(res,e);}
 });
 
+
 router.get('/:id',async(req,res)=>{
  if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(
-   `SELECT ${listProjection} FROM service_tickets_internal t ${ownerScope}
+  const data=await readInternalTicketSnapshot(db,async(conn)=>{
+   const [rows]=await conn.query<InternalTicketAnchor[]>(`SELECT ${listProjection}
+    FROM service_tickets_internal t ${ownerScope}
     WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,[req.params.id,res.locals.auth.userId]);
-  if(!rows.length){res.status(404).json({error:'Internal ticket not found'});return;}
-  // Re-apply owner/customer provenance scope on the history query itself
-  // rather than trusting an earlier read if access changes between queries.
-  const [newestFirst]=await db.query<InternalTicketAuditRow[]>(`SELECT a.operation,
+   if(rows.length!==1)return null;
+   // Both scoped reads see the exact same InnoDB snapshot; a concurrent
+   // status update cannot make the ticket and its audit ledger disagree.
+   const [newestFirst]=await conn.query<InternalTicketAuditRow[]>(`SELECT a.operation,
     a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
     a.version_after AS versionAfter,a.created_at AS createdAt
     FROM service_ticket_audit_internal a
     JOIN service_tickets_internal t ON t.id=a.ticket_id ${ownerScope}
     WHERE t.id=? AND t.owner_user_id=?
     ORDER BY a.version_after DESC LIMIT 101`,[req.params.id,res.locals.auth.userId]);
-  const historyWindow=boundedInternalTicketHistory(newestFirst);
-  res.json({ticket:rows[0],...historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+   const historyWindow=verifyInternalTicketAuditWindow(newestFirst,{
+    currentVersion:rows[0].version,currentStatus:rows[0].status as InternalTicketAuditEvent['toStatus']});
+   return {ticket:rows[0],...historyWindow};
+  });
+  if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
+  res.json({...data,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
-
- 
-// Phase 1FQ: older audit history is keyset-paged, never OFFSET-scanned or
-// authorized by a ticket ID alone. This is internal operator readback only.
+// Phase 1FR: each keyset page reads the eligibility row and bounded events
+// within one read-only InnoDB snapshot; no cross-session privilege/data mix.
 router.get('/:id/history',async(req,res)=>{
  if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
  let beforeVersion:number;
@@ -77,22 +102,29 @@ router.get('/:id/history',async(req,res)=>{
  catch(e){fail(res,e);return;}
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
-  const [eligible]=await db.query<RowDataPacket[]>(`SELECT t.id
-   FROM service_tickets_internal t ${ownerScope}
-   WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,
-   [req.params.id,res.locals.auth.userId]);
-  if(eligible.length!==1){res.status(404).json({error:'Internal ticket not found'});return;}
-  const [newestFirst]=await db.query<InternalTicketAuditRow[]>(`SELECT a.operation,
+  const data=await readInternalTicketSnapshot(db,async(conn)=>{
+   const [eligible]=await conn.query<InternalTicketAnchor[]>(`SELECT t.id,t.version,t.status
+    FROM service_tickets_internal t ${ownerScope}
+    WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,
+    [req.params.id,res.locals.auth.userId]);
+   if(eligible.length!==1)return null;
+   if(beforeVersion>eligible[0].version+1)
+    throw new ServiceTicketInputError('Invalid audit history cursor');
+   const [newestFirst]=await conn.query<InternalTicketAuditRow[]>(`SELECT a.operation,
     a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
     a.version_after AS versionAfter,a.created_at AS createdAt
     FROM service_ticket_audit_internal a
     JOIN service_tickets_internal t ON t.id=a.ticket_id ${ownerScope}
     WHERE t.id=? AND t.owner_user_id=? AND a.version_after<?
     ORDER BY a.version_after DESC LIMIT 101`,
-   [req.params.id,res.locals.auth.userId,beforeVersion]);
-  const historyWindow=boundedInternalTicketHistory(newestFirst);
-  res.json({ticketId:req.params.id,...historyWindow,
-   mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+    [req.params.id,res.locals.auth.userId,beforeVersion]);
+   const historyWindow=verifyInternalTicketAuditWindow(newestFirst,{
+    currentVersion:eligible[0].version,
+    currentStatus:eligible[0].status as InternalTicketAuditEvent['toStatus'],beforeVersion});
+   return {ticketId:req.params.id,...historyWindow};
+  });
+  if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
+  res.json({...data,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
