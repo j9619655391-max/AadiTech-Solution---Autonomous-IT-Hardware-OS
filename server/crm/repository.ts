@@ -23,6 +23,20 @@ function clean(entity:CRMEntity,row:RowDataPacket):object {
 const creatorScope=(alias:string)=>`EXISTS (SELECT 1 FROM crm_audit_events creator
  WHERE creator.entity_type=? AND creator.entity_id=${alias}.id
  AND creator.operation='CREATE' AND creator.actor_user_id=?)`;
+// A role/status check in the HTTP middleware is not enough: the account may
+// be disabled or demoted before a later transaction takes its first write lock.
+// The shared auth_users row lock serializes CRM mutation against such changes.
+export class CRMOwnerInactiveError extends Error {
+ constructor(){super('Active OWNER account required');this.name='CRMOwnerInactiveError';}
+}
+export async function lockActiveCrmOwner(
+ connection:Pick<PoolConnection,'query'>,actor:string
+):Promise<void>{
+ const [owners]=await connection.query<RowDataPacket[]>(
+  'SELECT role,status FROM auth_users WHERE id=? FOR UPDATE',[actor]);
+ if(owners.length!==1||owners[0].role!=='OWNER'||owners[0].status!=='ACTIVE')
+  throw new CRMOwnerInactiveError();
+}
 export class MySQLCRMRepository implements CRMRepository {
   constructor(private readonly db:Pool){}
   async list(entity:CRMEntity,limit:number,offset:number,actor:string) {
@@ -49,6 +63,7 @@ export class MySQLCRMRepository implements CRMRepository {
     const connection=await this.db.getConnection();const id=randomUUID();
     try {
       await connection.beginTransaction();
+      await lockActiveCrmOwner(connection,actor);
       const keys=Object.keys(fields);
       await connection.execute(`INSERT INTO ${tables[entity]} (id,${keys.join(',')}) VALUES (?,${keys.map(()=>'?').join(',')})`,[id,...keys.map(k=>fields[k] as string | number | null)]);
       const [rows]=await connection.query<RowDataPacket[]>(`SELECT * FROM ${tables[entity]} WHERE id=?`,[id]);
@@ -61,6 +76,7 @@ export class MySQLCRMRepository implements CRMRepository {
     const connection=await this.db.getConnection();
     try {
       await connection.beginTransaction();
+      await lockActiveCrmOwner(connection,actor);
       const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT record.* FROM ${tables[entity]} record WHERE record.id=?
         AND record.deleted_at IS NULL AND ${creatorScope('record')} FOR UPDATE`,[id,entity,actor]);
       if(!beforeRows.length){await connection.rollback();return 'not_found';}
@@ -82,6 +98,7 @@ export class MySQLCRMRepository implements CRMRepository {
     const connection=await this.db.getConnection();
     try{
       await connection.beginTransaction();
+      await lockActiveCrmOwner(connection,actor);
       const [beforeRows]=await connection.query<RowDataPacket[]>(`SELECT record.* FROM ${tables[entity]} record WHERE record.id=?
         AND record.deleted_at IS NULL AND ${creatorScope('record')} FOR UPDATE`,[id,entity,actor]);
       if(!beforeRows.length){await connection.rollback();return 'not_found';}
