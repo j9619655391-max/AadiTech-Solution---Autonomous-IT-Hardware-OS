@@ -94,6 +94,7 @@ test('1FO procedure-mode OWNER lock issues exactly one CALL; rejected signal fai
 test('1FO reviewed routine body cannot disclose raw auth, write role or enable dispatch',()=>{
  const sql=readFileSync('database/authority/phase1fo_active_owner_guard.sql','utf8');
  assert.match(sql,/SQL SECURITY DEFINER/);
+ assert.match(sql,/IN p_actor CHAR\(36\) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci/);
  assert.match(sql,/WHERE id=p_actor FOR UPDATE/);
  assert.match(sql,/SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='AUTH_OWNER_INACTIVE'/);
  const executable=sql.replace(/^\s*--.*$/gm,'');
