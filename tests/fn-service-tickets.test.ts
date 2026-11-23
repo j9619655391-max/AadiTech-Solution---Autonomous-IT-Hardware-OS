@@ -201,7 +201,8 @@ test('1FR ticket detail and older pages use same read-only consistent snapshot, 
  assert.match(route,/await conn\.commit\(\);started=false/);
  assert.match(route,/if\(started\)await conn\.rollback\(\)\.catch\(\(\)=>\{\}\)/);
  assert.match(route,/finally\{conn\.release\(\);\}/);
- assert.equal((route.match(/await readInternalTicketSnapshot\(db,async\(conn\)=>/g)||[]).length,2);
+ assert.equal((route.match(/await readInternalTicketSnapshot\(db,async\(conn\)=>/g)||[]).length,3,
+  '1FR detail, older history and 1FS fingerprint each use an authorized read-only DB snapshot');
  assert.equal((route.match(/verifyInternalTicketAuditWindow\(newestFirst,/g)||[]).length,2);
  assert.match(route,/beforeVersion>eligible\[0\]\.version\+1/);
 });
