@@ -6,6 +6,8 @@ import mysql from 'mysql2/promise';
 import {getPool,getDatabaseConfig} from '../server/db';
 import {hashToken} from '../server/auth/crypto';
 import serviceDeskRouter,{readInternalTicketSnapshot} from '../server/serviceDesk/router';
+import {createCRMRouter} from '../server/crm/router';
+import {verifyServiceDeskCustomerPage} from '../src/services/serviceDeskCustomerPaging';
 import {MySQLCRMRepository,CRMOwnerInactiveError,lockActiveCrmOwner} from '../server/crm/repository';
 import {validate} from '../server/crm/validation';
 
@@ -65,6 +67,7 @@ test('1FN isolated owner, independent other owner/reviewer and CRM provenance fi
  otherCustomer=await makeCustomer(other,'FN CI different-owner customer');
  const app=express();app.use(express.json());
  app.use('/api/service-desk/internal-tickets',serviceDeskRouter);
+ app.use('/api/crm',createCRMRouter(()=>repository));
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown endpoint'}));
  const listener=app.listen(0,'127.0.0.1');
  await new Promise<void>(resolve=>listener.once('listening',resolve));
@@ -465,6 +468,55 @@ test('1FV real MySQL owner-scoped ticket list walks past 100 with no duplicate, 
   assert.equal(denied.status,400,'invalid list cursor accepted: '+bad);
  }
  assert.equal((await request('/','GET',undefined,'other')).data.items.length,100);
+});
+
+test('1FW existing CRM auth/provenance permits M16 internal ticket selection beyond customer 100',async()=>{
+ // Only disposable CI MySQL actors/data. No production CRM/user or real
+ // customer interaction. The test uses the genuine already-owned CRM API.
+ for(let n=0;n<101;n++)
+  await makeCustomer(other,'CI M16 paged customer '+String(n).padStart(3,'0'));
+ const crmPage=async(page:number,as:'owner'|'other'|'reviewer'|'anon')=>{
+  const actor=as==='owner'?owner:as==='other'?other:as==='reviewer'?reviewer:null;
+  const response=await fetch(base+'/api/crm/customers?page='+page+'&limit=100',
+   {headers:actor?{cookie:actor.cookie}:{}});
+  const raw=await response.json().catch(()=>({}));
+  return {status:response.status,cache:response.headers.get('cache-control'),data:raw as any};
+ };
+ const first=await crmPage(1,'other');
+ const older=await crmPage(2,'other');
+ assert.equal(first.status,200);assert.equal(older.status,200);
+ assert.equal(first.cache,'no-store');assert.equal(older.cache,'no-store');
+ const firstVerified=verifyServiceDeskCustomerPage(first.data,1);
+ const olderVerified=verifyServiceDeskCustomerPage(older.data,2);
+ assert.equal(firstVerified.items.length,100);
+ assert.ok(olderVerified.items.length>=2&&olderVerified.items.length<=100);
+ assert.equal(firstVerified.total,olderVerified.total);
+ assert.ok(firstVerified.total>100);
+ assert.equal(firstVerified.hasNext,true);
+ assert.equal(olderVerified.hasPrevious,true);
+ assert.equal(olderVerified.hasNext,false);
+ const combined=[...firstVerified.items,...olderVerified.items];
+ assert.equal(new Set(combined.map(row=>row.id)).size,combined.length,
+  'CRM pages must not expose duplicate customers for this stable test fixture');
+ assert.ok(combined.some(row=>row.id===otherCustomer),'Original old customer missing after 100');
+ assert.ok(olderVerified.items.some(row=>row.id===otherCustomer),
+  'Original oldest authorized customer must be selectable on page two');
+ const own=await crmPage(1,'owner');
+ assert.equal(own.status,200);
+ assert.ok(!own.data.items.some((row:any)=>row.id===otherCustomer));
+ assert.equal((await crmPage(2,'owner')).status,200);
+ assert.equal((await crmPage(1,'reviewer')).status,403);
+ assert.equal((await crmPage(1,'anon')).status,401);
+ // The M16 service desk independently verifies owner and creator provenance
+ // even for IDs passed from an apparently valid but untrusted customer list.
+ const ticket=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(ticket.status,201);
+ assert.equal(ticket.data.ticket.customerConsentState,'UNVERIFIED');
+ assert.equal(ticket.data.ticket.externalDispatchState,'DISABLED');
+ assert.equal(ticket.data.externalDispatchEnabled,false);
+ assert.equal((await request('/','POST',payload(otherCustomer),'owner')).status,404);
+ assert.equal((await request('/'+ticket.data.ticket.id,'GET',undefined,'owner')).status,404);
+ assert.equal((await request('/'+ticket.data.ticket.id,'GET',undefined,'other')).status,200);
 });
 
 test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and tampered events',async()=>{
