@@ -14,7 +14,9 @@ type Ticket={
 type History={operation:'CREATE'|'STATUS_CHANGE';fromStatus:Status|null;toStatus:Status;
  note:string;versionAfter:number;createdAt:string;noteRedacted?:boolean};
 type Catalog={mode:'GUIDANCE_ONLY';items:{id:string;title:string}[]};
-type TicketList={items:Ticket[];mode:'INTERNAL_HELD';externalDispatchEnabled:false};
+type TicketList={items:Ticket[];limit:100;hasMore:boolean;
+ nextBeforeCreatedAt:string|null;nextBeforeId:string|null;
+ mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHasMore:boolean;
  nextBeforeVersion:number|null;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 type HistoryPage={ticketId:string;history:History[];historyLimit:number;historyHasMore:boolean;
@@ -42,6 +44,8 @@ async function responseBody<T>(response:Response):Promise<T>{
 }
 export function LiveServiceDeskWorkspace(){
  const [tickets,setTickets]=useState<Ticket[]>([]);
+ const [ticketCursor,setTicketCursor]=useState<{createdAt:string;id:string}|null>(null);
+ const [ticketsOlderPage,setTicketsOlderPage]=useState(false);
  const [customers,setCustomers]=useState<CRMRecord[]>([]);
  const [guides,setGuides]=useState<{id:string;title:string}[]>([]);
  const [customerId,setCustomerId]=useState('');
@@ -60,9 +64,19 @@ export function LiveServiceDeskWorkspace(){
  const [fingerprint,setFingerprint]=useState<InternalAuditFingerprint|null>(null);
  const [historyIsLatest,setHistoryIsLatest]=useState(true);
  const [loading,setLoading]=useState(true);
+ const [loadingOlderTickets,setLoadingOlderTickets]=useState(false);
  const [error,setError]=useState('');
  const [success,setSuccess]=useState('');
  const [customerTruncated,setCustomerTruncated]=useState(false);
+ const verifyList=(list:TicketList)=>{
+  if(list.mode!=='INTERNAL_HELD'||list.externalDispatchEnabled!==false||
+     list.limit!==100||!Array.isArray(list.items)||list.items.length>100||
+     typeof list.hasMore!=='boolean'||
+     (list.hasMore&&(!list.nextBeforeCreatedAt||!list.nextBeforeId))||
+     (!list.hasMore&&(list.nextBeforeCreatedAt!==null||list.nextBeforeId!==null)))
+   throw Error('Unverified bounded internal ticket list');
+  return list;
+ };
  const refresh=useCallback(async()=>{
   setLoading(true);setError('');
   try{
@@ -71,16 +85,37 @@ export function LiveServiceDeskWorkspace(){
     crmClient.list('customers',1,100),
     responseBody<Catalog>(await authenticatedFetch('/api/help/troubleshooting'))
    ]);
-   if(list.mode!=='INTERNAL_HELD'||list.externalDispatchEnabled!==false||
-      catalog.mode!=='GUIDANCE_ONLY'||!Array.isArray(list.items))
-    throw Error('Unverified internal service-desk response');
-   setTickets(list.items);setCustomers(crm.items);setGuides(catalog.items);
+   verifyList(list);
+   if(catalog.mode!=='GUIDANCE_ONLY')throw Error('Unverified troubleshooting catalog');
+   setTickets(list.items);
+   setTicketCursor(list.hasMore?{createdAt:list.nextBeforeCreatedAt!,id:list.nextBeforeId!}:null);
+   setTicketsOlderPage(false);
+   setCustomers(crm.items);setGuides(catalog.items);
    setCustomerTruncated(crm.total>100);
    setCustomerId(prev=>prev&&crm.items.some(c=>c.id===prev)?prev:crm.items[0]?.id??'');
   }catch(e){setError(e instanceof Error?e.message:'Service desk unavailable');}
   finally{setLoading(false);}
  },[]);
  useEffect(()=>{void refresh();},[refresh]);
+ const loadOlderTickets=async()=>{
+  if(!ticketCursor||loadingOlderTickets||loading)return;
+  const cursor=ticketCursor;
+  setLoadingOlderTickets(true);setError('');
+  try{
+   const page=verifyList(await responseBody<TicketList>(await authenticatedFetch(
+    '/api/service-desk/internal-tickets?beforeCreatedAt='+
+    encodeURIComponent(cursor.createdAt)+'&beforeId='+encodeURIComponent(cursor.id))));
+   if(page.items.length===0||
+      (page.hasMore&&(
+       page.nextBeforeCreatedAt!>cursor.createdAt||
+       page.nextBeforeCreatedAt===cursor.createdAt&&page.nextBeforeId!>=cursor.id)))
+    throw Error('Non-decreasing internal ticket list cursor');
+   setTickets(page.items);
+   setTicketCursor(page.hasMore?{createdAt:page.nextBeforeCreatedAt!,id:page.nextBeforeId!}:null);
+   setTicketsOlderPage(true);
+  }catch(e){setError(e instanceof Error?e.message:'Older internal tickets unavailable');}
+  finally{setLoadingOlderTickets(false);}
+ };
  const openTicket=async(id:string)=>{
   setError('');setSuccess('');
   try{
@@ -251,7 +286,19 @@ export function LiveServiceDeskWorkspace(){
        </button>
       </li>)}
      </ul>}
-    <p className="text-xs text-slate-400">Showing up to 100 recent tickets. External delivery DISABLED.</p>
+    <p className="text-xs text-slate-400">Showing {ticketsOlderPage?'older':'latest'} {tickets.length} internal tickets (100-page cap). External delivery DISABLED.</p>
+    <div className="flex flex-wrap gap-2">
+     {ticketCursor&&<button type="button" disabled={loading||loadingOlderTickets}
+      onClick={()=>void loadOlderTickets()}
+      className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
+      {loadingOlderTickets?'Loading…':'Load older 100 tickets'}
+     </button>}
+     {ticketsOlderPage&&<button type="button" disabled={loading||loadingOlderTickets}
+      onClick={()=>void refresh()}
+      className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
+      Return to latest tickets
+     </button>}
+    </div>
    </div>
   </div>
   {detail&&<div className="space-y-4 rounded-xl border border-slate-700 bg-slate-900 p-5">
