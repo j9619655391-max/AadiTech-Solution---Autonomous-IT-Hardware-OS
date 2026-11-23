@@ -28,6 +28,18 @@ export const definitions: Record<CRMEntity, Record<string, Field>> = {
   }
 };
 export class InputError extends Error {}
+// Phase 1FI: MySQL DECIMAL(18,2) holds more precise monetary values than
+// IEEE-754 Number. Compare integer minor units, never floating point.
+// Both HTTP validation and the transaction-time price floor call this helper.
+export function crmMoneyPaise(value:unknown):bigint{
+ if(typeof value!=='string'||!/^(0|[1-9]\\d{0,15})(\\.\\d{1,2})?$/.test(value))
+  throw new InputError('Invalid stored monetary value');
+ const [whole,fraction='']=value.split('.');
+ return BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+}
+export function isMinPriceAboveSellingPrice(min:unknown,selling:unknown):boolean{
+ return crmMoneyPaise(min)>crmMoneyPaise(selling);
+}
 const maxLimit: Record<string,number> = {intentScore:100,warrantyMonths:1200,leadTimeDays:3650};
 export function validate(entity: CRMEntity, value: unknown, partial = false): Input {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new InputError('Object body required');
@@ -59,7 +71,7 @@ export function validate(entity: CRMEntity, value: unknown, partial = false): In
       result[k] = v;
     }
   }
-  if (entity === 'products' && result.minPrice !== undefined && result.sellingPrice !== undefined && Number(result.minPrice) > Number(result.sellingPrice)) {
+  if (entity === 'products' && result.minPrice !== undefined && result.sellingPrice !== undefined && isMinPriceAboveSellingPrice(result.minPrice,result.sellingPrice)) {
     throw new InputError('minPrice cannot exceed sellingPrice');
   }
   return result;
