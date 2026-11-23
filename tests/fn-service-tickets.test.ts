@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText
 } from '../server/serviceDesk/validation';
 import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
@@ -270,4 +270,52 @@ test('1FS SHA256 audit endpoint source enforces owner, bounded query, unsigned s
  assert.match(fingerprint,/externalAnchorVerified:false/);
  assert.match(fingerprint,/customerConsentVerified:false/);
  assert.doesNotMatch(fingerprint,/INSERT INTO|UPDATE service_ticket|DELETE FROM|nodemailer|smtp|sendEmail/);
+});
+
+test('1FT ticket admission blocks high-confidence credentials but permits ordinary diagnostic language',()=>{
+ const dangerous=[
+  '-----BEGIN OPENSSH PRIVATE KEY-----\\nci-only-fake-value',
+  'AWS access reference AKIA'+'A'.repeat(16),
+  'CI personal access token ghp_'+'Z'.repeat(26),
+  'github_pat_'+'B'.repeat(40),
+  'authorization: Bearer '+'A'.repeat(32),
+  'aaditech_session='+'q'.repeat(32),
+  'password=SuperSecret123456789!',
+  'api_key=A1b2C3d4E5f6G7h8',
+  'client_secret=someVeryLongSecretXYZ123',
+  'header eyJabcdefghi.eyJklmnopqr.abcdefghijklmn',
+  'Slack xoxb-'+'1'.repeat(26)
+ ];
+ for(const secret of dangerous){
+  assert.throws(()=>rejectCredentialLikeTicketText(secret),ServiceTicketInputError,
+   'High-confidence credential pattern unexpectedly admitted');
+  for(const input of [
+   {...create,subject:secret},
+   {...create,description:'Synthetic IT support observation: '+secret}
+  ])assert.throws(()=>validateTicketCreate(input),ServiceTicketInputError);
+  assert.throws(()=>validateTicketTransition({
+   expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note:secret
+  },'OPEN_INTERNAL'),ServiceTicketInputError);
+ }
+ for(const safe of [
+  'User reports password reset loop; do not collect passwords',
+  'API key rotation needed: key not shared',
+  'Laptop Wi-Fi connection fails after reboot',
+  'SSO access token expired and needs official rotation',
+  'Customer consent is unverified; no outreach performed',
+  'The auth token was revoked; no credentials captured'
+ ]){
+  assert.doesNotThrow(()=>rejectCredentialLikeTicketText(safe));
+  assert.equal(validateTicketCreate({...create,description:safe}).description,safe);
+  assert.equal(validateTicketTransition({
+   expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note:safe
+  },'OPEN_INTERNAL').note,safe);
+ }
+ const router=readFileSync('server/serviceDesk/router.ts','utf8');
+ const validator=readFileSync('server/serviceDesk/validation.ts','utf8');
+ assert.match(validator,/rejectCredentialLikeTicketText\(v\)/);
+ assert.match(validator,/Credential-like content is not allowed/);
+ assert.match(router,/validateTicketCreate\(req\.body\)/);
+ assert.match(router,/validateTicketTransition\(req\.body,old\.status\)/);
+ assert.doesNotMatch(router,/sendEmail|customerConsentState:'VERIFIED'/);
 });
