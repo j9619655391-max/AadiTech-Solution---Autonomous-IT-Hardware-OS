@@ -205,6 +205,87 @@ test('1FT real MySQL rejects secret-bearing internal ticket writes without audit
  assert.equal((await request('/'+id+'/audit-fingerprint')).status,200);
 });
 
+test('1FU real MySQL masks synthetic legacy secrets on all read paths without altering source audit',async()=>{
+ const created=await request('/','POST',{
+  ...payload(otherCustomer),subject:'CI historical read masking simulation'
+ },'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ const [tickets]=await db!.query<any[]>(
+  'SELECT subject,description FROM service_tickets_internal WHERE id=?',[id]);
+ const [audit]=await db!.query<any[]>(
+  'SELECT note FROM service_ticket_audit_internal WHERE ticket_id=? AND version_after=1',[id]);
+ assert.equal(tickets.length,1);assert.equal(audit.length,1);
+ const firstFingerprint=await request('/'+id+'/audit-fingerprint','GET',undefined,'other');
+ assert.equal(firstFingerprint.status,200);
+ const legacySubject='password=SuperSecret123456789!';
+ const legacyDescription='Legacy token ghp_'+'Z'.repeat(30);
+ const legacyNote='CI-only long client_secret=SomeSyntheticCredential987654321';
+ const mask='[REDACTED: possible credential in legacy internal text]';
+ try{
+  // Direct SQL is used ONLY to model pre-existing bad records in disposable
+  // MySQL; no actual credential is used and no external system is touched.
+  await db!.execute(
+   'UPDATE service_tickets_internal SET subject=?,description=? WHERE id=?',
+   [legacySubject,legacyDescription,id]);
+  await db!.execute(
+   'UPDATE service_ticket_audit_internal SET note=? WHERE ticket_id=? AND version_after=1',
+   [legacyNote,id]);
+  const list=await request('/','GET',undefined,'other');
+  assert.equal(list.status,200);
+  const summary=list.data.items.find((t:any)=>t.id===id);
+  assert.ok(summary,'owner-scoped ticket must appear in bounded list');
+  assert.equal(summary.subject,mask);assert.equal(summary.description,mask);
+  assert.equal(summary.subjectRedacted,true);assert.equal(summary.descriptionRedacted,true);
+  const detail=await request('/'+id,'GET',undefined,'other');
+  assert.equal(detail.status,200);
+  assert.equal(detail.cache,'no-store');
+  assert.equal(detail.data.ticket.subject,mask);
+  assert.equal(detail.data.ticket.description,mask);
+  assert.equal(detail.data.ticket.subjectRedacted,true);
+  assert.equal(detail.data.ticket.descriptionRedacted,true);
+  assert.equal(detail.data.history[0].note,mask);
+  assert.equal(detail.data.history[0].noteRedacted,true);
+  const page=await request('/'+id+'/history?beforeVersion=2','GET',undefined,'other');
+  assert.equal(page.status,200);
+  assert.equal(page.data.history[0].note,mask);
+  assert.equal(page.data.history[0].noteRedacted,true);
+  const changed=await request('/'+id+'/audit-fingerprint','GET',undefined,'other');
+  assert.equal(changed.status,200);
+  assert.notEqual(changed.data.auditDigestSha256,firstFingerprint.data.auditDigestSha256);
+  assert.equal(changed.data.signatureVerified,false);
+  assert.equal(changed.data.customerConsentVerified,false);
+  for(const result of [list,detail,page,changed]){
+   const json=JSON.stringify(result.data);
+   for(const raw of [legacySubject,legacyDescription,legacyNote])
+    assert.ok(!json.includes(raw),'Raw synthetic legacy secret was returned to operator');
+  }
+  assert.equal((await request('/'+id)).status,404);
+  assert.equal((await request('/'+id,'GET',undefined,'reviewer')).status,403);
+  // Masking is a response projection only: the same source rows remain
+  // untouched and are deliberately restored in the disposable fixture.
+  const [stored]=await db!.query<any[]>(
+   'SELECT subject,description FROM service_tickets_internal WHERE id=?',[id]);
+  assert.equal(stored[0].subject,legacySubject);
+  assert.equal(stored[0].description,legacyDescription);
+  const [storedNote]=await db!.query<any[]>(
+   'SELECT note FROM service_ticket_audit_internal WHERE ticket_id=? AND version_after=1',[id]);
+  assert.equal(storedNote[0].note,legacyNote);
+ }finally{
+  await db!.execute(
+   'UPDATE service_tickets_internal SET subject=?,description=? WHERE id=?',
+   [tickets[0].subject,tickets[0].description,id]);
+  await db!.execute(
+   'UPDATE service_ticket_audit_internal SET note=? WHERE ticket_id=? AND version_after=1',
+   [audit[0].note,id]);
+ }
+ const recovered=await request('/'+id,'GET',undefined,'other');
+ assert.equal(recovered.status,200);
+ assert.equal(recovered.data.ticket.subjectRedacted,false);
+ assert.equal(recovered.data.history[0].noteRedacted,false);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),1);
+});
+
 test('1FQ real MySQL authenticated keyset audit walks past 100 events without BOLA or overlap',async()=>{
  // Generate 103 genuine internal application versions on a separate
  // disposable CI ticket owned by the OTHER test actor, not the primary ticket.
