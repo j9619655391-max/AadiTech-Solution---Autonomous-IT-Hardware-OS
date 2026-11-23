@@ -145,3 +145,46 @@ test('1FJ actual MySQL view GRANT is quarantined until revoked',async()=>{
   if(viewCreated)await admin.query('DROP VIEW '+object);
  }
 });
+
+// 1FL actual temporary MySQL principals: a user-supplied distinct credential
+// string alone is not a privileges guarantee. Observe independent server-side
+// identities and protected-table SQL denial on isolated disposable aaditech_ci.
+test('1FL actual temporary MySQL principals enforce auth/runtime read separation',async()=>{
+ const suffix=randomBytes(7).toString('hex');
+ const runtimeUser='ci_fl_runtime_'+suffix,authUser='ci_fl_auth_'+suffix;
+ const runtimeAccount="'"+runtimeUser+"'@'%'",authAccount="'"+authUser+"'@'%'";
+ const runtimePassword=randomBytes(32).toString('base64url'),
+  authPassword=randomBytes(32).toString('base64url');
+ let runtimeCreated=false,authCreated=false;
+ let runtimePool:mysql.Pool|undefined,authPool:mysql.Pool|undefined;
+ try{
+  await admin.query('CREATE USER '+runtimeAccount+' IDENTIFIED BY ?',[runtimePassword]);
+  runtimeCreated=true;
+  await admin.query('CREATE USER '+authAccount+' IDENTIFIED BY ?',[authPassword]);
+  authCreated=true;
+  await admin.query('GRANT SELECT ON aaditech_ci.crm_customers TO '+runtimeAccount);
+  await admin.query('GRANT SELECT ON aaditech_ci.auth_users TO '+authAccount);
+  runtimePool=mysql.createPool({...getDatabaseConfig(),user:runtimeUser,password:runtimePassword,
+   connectionLimit:1,waitForConnections:true});
+  authPool=mysql.createPool({...getDatabaseConfig(),user:authUser,password:authPassword,
+   connectionLimit:1,waitForConnections:true});
+  const [runtimeWho]=await runtimePool.query<any[]>('SELECT CURRENT_USER() AS current_user');
+  const [authWho]=await authPool.query<any[]>('SELECT CURRENT_USER() AS current_user');
+  assert.equal(runtimeWho.length,1);
+  assert.equal(authWho.length,1);
+  assert.notEqual(runtimeWho[0].current_user,authWho[0].current_user);
+  await runtimePool.query('SELECT id FROM crm_customers LIMIT 1');
+  await authPool.query('SELECT id FROM auth_users LIMIT 1');
+  await assert.rejects(
+   runtimePool.query('SELECT id FROM auth_users LIMIT 1'),
+   (err:any)=>err?.code==='ER_TABLEACCESS_DENIED_ERROR'||err?.code==='ER_DBACCESS_DENIED_ERROR');
+  await assert.rejects(
+   authPool.query('SELECT id FROM crm_customers LIMIT 1'),
+   (err:any)=>err?.code==='ER_TABLEACCESS_DENIED_ERROR'||err?.code==='ER_DBACCESS_DENIED_ERROR');
+ }finally{
+  if(runtimePool)await runtimePool.end();
+  if(authPool)await authPool.end();
+  if(runtimeCreated)await admin.query('DROP USER '+runtimeAccount);
+  if(authCreated)await admin.query('DROP USER '+authAccount);
+ }
+});
