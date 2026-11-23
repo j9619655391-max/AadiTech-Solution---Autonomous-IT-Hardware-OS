@@ -7,7 +7,9 @@ const schema='aaditech_staging_safe';
 const account="'runtime'@'%'";
 const tick=String.fromCharCode(96);
 const usage='GRANT USAGE ON *.* TO '+account;
-const scoped='GRANT SELECT, INSERT, UPDATE, DELETE ON '+tick+schema+tick+'.* TO '+account;
+const scoped='GRANT SELECT ON '+tick+schema+tick+'.* TO '+account;
+const scopedWrite='GRANT SELECT, INSERT, UPDATE, DELETE ON '+tick+schema+tick+'.* TO '+account;
+const ordinaryWrite='GRANT INSERT, UPDATE ON '+tick+schema+tick+'.'+tick+'crm_leads'+tick+' TO '+account;
 const table='GRANT SELECT ON '+tick+schema+tick+'.'+tick+'auth_users'+tick+' TO '+account;
 
 test('1FB rejects production, CI, unapproved staging, missing TLS and ambiguous target labels',()=>{
@@ -23,8 +25,9 @@ test('1FB rejects production, CI, unapproved staging, missing TLS and ambiguous 
   {...valid,STAGING_DISPOSABLE_CONFIRMED:'NO'}
  ])assert.throws(()=>runtimePrivilegePreflightTarget(env),/refused/);
 });
-test('1FB accepts only the current-user global USAGE and schema/table-bounded DML',()=>{
- for(const grants of [[usage,scoped],[usage,table],[scoped],[usage,scoped,table]]){
+test('1FE accepts global USAGE, read-only schema access and non-authority table-scoped writes',()=>{
+ for(const grants of [[usage,scoped],[usage,table],[scoped],[usage,scoped,table],
+  [usage,scoped,ordinaryWrite]]){
   const a=assessRuntimeGrantEnvelope(grants,schema);
   assert.equal(a.allowed,true,JSON.stringify(a.reasons));
   assert.ok(a.dataGrantCount>=1);
@@ -33,6 +36,15 @@ test('1FB accepts only the current-user global USAGE and schema/table-bounded DM
 });
 test('1FB denies global SELECT, admin/DDL, roles, non-target scopes and unrecognized grant shapes',()=>{
  const bad=[
+  scopedWrite,
+  'GRANT UPDATE ON '+schema+'.auth_users TO '+account,
+  'GRANT DELETE ON '+schema+'.auth_sessions TO '+account,
+  'GRANT INSERT ON '+schema+'.app_reviewer_scope_grants TO '+account,
+  'GRANT UPDATE ON '+schema+'.app_reviewer_scope_events TO '+account,
+  'GRANT DELETE ON '+schema+'.auth_security_events TO '+account,
+  'GRANT UPDATE ON '+schema+'.auth_totp_credentials TO '+account,
+  'GRANT INSERT ON '+schema+'.auth_totp_recovery_codes TO '+account,
+  'GRANT DELETE ON '+schema+'.auth_mfa_challenges TO '+account,
   'GRANT ALL PRIVILEGES ON *.* TO '+account,
   'GRANT SELECT ON *.* TO '+account,
   'GRANT CREATE ON '+schema+'.* TO '+account,

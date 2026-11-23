@@ -15,6 +15,15 @@ export function runtimePrivilegePreflightTarget(env:NodeJS.ProcessEnv):'staging'
 }
 export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;reasons:string[]};
 const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
+// Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
+// quarantine by writing authority or authentication state tables directly.
+// An approved isolated authority writer must use separate credentials and
+// independently governed operations; it is NOT provisioned by this script.
+const PROTECTED_AUTHORITY_TABLES=new Set([
+ 'auth_users','auth_sessions','app_reviewer_scope_grants',
+ 'app_reviewer_scope_events','auth_security_events',
+ 'auth_totp_credentials','auth_totp_recovery_codes','auth_mfa_challenges'
+]);
 export function assessRuntimeGrantEnvelope(grants:readonly string[],database:string):RuntimeGrantAssessment{
  const reasons:string[]=[];
  if(!/^[a-z0-9_]+$/.test(database)||database.length>64)
@@ -43,6 +52,13 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
   }
   if(!privileges.length||privileges.some(priv=>!DML.has(priv))){
    reasons.push('Grant includes schema/DDL/admin/unknown privilege');continue;
+  }
+  const hasWrite=privileges.some(priv=>priv!=='SELECT');
+  if(hasWrite&&parts[1]==='*'){
+   reasons.push('Runtime schema-wide data mutation grant forbidden');continue;
+  }
+  if(hasWrite&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
+   reasons.push('Runtime authority/authentication table mutation forbidden');continue;
   }
   dataGrantCount++;
  }

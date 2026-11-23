@@ -34,6 +34,20 @@ test('1FC actual MySQL grants: bounded SELECT passes, added TRIGGER privilege fa
    /1FC runtime database grant envelope unverified/,
    'Trigger DDL privilege must be observed and refused on actual MySQL');
   await admin.query('REVOKE TRIGGER ON \x60aaditech_ci\x60.* FROM '+literal);
+  // A normal MySQL table-scoped grant could restore a reviewer nomination
+  // after the auth_users quarantine trigger. Technical gate must reject it.
+  await admin.query('GRANT UPDATE ON \x60aaditech_ci\x60.\x60app_reviewer_scope_grants\x60 TO '+literal);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FC runtime database grant envelope unverified/,
+   'Direct reviewer authority mutation must be refused even without DDL');
+  await admin.query('REVOKE UPDATE ON \x60aaditech_ci\x60.\x60app_reviewer_scope_grants\x60 FROM '+literal);
+  await admin.query('GRANT INSERT ON \x60aaditech_ci\x60.* TO '+literal);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FC runtime database grant envelope unverified/,
+   'Schema-wide application data mutation must be refused');
+  await admin.query('REVOKE INSERT ON \x60aaditech_ci\x60.* FROM '+literal);
   const recovered=await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci');
   assert.equal(recovered.dataGrantCount,1);
  }finally{
