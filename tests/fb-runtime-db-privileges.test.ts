@@ -36,9 +36,9 @@ test('1FB rejects production, CI, unapproved staging, missing TLS and ambiguous 
   {...valid,STAGING_DISPOSABLE_CONFIRMED:'NO'}
  ])assert.throws(()=>runtimePrivilegePreflightTarget(env),/refused/);
 });
-test('1FF accepts global USAGE, explicit table read and non-authority table-scoped writes',()=>{
- for(const grants of [[usage,scoped],[usage,table],[scoped],[usage,scoped,table],
-  [usage,scoped,ordinaryWrite]]){
+test('1FH accepts global USAGE and explicit non-authority table-level DML only',()=>{
+ for(const grants of [[usage,scoped],[scoped],[usage,scoped,ordinaryWrite],
+  [usage,ordinaryWrite]]){
   const a=assessRuntimeGrantEnvelope(grants,schema);
   assert.equal(a.allowed,true,JSON.stringify(a.reasons));
   assert.ok(a.dataGrantCount>=1);
@@ -49,9 +49,35 @@ test('1FF schema-wide read cannot expose unreviewed auth, MFA, CRM and evidence 
  const wide=assessRuntimeGrantEnvelope([usage,schemaWideRead],schema);
  assert.equal(wide.allowed,false);
  assert.ok(wide.reasons.includes('Runtime schema-wide data access forbidden'));
- const focused=assessRuntimeGrantEnvelope([usage,table,scoped,ordinaryWrite],schema);
+ const focused=assessRuntimeGrantEnvelope([usage,scoped,ordinaryWrite],schema);
  assert.equal(focused.allowed,true);
- assert.equal(focused.dataGrantCount,3);
+ assert.equal(focused.dataGrantCount,2);
+});
+test('1FH explicit SELECT on auth, MFA and reviewer authority tables fails closed',()=>{
+ const protectedTables=[
+  'auth_users','auth_sessions','app_reviewer_scope_grants',
+  'app_reviewer_scope_events','auth_security_events',
+  'auth_totp_credentials','auth_totp_recovery_codes','auth_mfa_challenges'
+ ];
+ for(const name of protectedTables){
+  for(const privileges of ['SELECT','SELECT, UPDATE']){
+   const grant='GRANT '+privileges+' ON '+tick+schema+tick+'.'+tick+name+tick+' TO '+account;
+   const result=assessRuntimeGrantEnvelope([usage,scoped,grant],schema);
+   assert.equal(result.allowed,false,grant);
+   assert.ok(result.reasons.includes('Runtime authority/authentication table read forbidden'));
+   assert.equal(result.reasons.some(reason=>reason.includes(account)),false);
+  }
+ }
+ for(const grant of [
+  'GRANT SELECT ON '+schema+'.AUTH_USERS TO '+account,
+  'GRANT SELECT ON '+schema+'.auth_totp_credentials TO '+account
+ ]){
+  const result=assessRuntimeGrantEnvelope([usage,scoped,grant],schema);
+  assert.equal(result.allowed,false,grant);
+  assert.ok(result.reasons.includes('Runtime authority/authentication table read forbidden'));
+ }
+ const clean=assessRuntimeGrantEnvelope([usage,scoped,ordinaryWrite],schema);
+ assert.equal(clean.allowed,true);
 });
 test('1FB denies global SELECT, admin/DDL, roles, non-target scopes and unrecognized grant shapes',()=>{
  const bad=[
