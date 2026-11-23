@@ -124,9 +124,20 @@ export function verifyInternalTicketAuditWindow<T extends InternalTicketAuditEve
   throw Error('1FR audit CREATE missing from oldest bounded page');
  // The extra 101st record is a real adjoining event, not a fabricated
  // hasMore flag pointing across an undetected gap.
- if(historyHasMore&&newestFirst[INTERNAL_TICKET_HISTORY_LIMIT].versionAfter!==
-    history[0].versionAfter-1)
-  throw Error('1FR audit sentinel gap');
+ if(historyHasMore){
+  const sentinel=newestFirst[INTERNAL_TICKET_HISTORY_LIMIT];
+  if(sentinel.versionAfter!==history[0].versionAfter-1||
+     sentinel.toStatus!==history[0].fromStatus)
+   throw Error('1FR audit sentinel gap or status mismatch');
+  if(sentinel.versionAfter===1){
+   if(sentinel.operation!=='CREATE'||sentinel.fromStatus!==null||
+      sentinel.toStatus!=='OPEN_INTERNAL')throw Error('1FR audit sentinel genesis invalid');
+  }else if(sentinel.operation!=='STATUS_CHANGE'||
+    !isInternalTicketStatus(sentinel.fromStatus)||
+    !isInternalTicketStatus(sentinel.toStatus)||
+    !transitions[sentinel.fromStatus].includes(sentinel.toStatus))
+   throw Error('1FR audit sentinel transition invalid');
+ }
  for(let i=0;i<history.length;i++){
   const row=history[i];
   if(i>0){
