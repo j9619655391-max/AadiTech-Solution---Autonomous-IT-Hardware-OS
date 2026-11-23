@@ -19,7 +19,8 @@ export function runtimePrivilegePreflightTarget(env:NodeJS.ProcessEnv):'staging'
 export function inactiveRuntimeRoles(observed:unknown):boolean{
  return observed==='NONE';
 }
-export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;dataGrantTables:string[];reasons:string[]};
+export const OWNER_GUARD_ROUTINE='aaditech_guard_active_owner';
+export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;dataGrantTables:string[];routineGrantCount:number;reasons:string[]};
 const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
 // Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
 // quarantine by writing authority or authentication state tables directly.
@@ -37,6 +38,7 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
  if(!Array.isArray(grants)||grants.length===0||grants.length>128)
   reasons.push('Grant inventory missing or oversized');
  let dataGrantCount=0;
+ let routineGrantCount=0;
  const dataGrantTables=new Set<string>();
  for(const line of grants){
   if(typeof line!=='string'||line.length>8192||/[\r\n\0]/.test(line)){
@@ -52,6 +54,22 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
    reasons.push('Grant SQL object quoting unrecognized');continue;
   }
   if(scope==='*.*'&&privileges.length===1&&privileges[0]==='USAGE')continue;
+  // Phase 1FO: a SINGLE exact procedure-level EXECUTE exception can provide
+  // same-transaction auth_users FOR UPDATE without table SELECT privileges.
+  // Never admit EXECUTE on a schema, function, unrelated routine or wildcard.
+  if(/^PROCEDURE\s+/i.test(scope)){
+   const routine=/^PROCEDURE\s+([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$/i.exec(scope);
+   if(!routine||routine[1].toLowerCase()!==database.toLowerCase()||
+      routine[2].toLowerCase()!==OWNER_GUARD_ROUTINE||
+      privileges.length!==1||privileges[0]!=='EXECUTE'){
+    reasons.push('Runtime routine EXECUTE outside the exact OWNER guard is forbidden');
+   }else{
+    routineGrantCount++;
+    if(routineGrantCount>1)
+     reasons.push('Duplicate OWNER guard EXECUTE grants are forbidden');
+   }
+   continue;
+  }
   const parts=scope.split('.');
   if(parts.length!==2||parts[0].toLowerCase()!==database.toLowerCase()||
      (parts[1]!=='*'&&!/^[A-Za-z0-9_]+$/.test(parts[1]))){
@@ -81,7 +99,7 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
  }
  if(!dataGrantCount)reasons.push('No bounded target-schema DML grant observed');
  return {allowed:reasons.length===0,grantCount:grants.length,dataGrantCount,
-  dataGrantTables:[...dataGrantTables].sort(),reasons};
+  dataGrantTables:[...dataGrantTables].sort(),routineGrantCount,reasons};
 }
 
 // Phase 1FJ: a table-scoped grant may actually target a SQL SECURITY DEFINER
@@ -106,6 +124,33 @@ export function verifiedRuntimeBaseTableTargets(
  return targetTables.every(table=>typeof table==='string'&&
   /^[a-z0-9_]{1,64}$/.test(table)&&objects.get(table)==='BASE TABLE');
 }
+
+// This classification cannot prove who controls the DEFINER account or that
+// the installed routine body matches the reviewed source. External DBA trust
+// and a separately verified routine-body digest are still mandatory.
+export function verifiedRuntimeDefinerOwnerGuard(
+ rows:readonly unknown[],database:string
+):boolean{
+ if(!Array.isArray(rows)||rows.length>4096||!(/^[a-z0-9_]{1,64}$/).test(database))
+  return false;
+ let found=0;
+ for(const raw of rows){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
+  const row=raw as {ROUTINE_NAME?:unknown;ROUTINE_SCHEMA?:unknown;
+   ROUTINE_TYPE?:unknown;SECURITY_TYPE?:unknown};
+  if(typeof row.ROUTINE_NAME!=='string'||typeof row.ROUTINE_SCHEMA!=='string'||
+     typeof row.ROUTINE_TYPE!=='string'||typeof row.SECURITY_TYPE!=='string')
+   return false;
+  if(row.ROUTINE_NAME.toLowerCase()===OWNER_GUARD_ROUTINE){
+   found++;
+   if(found>1||row.ROUTINE_NAME!==OWNER_GUARD_ROUTINE||
+      row.ROUTINE_SCHEMA!==database||row.ROUTINE_TYPE!=='PROCEDURE'||
+      row.SECURITY_TYPE!=='DEFINER')return false;
+  }
+ }
+ return found===1;
+}
+
 async function main(){
  runtimePrivilegePreflightTarget(process.env);
  const cfg=getDatabaseConfig();
@@ -129,6 +174,16 @@ async function main(){
     'SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
    if(!verifiedRuntimeBaseTableTargets(receipt.dataGrantTables,objects))
     receipt.reasons.push('1FJ runtime grant object type unverified');
+  }
+  // Staging runtime must possess exact procedure-level EXECUTE, not raw
+  // authentication reads; same-session metadata must show a DEFINER PROCEDURE.
+  if(receipt.routineGrantCount!==1)
+   receipt.reasons.push('1FO runtime owner guard EXECUTE grant missing or duplicated');
+  if(receipt.routineGrantCount===1){
+   const [routines]=await conn.query<RowDataPacket[]>(
+    'SELECT ROUTINE_NAME,ROUTINE_SCHEMA,ROUTINE_TYPE,SECURITY_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE()');
+   if(!verifiedRuntimeDefinerOwnerGuard(routines,cfg.database))
+    receipt.reasons.push('1FO owner guard routine metadata unverified');
   }
   if(!authenticatedUser||selectedSchema!==cfg.database)
    receipt.reasons.push('Connected DB identity/schema did not match expected target');
