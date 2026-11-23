@@ -29,6 +29,7 @@ import { PortalsAndResellersView } from './components/PortalsAndResellersView';
 import { WorkflowsAndRAGView } from './components/WorkflowsAndRAGView';
 import { FinanceAndServiceView } from './components/FinanceAndServiceView';
 import { WindowsTroubleshootingWorkspace } from './components/WindowsTroubleshootingWorkspace';
+import { LiveServiceDeskWorkspace } from './components/LiveServiceDeskWorkspace';
 import { MarketingAndAgentView } from './components/MarketingAndAgentView';
 import { PredictiveAnalyticsView } from './components/PredictiveAnalyticsView';
 import { SystemHubView } from './components/SystemHubView';
@@ -644,6 +645,7 @@ export default function App() {
         )}
 
         {activeTab === 'troubleshooting' && <WindowsTroubleshootingWorkspace />}
+        {activeTab === 'service-desk' && <LiveServiceDeskWorkspace />}
 
         {activeTab === 'finance' && (
           <FinanceAndServiceView
