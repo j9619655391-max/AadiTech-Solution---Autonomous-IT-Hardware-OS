@@ -9,9 +9,10 @@ type Ticket={
  id:string;customerId:string;customerName?:string;guideId:string;
  subject:string;description:string;priority:Priority;status:Status;
  version:number;customerConsentState:'UNVERIFIED';externalDispatchState:'DISABLED';
+ subjectRedacted?:boolean;descriptionRedacted?:boolean;
 };
 type History={operation:'CREATE'|'STATUS_CHANGE';fromStatus:Status|null;toStatus:Status;
- note:string;versionAfter:number;createdAt:string};
+ note:string;versionAfter:number;createdAt:string;noteRedacted?:boolean};
 type Catalog={mode:'GUIDANCE_ONLY';items:{id:string;title:string}[]};
 type TicketList={items:Ticket[];mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHasMore:boolean;
@@ -255,6 +256,10 @@ export function LiveServiceDeskWorkspace(){
   </div>
   {detail&&<div className="space-y-4 rounded-xl border border-slate-700 bg-slate-900 p-5">
    <h3 className="font-semibold text-white">{detail.ticket.subject}</h3>
+   {(detail.ticket.subjectRedacted||detail.ticket.descriptionRedacted)&&
+    <p className="text-xs text-amber-300" role="note">
+     Potential legacy credential material masked by this application read. Stored source audit remains unchanged; omit secrets in future records.
+    </p>}
    <p className="text-sm text-slate-300">{detail.ticket.description}</p>
    <p className="text-xs text-amber-300">Status: {detail.ticket.status} · Version: {detail.ticket.version} · Consent: UNVERIFIED · Dispatch: DISABLED</p>
    {nextStates[detail.ticket.status].length>0&&
@@ -298,7 +303,7 @@ export function LiveServiceDeskWorkspace(){
    </div>
    <ol className="space-y-1 text-xs text-slate-300">
     {detail.history.map(e=><li key={e.versionAfter} className="rounded border border-slate-800 p-2">
-     v{e.versionAfter} · {e.operation} · {e.toStatus} · {e.note}
+     v{e.versionAfter} · {e.operation} · {e.toStatus} · {e.note}{e.noteRedacted?' (legacy credential risk masked)':''}
     </li>)}
    </ol>
   </div>}
