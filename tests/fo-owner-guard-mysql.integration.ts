@@ -94,6 +94,18 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   const observed=await checkStagingRuntimeDbPrivilegeIntegrity(
    runtime,'aaditech_ci',{requireOwnerGuard:true});
   assert.equal(observed.dataGrantCount,grants.length);
+  // Diagnose a broken same-session guard before any HTTP application work.
+  // Expose only fixed MySQL error codes, never principals/passwords or SQL text.
+  const guardConn=await runtime.getConnection();
+  try{
+   await guardConn.beginTransaction();
+   try{await lockActiveCrmOwner(guardConn,actor);}
+   catch(error){
+    const e=error as {code?:string;sqlState?:string};
+    throw Error('1FO restricted routine CALL error code: '+String(e.code)+' / '+String(e.sqlState));
+   }
+   await guardConn.rollback();
+  }finally{guardConn.release();}
 
   const app=express();
   app.use(express.json());
