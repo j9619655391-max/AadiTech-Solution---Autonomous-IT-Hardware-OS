@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig,getPool} from '../server/db';
-import {checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
+import {checkStagingRuntimeDbPrivilegeIntegrity,checkStagingAuthPrincipalBoundary} from '../scripts/staging-preflight';
 
 // Provision/remove randomly named accounts only on isolated disposable CI DB.
 // Never probe or modify real staging, production or third-party credentials.
@@ -173,6 +173,11 @@ test('1FL actual temporary MySQL principals enforce auth/runtime read separation
   assert.equal(runtimeWho.length,1);
   assert.equal(authWho.length,1);
   assert.notEqual(runtimeWho[0].principal_name,authWho[0].principal_name);
+  const  boundary=await checkStagingAuthPrincipalBoundary(
+   runtimePool,authPool,'aaditech_ci',runtimeUser,authUser);
+  assert.notEqual(boundary.runtimeFingerprint,boundary.authFingerprint);
+  assert.match(boundary.runtimeFingerprint,/^[0-9a-f]{16}$/);
+  assert.match(boundary.authFingerprint,/^[0-9a-f]{16}$/);
   await runtimePool.query('SELECT id FROM crm_customers LIMIT 1');
   await authPool.query('SELECT id FROM auth_users LIMIT 1');
   await assert.rejects(
