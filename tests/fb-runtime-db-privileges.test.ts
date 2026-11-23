@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {assessRuntimeGrantEnvelope,runtimePrivilegePreflightTarget} from '../scripts/phase1fb-runtime-db-privileges';
+import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget} from '../scripts/phase1fb-runtime-db-privileges';
 
 const schema='aaditech_staging_safe';
 const account="'runtime'@'%'";
@@ -13,6 +13,16 @@ const scopedWrite='GRANT SELECT, INSERT, UPDATE, DELETE ON '+tick+schema+tick+'.
 const ordinaryWrite='GRANT INSERT, UPDATE ON '+tick+schema+tick+'.'+tick+'crm_leads'+tick+' TO '+account;
 const table='GRANT SELECT ON '+tick+schema+tick+'.'+tick+'auth_users'+tick+' TO '+account;
 
+test('1FG requires exactly NONE from CURRENT_ROLE; any active, missing or malformed MySQL role fails closed',()=>{
+ assert.equal(inactiveRuntimeRoles('NONE'),true);
+ for(const v of [null,undefined,'','none','NONE ','\u0060authority\u0060@\u0060%\u0060',
+  "'authority'@'%'", "'role_a'@'%', 'role_b'@'%'",0,true,[],{}])
+  assert.equal(inactiveRuntimeRoles(v),false,String(v));
+ const src=readFileSync('scripts/phase1fb-runtime-db-privileges.ts','utf8');
+ assert.match(src,/CURRENT_ROLE\(\) AS active_roles/);
+ assert.match(src,/if\(!inactiveRuntimeRoles\(who\[0\]\?\.active_roles\)\)/);
+ assert.match(src,/active runtime DB roles present or unverified/);
+});
 test('1FB rejects production, CI, unapproved staging, missing TLS and ambiguous target labels',()=>{
  const valid={RUNTIME_DB_PRIVILEGE_PREFLIGHT:'YES',STAGING_DISPOSABLE_CONFIRMED:'YES',
   DB_NAME:schema,DB_SSL:'true',NODE_ENV:'staging'};
