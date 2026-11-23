@@ -789,6 +789,53 @@ test('owner-only reviewer administration revokes sessions and appends immutable 
   assert.equal((await call('/api/security/events?limit=1000')).status,400);
 });
 
+test('1EV: out-of-band SQL reviewer suspension quarantines dormant grants on HTTP re-enable',async()=>{
+  const baseRoute='/api/security/reviewers/'+reviewerId;
+  const staleToken='y'.repeat(43),staleCookie='aaditech_session='+staleToken;
+  // CI-only regression: simulate an external SQL operator who bypassed the
+  // application disable route, leaving an ACTIVE grant and a pre-disable session.
+  await db.execute("UPDATE app_reviewer_scope_grants SET state='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewerId]);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(staleToken),reviewerId,csrf]);
+  const [before]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(before[0].state,'ACTIVE','fixture must contain a latent scope before repair');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:staleCookie})).status,401,
+    'disabled reviewer must not authenticate despite stale session');
+  const freshStepUp=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(freshStepUp.status,200);
+  stepUpToken=freshStepUp.data.stepUpToken;
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'ACTIVE'},true,false)).status,403,
+    'CSRF denial must occur before status restoration');
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'ACTIVE'},true,true,{'x-step-up-token':'invalid'})).status,403,
+    'password step-up denial must occur before status restoration');
+  const [stillDisabled]=await db.execute<any[]>('SELECT status FROM auth_users WHERE id=?',[reviewerId]);
+  assert.equal(stillDisabled[0].status,'DISABLED');
+  const enabled=await call(baseRoute+'/status','PATCH',{status:'ACTIVE'});
+  assert.equal(enabled.status,200);
+  assert.equal(enabled.data.status,'ACTIVE');
+  assert.ok(Number(enabled.data.revokedWorkflowNominations)>=1);
+  assert.ok(Number(enabled.data.revokedSessions)>=1);
+  assert.equal(enabled.data.productionReleaseAuthorized,false);
+  assert.equal(enabled.data.releaseDecision,'HOLD');
+  const [quarantined]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(quarantined[0].state,'REVOKED','re-enable must not resurrect historic scope');
+  const [remaining]=await db.execute<any[]>(
+    "SELECT COUNT(*) AS n FROM app_reviewer_scope_grants WHERE reviewer_user_id=? AND state='ACTIVE'",
+    [reviewerId]);
+  assert.equal(Number(remaining[0].n),0,'all app-local reviewer scopes must be quarantined');
+  const [sessions]=await db.execute<any[]>(
+    'SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[reviewerId]);
+  assert.equal(Number(sessions[0].n),0,'stale sessions must be removed transactionally');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:staleCookie})).status,401,
+    'pre-disable session must stay invalid after re-enable');
+});
+
 test('authenticated self-revocation invalidates current owner session and is recorded',async()=>{
   assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,false)).status,403);
   assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,true,{'x-step-up-token':'bad'})).status,403);

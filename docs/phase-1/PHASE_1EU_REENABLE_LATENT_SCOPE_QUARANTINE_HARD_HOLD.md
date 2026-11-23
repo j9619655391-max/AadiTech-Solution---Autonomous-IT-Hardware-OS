@@ -10,7 +10,7 @@ Phase 1ET revoked app-local ACTIVE reviewer scope grants when its own `PATCH /ap
 
 - The existing OWNER-validated and reviewer-row-locked security-admin transaction now revokes *all* ACTIVE nominations for either status transition, ACTIVE **or** DISABLED, **before** changing account status. This happens in the same MySQL transaction as invalidating sessions and writing the preexisting reviewer-lifecycle security event.
 - Re-enable never automatically regrants a nomination. The existing distinct OWNER grant path (role checks, MFA, password step-up, CSRF and audited reason) remains mandatory for a future appointment. No automatic external action, new schema or expansion of delegated authority is introduced.
-- The 1ET Node source-contract regression now rejects a DISABLED-only cleanup branch and asserts revocation-before-status-update and commit ordering. Existing disposable CI MySQL/HTTP tests exercise the normal disable/enable lifecycle but **do not yet** simulate the new out-of-band SQL suspension scenario. That targeted independent MySQL HTTP regression is still pending; do not claim it passed.
+- The 1ET Node source-contract regression now rejects a DISABLED-only cleanup branch and asserts revocation-before-status-update and commit ordering. Phase 1EV adds a real disposable-CI-MySQL/HTTP regression that simulates out-of-band `DISABLED` SQL suspension with a latent ACTIVE grant and stale session, checks CSRF/step-up denials, then verifies atomic cleanup on authorized re-enable. The regression's existence is not a claim of hosted CI success; verify the exact committed SHA and separate push/PR runs before accepting it.
 
 ## Limits and future acceptance
 
