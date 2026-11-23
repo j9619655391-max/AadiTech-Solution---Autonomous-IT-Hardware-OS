@@ -111,3 +111,37 @@ test('1FG real MySQL activated default role is denied on the observed runtime se
   if(roleCreated)await admin.query('DROP ROLE '+delegatedRole);
  }
 });
+
+// 1FJ SQL SECURITY DEFINER view: grants on the view can expose definer-readable
+// auth rows even though raw auth_users grants are explicitly denied. This is
+// disposable CI only; only metadata is inspected, never protected row values.
+test('1FJ actual MySQL view GRANT is quarantined until revoked',async()=>{
+ const user='ci_fj_user_'+randomBytes(7).toString('hex');
+ const password=randomBytes(32).toString('base64url');
+ const view='ci_fj_view_'+randomBytes(7).toString('hex');
+ const account="'"+user+"'@'%'";
+ const object='\x60aaditech_ci\x60.\x60'+view+'\x60';
+ let userCreated=false,viewCreated=false;
+ let candidate:mysql.Pool|undefined;
+ try{
+  await admin.query('CREATE SQL SECURITY DEFINER VIEW '+object+
+   ' AS SELECT id FROM \x60aaditech_ci\x60.\x60auth_users\x60');
+  viewCreated=true;
+  await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);
+  userCreated=true;
+  await admin.query('GRANT SELECT ON '+object+' TO '+account);
+  candidate=mysql.createPool({...getDatabaseConfig(),user,password,
+   connectionLimit:1,waitForConnections:true});
+  await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FJ runtime grant target base-table metadata unverified/,
+   'A table-scoped SELECT on definer view must fail even without underlying auth grant');
+  await admin.query('REVOKE SELECT ON '+object+' FROM '+account);
+  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.\x60crm_customers\x60 TO '+account);
+  const restored=await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci');
+  assert.equal(restored.dataGrantCount,1);
+ }finally{
+  if(candidate)await candidate.end();
+  if(userCreated)await admin.query('DROP USER '+account);
+  if(viewCreated)await admin.query('DROP VIEW '+object);
+ }
+});
