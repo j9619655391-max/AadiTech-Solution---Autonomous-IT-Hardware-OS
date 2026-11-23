@@ -6,7 +6,7 @@ import {requireOwner} from '../auth/router';
 import {computeInternalAuditFingerprint,type InternalAuditFingerprintRow,InternalAuditFingerprintLimitError} from './fingerprint';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent,maskCredentialLikeTicketText
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent,maskCredentialLikeTicketText,parseInternalTicketListCursor,boundedInternalTicketList
 } from './validation';
 
 const router=Router();
@@ -25,6 +25,7 @@ function fail(res:import('express').Response,error:unknown){
 // MySQL RowDataPacket alone does not assert selected numeric audit aliases.
 interface InternalTicketAuditRow extends RowDataPacket, InternalTicketAuditEvent {}
 interface InternalTicketAnchor extends RowDataPacket {version:number;status:string}
+interface InternalTicketListRow extends RowDataPacket {id:string;createdAtKey:string}
 // Repeatable-read transaction snapshot is required: separate pool.query calls
 // can return mismatched ticket status and audit versions if mutations commit
 // between the two authorization and history reads.
@@ -69,17 +70,27 @@ const ownerScope=`JOIN crm_customers c ON c.id=t.customer_id AND c.deleted_at IS
   WHERE creator.entity_type='customers' AND creator.entity_id=c.id
    AND creator.operation='CREATE' AND creator.actor_user_id=t.owner_user_id)`;
 
-router.get('/',async(_req,res)=>{
+router.get('/',async(req,res)=>{
+ let cursor:ReturnType<typeof parseInternalTicketListCursor>;
+ try{cursor=parseInternalTicketListCursor(req.query);}
+ catch(e){fail(res,e);return;}
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
-  const [rows]=await db.query<RowDataPacket[]>(
-   `SELECT ${listProjection} FROM service_tickets_internal t ${ownerScope}
-    WHERE t.owner_user_id=? ORDER BY t.created_at DESC,t.id DESC LIMIT 100`,
-   [res.locals.auth.userId]);
-  res.json({items:rows.map(maskedTicket),limit:100,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+  // Reapply the exact OWNER and original CRM customer CREATE provenance
+  // for every cursor request. Tie-break by UUID for equal DB timestamps.
+  const [rows]=await db.query<InternalTicketListRow[]>(
+   `SELECT ${listProjection},DATE_FORMAT(t.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAtKey
+    FROM service_tickets_internal t ${ownerScope}
+    WHERE t.owner_user_id=? ${cursor?
+     'AND (t.created_at<? OR (t.created_at=? AND t.id<?))':''}
+    ORDER BY t.created_at DESC,t.id DESC LIMIT 101`,
+   cursor?[res.locals.auth.userId,cursor.beforeCreatedAt,cursor.beforeCreatedAt,cursor.beforeId]:
+    [res.locals.auth.userId]);
+  const page=boundedInternalTicketList(rows,cursor);
+  res.json({...page,items:page.items.map(maskedTicket),
+   mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
-
 
 router.get('/:id',async(req,res)=>{
  if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
