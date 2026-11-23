@@ -52,3 +52,18 @@ export function validateTicketTransition(body:unknown,current:InternalTicketStat
 export function isInternalTicketStatus(value:unknown):value is InternalTicketStatus{
  return typeof value==='string'&&statuses.includes(value as InternalTicketStatus);
 }
+
+// Phase 1FP: never let a single internal ticket detail GET materialize
+// unbounded audit events. The SQL caller selects newest first with LIMIT 101;
+// this restores chronological order for the newest 100 while accurately
+// reporting whether older internal entries require future governed paging.
+export const INTERNAL_TICKET_HISTORY_LIMIT=100;
+export function boundedInternalTicketHistory<T>(newestFirst:readonly T[]){
+ if(!Array.isArray(newestFirst)||newestFirst.length>INTERNAL_TICKET_HISTORY_LIMIT+1)
+  throw Error('Internal ticket history query bound unverified');
+ return {
+  history:newestFirst.slice(0,INTERNAL_TICKET_HISTORY_LIMIT).reverse(),
+  historyLimit:INTERNAL_TICKET_HISTORY_LIMIT,
+  historyHasMore:newestFirst.length>INTERNAL_TICKET_HISTORY_LIMIT
+ };
+}
