@@ -204,7 +204,7 @@ test('1FL auth pool only permits explicit distinct credential candidate outside 
   {...separate,AUTH_DB_USER:common.DB_USER},
   {...separate,AUTH_DB_PASSWORD:common.DB_PASSWORD},
   {...separate,AUTH_DB_USER:' auth_ci'},
-  {...separate,AUTH_DB_USER:'auth\\nci'},
+  {...separate,AUTH_DB_USER:'auth\nci'},
   {...separate,DB_USER:''},
   {...separate,DB_PASSWORD:''}
  ])assert.equal(authDatabaseCredentialState(env),'HOLD');
