@@ -159,6 +159,52 @@ test('1FN transition permissions, stale versions and held terminal state preserv
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[ticketId]),5);
 });
 
+test('1FT real MySQL rejects secret-bearing internal ticket writes without audit entries',async()=>{
+ const firstTickets=await count('service_tickets_internal','owner_user_id=?',[owner.id]);
+ const firstAudits=await count('service_ticket_audit_internal','actor_user_id=?',[owner.id]);
+ for(const input of [
+  {...payload(ownerCustomer),subject:'password=SuperSecret123456789!'},
+  {...payload(ownerCustomer),description:'CI-only dummy ghp_'+'Z'.repeat(30)}
+ ]){
+  const denied=await request('/','POST',input);
+  assert.equal(denied.status,400);
+  assert.match(denied.data.error,/Credential-like content/);
+  assert.ok(!JSON.stringify(denied.data).includes('SuperSecret'));
+ }
+ assert.equal(await count('service_tickets_internal','owner_user_id=?',[owner.id]),firstTickets);
+ assert.equal(await count('service_ticket_audit_internal','actor_user_id=?',[owner.id]),firstAudits);
+ const created=await request('/','POST',{
+  ...payload(ownerCustomer),
+  description:'CI synthetic device password reset loop; no credentials or customer consent'
+ });
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ for(const note of [
+  'authorization: Bearer '+'A'.repeat(34),
+  'aaditech_session='+'q'.repeat(32),
+  'client_secret=veryLongFakeClientCredential789'
+ ]){
+  const denied=await request('/'+id+'/status','PATCH',{
+   expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note
+  });
+  assert.equal(denied.status,400);
+  assert.match(denied.data.error,/Credential-like content/);
+ }
+ const unchanged=await request('/'+id);
+ assert.equal(unchanged.status,200);
+ assert.equal(unchanged.data.ticket.version,1);
+ assert.equal(unchanged.data.history.length,1);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),1);
+ const safe=await request('/'+id+'/status','PATCH',{
+  expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',
+  note:'No credentials collected; password reset described without secrets'
+ });
+ assert.equal(safe.status,200);
+ assert.equal(safe.data.version,2);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),2);
+ assert.equal((await request('/'+id+'/audit-fingerprint')).status,200);
+});
+
 test('1FQ real MySQL authenticated keyset audit walks past 100 events without BOLA or overlap',async()=>{
  // Generate 103 genuine internal application versions on a separate
  // disposable CI ticket owned by the OTHER test actor, not the primary ticket.
