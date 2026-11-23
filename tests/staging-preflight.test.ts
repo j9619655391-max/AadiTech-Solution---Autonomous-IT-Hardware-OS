@@ -82,11 +82,11 @@ test('1EZ CLI keeps failed live trigger checks as HOLD and never treats checksum
 });
 
 function observedRuntimeGrants({
- user="runtime_service@%",schema='aaditech_staging_disposable',
+ user="runtime_service@%",schema='aaditech_staging_disposable',roles='NONE',
  grants=["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
   "GRANT SELECT ON aaditech_staging_disposable.crm_customers TO 'runtime_service'@'%'"],
  deny=false
-}:{user?:string;schema?:string;grants?:string[];deny?:boolean}={}){
+}:{user?:string;schema?:string;roles?:unknown;grants?:string[];deny?:boolean}={}){
  const sql:string[]=[];
  let acquire=0,release=0;
  const db={getConnection:async()=>{
@@ -95,7 +95,7 @@ function observedRuntimeGrants({
    sql.push(query);
    if(deny)throw Error("ACCESS DENIED to account 'secret'@'private'");
    if(query.startsWith('SELECT CURRENT_USER()'))
-    return [[{authenticated_user:user,selected_schema:schema}],[]];
+    return [[{authenticated_user:user,selected_schema:schema,active_roles:roles}],[]];
    if(query==='SHOW GRANTS FOR CURRENT_USER()')
     return [grants.map(value=>({'Grants for CURRENT_USER()':value})),[]];
    throw Error('Unexpected SQL');
@@ -110,7 +110,7 @@ test('1FC read-only staging runtime privilege gate observes authenticated curren
  assert.equal(acquired(),1);
  assert.equal(released(),1);
  assert.deepEqual(sql,[
-  'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema',
+  'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema, CURRENT_ROLE() AS active_roles',
   'SHOW GRANTS FOR CURRENT_USER()'
  ]);
 });
@@ -118,6 +118,9 @@ test('1FC privilege checks fail-closed on unexpected identity/schema, global gra
  const hostile=[
   {schema:'aaditech_production'},
   {user:''},
+  {roles:null},
+  {roles:'none'},
+  {roles:"'authority_role'@'%'"},
   {grants:[]},
   {grants:["GRANT ALL PRIVILEGES ON *.* TO 'runtime_service'@'%'"]},
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
@@ -143,6 +146,8 @@ test('1FC privilege checks fail-closed on unexpected identity/schema, global gra
 test('1FC staging CLI requires grant PASS; CI result explicitly declines actual staging privilege certification',()=>{
  const src=readFileSync('scripts/staging-preflight.ts','utf8');
  assert.match(src,/await checkStagingRuntimeDbPrivilegeIntegrity\(connection,cfg\.database\)/);
+ assert.match(src,/CURRENT_ROLE\(\) AS active_roles/);
+ assert.match(src,/!inactiveRuntimeRoles\(identity\[0\]\.active_roles\)/);
  assert.match(src,/runtimePrivilegePreflightTarget\(process\.env\)/);
  assert.match(src,/target==='ci'\?'NOT_EVALUATED_CI':'HOLD'/);
  assert.match(src,/target==='ci'\|\|runtimeDbPrivileges==='PASS'/);
