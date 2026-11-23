@@ -29,7 +29,7 @@ const expectedTriggerBodies=new Map([
 // MySQL can preserve formatting differently. Ignore ONLY whitespace, case and
 // identifier quoting, never operators, predicates, tables or string literals.
 function canonicalTriggerStatement(sql:string){
- return sql.replace(/`/g,'').replace(/\\s+/g,' ').replace(/\\s*([=<>(),])\\s*/g,'$1').trim().toUpperCase();
+ return sql.replace(/`/g,'').replace(/\s+/g,' ').replace(/\s*([=<>(),])\s*/g,'$1').trim().toUpperCase();
 }
 export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  if(rows.length!==expectedTriggerBodies.size)
