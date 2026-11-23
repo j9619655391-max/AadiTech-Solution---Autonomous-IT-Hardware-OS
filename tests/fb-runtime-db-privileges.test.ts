@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget} from '../scripts/phase1fb-runtime-db-privileges';
+import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets} from '../scripts/phase1fb-runtime-db-privileges';
 
 const schema='aaditech_staging_safe';
 const account="'runtime'@'%'";
@@ -133,4 +133,27 @@ test('1FB source uses only current-user read-only grant observation and returns 
  assert.match(src,/outsideDbaControlVerified:false/);
  assert.match(src,/if\(!allowed\)process.exitCode=1/);
  assert.doesNotMatch(src,/\b(?:conn|db)\.(?:execute|run)\s*\(/);
+});
+
+test('1FJ runtime grant metadata distinguishes actual BASE TABLE from security-definer VIEW',()=>{
+ const assessed=assessRuntimeGrantEnvelope([usage,scoped,ordinaryWrite],schema);
+ assert.equal(assessed.allowed,true);
+ assert.deepEqual(assessed.dataGrantTables,['crm_customers','crm_leads']);
+ const normal=[{TABLE_NAME:'crm_customers',TABLE_TYPE:'BASE TABLE'},
+  {TABLE_NAME:'crm_leads',TABLE_TYPE:'BASE TABLE'}];
+ assert.equal(verifiedRuntimeBaseTableTargets(assessed.dataGrantTables,normal),true);
+ for(const rows of [
+  [{...normal[0],TABLE_TYPE:'VIEW'},normal[1]],
+  [{...normal[0],TABLE_TYPE:'SYSTEM VIEW'},normal[1]],
+  [normal[0]],
+  [...normal,{TABLE_NAME:'CRM_CUSTOMERS',TABLE_TYPE:'VIEW'}],
+  [{TABLE_NAME:'crm_customers',TABLE_TYPE:null},normal[1]],
+  [{TABLE_NAME:'crm_customers',TABLE_TYPE:'BASE TABLE'},null],
+  []
+ ])assert.equal(verifiedRuntimeBaseTableTargets(assessed.dataGrantTables,rows),false);
+ assert.equal(verifiedRuntimeBaseTableTargets([],normal),false);
+ assert.equal(verifiedRuntimeBaseTableTargets(['AUTH_USERS'],normal),false);
+ const src=readFileSync('scripts/phase1fb-runtime-db-privileges.ts','utf8');
+ assert.match(src,/information_schema\.TABLES WHERE TABLE_SCHEMA=DATABASE\(\)/);
+ assert.match(src,/verifiedRuntimeBaseTableTargets\(receipt\.dataGrantTables,objects\)/);
 });
