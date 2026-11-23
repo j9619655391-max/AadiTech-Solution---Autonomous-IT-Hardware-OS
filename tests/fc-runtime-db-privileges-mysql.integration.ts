@@ -22,12 +22,19 @@ test('1FC actual MySQL grants: bounded SELECT passes, added TRIGGER privilege fa
  try{
   await admin.query('CREATE USER '+literal+' IDENTIFIED BY ?',[password]);
   userCreated=true;
-  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.* TO '+literal);
+  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.\x60crm_customers\x60 TO '+literal);
   candidate=mysql.createPool({...getDatabaseConfig(),user,password,
    connectionLimit:1,waitForConnections:true});
   const allowed=await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci');
   assert.equal(allowed.grantCount,2);
   assert.equal(allowed.dataGrantCount,1);
+  // Phase 1FF: even schema-wide SELECT exposes confidential auth/CRM data.
+  await admin.query('GRANT SELECT ON \x60aaditech_ci\x60.* TO '+literal);
+  await assert.rejects(
+   checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+   /1FC runtime database grant envelope unverified/,
+   'Wildcard schema reads must fail even when writes remain table-scoped');
+  await admin.query('REVOKE SELECT ON \x60aaditech_ci\x60.* FROM '+literal);
   await admin.query('GRANT TRIGGER ON \x60aaditech_ci\x60.* TO '+literal);
   await assert.rejects(
    checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
