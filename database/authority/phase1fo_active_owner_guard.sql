@@ -2,7 +2,7 @@
 -- isolated-CI fixture, NOT an automatic production/staging deployment.
 -- NEVER run under the unprivileged application runtime account.
 -- No GRANT and no customer/email/MFA data returned to the invoker.
-CREATE PROCEDURE aaditech_guard_active_owner(IN p_actor CHAR(36))
+CREATE PROCEDURE aaditech_guard_active_owner(IN p_actor CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci)
 SQL SECURITY DEFINER
 MODIFIES SQL DATA
 BEGIN
