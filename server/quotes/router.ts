@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getPool } from '../db';
 import { requireOwner } from '../auth/router';
+import {CRMOwnerInactiveError,lockActiveCrmOwner} from '../crm/repository';
 import { calculateLine, paise, rupees, QuoteInputError } from './money';
 import { evaluateRevision, type RevisionProduct } from './revisions';
 
@@ -14,6 +15,7 @@ const draftNumber=(id:string)=>'ADQ-'+id;
 class QuoteConflictError extends Error {}
 
 function failed(res:import('express').Response,e:unknown) {
+  if(e instanceof CRMOwnerInactiveError){res.status(403).json({error:'Active OWNER account required'});return;}
   if(e instanceof QuoteInputError){res.status(400).json({error:e.message});return;}
   if(e instanceof QuoteConflictError){res.status(409).json({error:e.message});return;}
   console.error('Quote draft operation failed',e instanceof Error?e.name:'Unknown');
@@ -63,6 +65,9 @@ router.post('/',async(req,res)=>{
   const connection=await db.getConnection();
   try {
     await connection.beginTransaction();
+    // Phase 1FK: the middleware result is a pre-transaction snapshot.
+    // Serialize quote creation and idempotency replay with owner demotion.
+    await lockActiveCrmOwner(connection,res.locals.auth.userId);
     // Unique (actor,key) insert serializes concurrent retries; rollback
     // clears reservations when the corresponding draft is not committed.
     const [claim]=await connection.execute<ResultSetHeader>(
@@ -181,6 +186,9 @@ router.post('/:id/revisions',async(req,res)=>{
   const conn=await db.getConnection();
   try{
     await conn.beginTransaction();
+    // Phase 1FK: keep owner role/status locked through revision commit.
+    // This also guards a role demotion after successful HTTP middleware.
+    await lockActiveCrmOwner(conn,res.locals.auth.userId);
     // This parent row serializes revision creation for this draft.
     const [owned]=await conn.query<RowDataPacket[]>(
       'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? FOR UPDATE',
