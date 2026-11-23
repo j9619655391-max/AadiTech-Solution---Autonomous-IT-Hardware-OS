@@ -40,6 +40,17 @@ async function call(path:string,method='GET',body?:unknown,as:'owner'|'reviewer'
  if(raw){try{data=JSON.parse(raw);}catch{data={error:'Invalid non-JSON response'};}}
  return {status:response.status,data};
 }
+// A 1EW role/status SQL transition invalidates the old owner cookie. Re-create
+// an explicit synthetic CI session and fresh password step-up after recovery.
+async function reauthenticateOwnerAfterSqlTransition(){
+ const [old]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_sessions WHERE token_hash=?',[hashToken(ownerToken)]);
+ assert.equal(Number(old[0].n),0,'SQL identity change must revoke the owner session');
+ await db.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
+  [hashToken(ownerToken),owner,csrf]);
+ const stepped=await call('/api/auth/step-up','POST',{currentPassword:ownerPass});
+ assert.equal(stepped.status,200);
+ ownerStep=String(stepped.data.stepUpToken);
+}
 test('establish disposable real MySQL identities and supplier/catalog/site fixtures',async()=>{
  await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
   [owner,'proc-owner-'+owner+'@example.invalid','CI Procurement Owner',await hashPassword(ownerPass),'OWNER']);
@@ -399,6 +410,7 @@ test('1ER disabled or demoted OWNER cannot expose or authorize old PROCUREMENT n
     column+' known ID write should deny before duplicate-decision check');
   }finally{
    await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+   await reauthenticateOwnerAfterSqlTransition();
   }
   assert.equal((await call(detail,'GET',undefined,'reviewer')).status,200,
    'Restored source author state permits prior scoped read, not a new grant');
@@ -418,7 +430,7 @@ test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',a
  assert.equal(await count('app_reviewer_scope_grants'),0);
  assert.equal(await count('app_reviewer_scope_events'),0);
  for(const [column,invalid,restore,expectedStatus] of [
-  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',403]
+  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',401]
  ] as const){
   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
   try{
@@ -430,6 +442,7 @@ test('1ES suspended or demoted nominating OWNER cannot create reviewer scopes',a
     column+' denial cannot create an audit event');
   }finally{
    await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+   await reauthenticateOwnerAfterSqlTransition();
   }
  }
  const granted=await call('/api/reviewer-scopes','POST',grant);
@@ -457,7 +470,7 @@ test('1ET reviewer disable withdraws every scope; enable never resurrects them; 
  assert.equal((await rows()).some(x=>x.workflow_scope==='PROCUREMENT'&&x.state==='ACTIVE'),true);
  // Stale owner authority must be denied even when the target is an active reviewer.
  for(const [column,invalid,restore,expected] of [
-  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',403]
+  ['status','DISABLED','ACTIVE',401],['role','REVIEWER','OWNER',401]
  ] as const){
   await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[invalid,owner]);
   try{
@@ -466,6 +479,7 @@ test('1ET reviewer disable withdraws every scope; enable never resurrects them; 
    assert.equal((await rows()).some(x=>x.workflow_scope==='PROCUREMENT'&&x.state==='ACTIVE'),true);
   }finally{
    await db.execute('UPDATE auth_users SET '+column+'=? WHERE id=?',[restore,owner]);
+   await reauthenticateOwnerAfterSqlTransition();
   }
  }
  const disabled=await call(target,'PATCH',{status:'DISABLED'});
@@ -490,15 +504,18 @@ test('1ET reviewer disable withdraws every scope; enable never resurrects them; 
  assert.equal((await call('/api/reviewer-scopes','POST',grant)).status,201);
  assert.equal((await call('/api/procurement/review/requests','GET',undefined,'reviewer'))
   .data.items.some((x:any)=>x.id===requestId),true);
- // A demoted identity can be manually revoked, but never granted anew.
+ // Database triggers automatically revoke a demoted reviewer; a repeated
+ // manual REVOKE now conflicts rather than recreating an audit decision.
  await db.execute("UPDATE auth_users SET role='OWNER' WHERE id=?",[reviewer]);
  try{
   assert.equal((await call('/api/reviewer-scopes','POST',{
-   ...grant,decision:'REVOKE',reason:'Remove obsolete reviewer authority after account demotion'})).status,201);
+   ...grant,decision:'REVOKE',reason:'Remove obsolete reviewer authority after account demotion'})).status,409);
   assert.equal((await call('/api/reviewer-scopes','POST',grant)).status,400);
  }finally{
   await db.execute("UPDATE auth_users SET role='REVIEWER' WHERE id=?",[reviewer]);
  }
+ await db.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
+  [hashToken(reviewerToken),reviewer,csrf]);
  assert.equal((await rows()).some(x=>x.state==='ACTIVE'),false);
  assert.equal((await call('/api/procurement/review/requests','GET',undefined,'reviewer'))
   .data.items.some((x:any)=>x.id===requestId),false);
