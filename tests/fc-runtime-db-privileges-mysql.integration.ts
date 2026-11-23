@@ -168,11 +168,11 @@ test('1FL actual temporary MySQL principals enforce auth/runtime read separation
    connectionLimit:1,waitForConnections:true});
   authPool=mysql.createPool({...getDatabaseConfig(),user:authUser,password:authPassword,
    connectionLimit:1,waitForConnections:true});
-  const [runtimeWho]=await runtimePool.query<any[]>('SELECT CURRENT_USER() AS current_user');
-  const [authWho]=await authPool.query<any[]>('SELECT CURRENT_USER() AS current_user');
+  const [runtimeWho]=await runtimePool.query<any[]>('SELECT CURRENT_USER() AS principal_name');
+  const [authWho]=await authPool.query<any[]>('SELECT CURRENT_USER() AS principal_name');
   assert.equal(runtimeWho.length,1);
   assert.equal(authWho.length,1);
-  assert.notEqual(runtimeWho[0].current_user,authWho[0].current_user);
+  assert.notEqual(runtimeWho[0].principal_name,authWho[0].principal_name);
   await runtimePool.query('SELECT id FROM crm_customers LIMIT 1');
   await authPool.query('SELECT id FROM auth_users LIMIT 1');
   await assert.rejects(
