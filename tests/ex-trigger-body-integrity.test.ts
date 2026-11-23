@@ -18,6 +18,7 @@ test('1EX accepts the exact enforcement bodies with MySQL whitespace/identifier-
  assert.doesNotThrow(()=>verifyEwTriggerBodies(expected));
  const formatted=expected.map(row=>({
   TRIGGER_NAME:row.TRIGGER_NAME.toUpperCase(),
+  ACTION_TIMING:row.ACTION_TIMING,
   ACTION_STATEMENT:'  '+(row.ACTION_STATEMENT??'').replace(/ WHERE /g,'\n  WHERE ')
    .replace(/=/g,' = ').replace(/app_reviewer_scope_grants/g,'`app_reviewer_scope_grants`')+' '
  }));
@@ -38,7 +39,7 @@ test('1EX fails closed when a privileged actor preserves the names but changes t
 test('1EX fails closed on missing, extra, duplicate, swapped and NULL trigger bodies',()=>{
  for(const rows of [
   expected.slice(0,1),
-  [...expected,{TRIGGER_NAME:'trg_unapproved',ACTION_STATEMENT:'SELECT 1'}],
+  [...expected,{TRIGGER_NAME:'trg_unapproved',ACTION_STATEMENT:'SELECT 1',ACTION_TIMING:'AFTER'}],
   [expected[0],expected[0]],
   [expected[1],expected[0],expected[1]],
   changed(1,String(expected[0].ACTION_STATEMENT)),
