@@ -299,7 +299,8 @@ test('1FO dual-principal observer rejects shared identity, missing metadata, act
   await assert.rejects(checkStagingAuthPrincipalBoundary(rt.db,au.db,
    'aaditech_staging_safe','runtime_ci','auth_ci'));
   assert.equal(rt.released(),1,'runtime connection must always release');
-  assert.equal(au.released(),scenario.auth.failAcquire?0:1,'auth connection must release when acquired');
+  assert.equal(au.released(),('failAcquire' in scenario.auth && scenario.auth.failAcquire)?0:1,
+   'auth connection must release when acquired');
  }
  for(const [runtime,auth] of [['bad@name','auth_ci'],['runtime_ci','runtime_ci'],['runtime_ci','']] ){
   const rt=observedAuthBoundary({user:'runtime_ci@%',protectedTableDenied:true});
