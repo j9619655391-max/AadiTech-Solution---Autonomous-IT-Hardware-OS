@@ -6,6 +6,7 @@ import { getPool } from '../server/db';
 import { hashPassword, hashToken } from '../server/auth/crypto';
 import crmRouter from '../server/crm/router';
 import quoteDraftRouter from '../server/quotes/router';
+import troubleshootingRouter from '../server/troubleshooting/router';
 import quoteReviewRouter from '../server/quotes/reviewRouter';
 import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
 import securityAdminRouter from '../server/security/adminRouter';
@@ -40,7 +41,7 @@ test('setup isolated owner session',async()=>{
   // Only this actor/workflow receives an explicit synthetic CI review scope.
   await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'QUOTES')",
    [actor,reviewerId]);
-  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/reviewer-scopes',reviewerScopeRouter);app.use('/api/crm',crmRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/reviewer-scopes',reviewerScopeRouter);app.use('/api/crm',crmRouter);app.use('/api/help/troubleshooting',troubleshootingRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
   const addr=server.address();
@@ -65,6 +66,35 @@ async function call(route:string, method='GET', body?:unknown, authorized=true, 
   return {status:response.status,data:raw?JSON.parse(raw):null,setCookie:response.headers.get('set-cookie')};
 }
 
+test('1FM real MySQL sessions can read 20 Windows guides but cannot mutate service state',async()=>{
+ const list=await call('/api/help/troubleshooting');
+ assert.equal(list.status,200);
+ assert.equal(list.data.mode,'GUIDANCE_ONLY');
+ assert.equal(list.data.deviceInspected,false);
+ assert.equal(list.data.actionsExecuted,false);
+ assert.equal(list.data.total,20);
+ assert.equal(new Set(list.data.items.map((g:{id:string})=>g.id)).size,20);
+ const filtered=await call('/api/help/troubleshooting?q=blue%20screen');
+ assert.equal(filtered.status,200);
+ assert.deepEqual(filtered.data.items.map((g:{id:string})=>g.id),['blue-screen']);
+ const network=await call('/api/help/troubleshooting?category=NETWORK');
+ assert.equal(network.status,200);
+ assert.deepEqual(network.data.items.map((g:{id:string})=>g.id).sort(),
+  ['vpn-no-internet','wifi-no-internet']);
+ const detail=await call('/api/help/troubleshooting/suspected-malware');
+ assert.equal(detail.status,200);
+ assert.equal(detail.data.item.category,'SECURITY');
+ assert.equal(detail.data.actionsExecuted,false);
+ assert.ok(detail.data.item.firstChecks.length>=2);
+ assert.equal((await call('/api/help/troubleshooting?category=DROP')).status,400);
+ assert.equal((await call('/api/help/troubleshooting?q=a&q=b')).status,400);
+ assert.equal((await call('/api/help/troubleshooting/not-a-guide')).status,404);
+ assert.equal((await call('/api/help/troubleshooting', 'POST',{})).status,404);
+ assert.equal((await call('/api/help/troubleshooting','GET',undefined,false)).status,401);
+ const reviewer=await call('/api/help/troubleshooting','GET',undefined,true,true,{cookie:reviewerCookie});
+ assert.equal(reviewer.status,200,'authenticated reviewer may read public first-response guidance');
+ assert.equal(reviewer.data.total,20);
+});
 test('roles are independent: reviewer cannot mutate CRM or draft, owner cannot sign review decisions',async()=>{
   const reviewSession=await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:reviewerCookie});
   assert.equal(reviewSession.status,200);
