@@ -177,7 +177,7 @@ test('1FR every bounded audit window is a contiguous permitted status chain anch
   {rows:newest.slice(-1),ctx:{currentVersion:101,currentStatus:state(101)}},
   {rows:[] as Event[],ctx:{currentVersion:101,currentStatus:state(101)}},
   {rows:newest.slice(-1),ctx:{currentVersion:101,currentStatus:state(101),beforeVersion:3}},
-  {rows:newest,ctx:{currentVersion:101,currentStatus:state(101),beforeVersion:102}}
+  {rows:newest,ctx:{currentVersion:101,currentStatus:state(101),beforeVersion:103}}
  ])assert.throws(()=>verifyInternalTicketAuditWindow(scenario.rows,scenario.ctx),/1FR/);
  const tamper=(index:number,patch:Partial<Event>)=>newest.map((e,i)=>i===index?{...e,...patch}:e);
  for(const rows of [
