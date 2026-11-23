@@ -16,6 +16,7 @@ const db=getPool();if(!db)throw Error('1FN isolated MySQL unavailable');
 after(async()=>{if(close)await close();await db.end();});
 type Actor={id:string;token:string;csrf:string;cookie:string};
 let owner:Actor,other:Actor,reviewer:Actor,ownerCustomer='',otherCustomer='',ticketId='',base='';
+let pagedTicketId='';
 let close:(()=>Promise<void>)|undefined;
 const repository=new MySQLCRMRepository(db);
 async function makeActor(role:'OWNER'|'REVIEWER'):Promise<Actor>{
@@ -164,6 +165,7 @@ test('1FQ real MySQL authenticated keyset audit walks past 100 events without BO
  const created=await request('/','POST',payload(otherCustomer),'other');
  assert.equal(created.status,201);
  const id=String(created.data.ticket.id);
+ pagedTicketId=id;
  for(let version=2;version<=103;version++){
   const nextStatus=version%2===0?'TRIAGED_INTERNAL':'WAITING_INTERNAL';
   const changed=await request('/'+id+'/status','PATCH',{
@@ -205,6 +207,69 @@ test('1FQ real MySQL authenticated keyset audit walks past 100 events without BO
   assert.equal(invalid.status,400,'untrusted cursor was accepted: '+query);
  }
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),103);
+});
+
+test('1FS real MySQL owner-only unsigned 103-event audit fingerprint and cap',async()=>{
+ assert.ok(pagedTicketId,'1FQ 103-event synthetic fixture must precede fingerprint validation');
+ const path='/'+pagedTicketId+'/audit-fingerprint';
+ const one=await request(path,'GET',undefined,'other');
+ assert.equal(one.status,200);
+ assert.equal(one.cache,'no-store');
+ assert.equal(one.data.ticketId,pagedTicketId);
+ assert.equal(one.data.eventCount,103);
+ assert.equal(one.data.latestVersion,103);
+ assert.equal(one.data.mode,'INTERNAL_HELD');
+ assert.equal(one.data.externalDispatchEnabled,false);
+ assert.equal(one.data.scope,'APPLICATION_UNATTESTED');
+ assert.equal(one.data.signatureVerified,false);
+ assert.equal(one.data.externalAnchorVerified,false);
+ assert.equal(one.data.customerConsentVerified,false);
+ assert.match(one.data.auditDigestSha256,/^[0-9a-f]{64}$/);
+ assert.equal(one.data.format,'aaditech/internal-ticket-audit/sha256/v1');
+ assert.equal(one.data.history,undefined);
+ assert.ok(!JSON.stringify(one.data).includes('CI-only verified audit pagination 42'),
+  'Fingerprint response must never return raw audit note content');
+ const repeated=await request(path,'GET',undefined,'other');
+ assert.equal(repeated.status,200);
+ assert.equal(repeated.data.auditDigestSha256,one.data.auditDigestSha256);
+ assert.equal((await request(path)).status,404,'foreign OWNER cannot fingerprint other ticket');
+ assert.equal((await request(path,'GET',undefined,'reviewer')).status,403);
+ assert.equal((await request(path,'GET',undefined,'anon')).status,401);
+ for(const query of ['?limit=100000','?beforeVersion=2','?probe=1&probe=2']){
+  assert.equal((await request(path+query,'GET',undefined,'other')).status,400,
+   'Untrusted fingerprint query parameter accepted');
+ }
+ const [rows]=await db!.query<any[]>(
+  'SELECT note FROM service_ticket_audit_internal WHERE ticket_id=? AND version_after=42',
+  [pagedTicketId]);
+ assert.equal(rows.length,1);
+ try{
+  await db!.execute(
+   'UPDATE service_ticket_audit_internal SET note=? WHERE ticket_id=? AND version_after=42',
+   ['CI-only deliberate data tamper, unsigned fingerprint',pagedTicketId]);
+  const modified=await request(path,'GET',undefined,'other');
+  assert.equal(modified.status,200,
+   'A self-calculated hash is NOT an independent tamper attestation');
+  assert.notEqual(modified.data.auditDigestSha256,one.data.auditDigestSha256);
+ }finally{
+  await db!.execute(
+   'UPDATE service_ticket_audit_internal SET note=? WHERE ticket_id=? AND version_after=42',
+   [rows[0].note,pagedTicketId]);
+ }
+ assert.equal((await request(path,'GET',undefined,'other')).data.auditDigestSha256,
+  one.data.auditDigestSha256);
+ try{
+  await db!.execute('UPDATE service_tickets_internal SET version=1001 WHERE id=?',[pagedTicketId]);
+  const over=await request(path,'GET',undefined,'other');
+  assert.equal(over.status,409);
+  assert.equal(over.data.mode,'INTERNAL_HELD');
+  assert.equal(over.data.externalDispatchEnabled,false);
+  assert.equal(over.data.auditDigestSha256,undefined);
+ }finally{
+  await db!.execute('UPDATE service_tickets_internal SET version=103 WHERE id=?',[pagedTicketId]);
+ }
+ assert.equal((await request(path,'GET',undefined,'other')).status,200);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[pagedTicketId]),103);
 });
 
 test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and tampered events',async()=>{
