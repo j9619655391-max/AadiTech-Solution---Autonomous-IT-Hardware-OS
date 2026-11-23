@@ -83,6 +83,9 @@ export function LiveServiceDeskWorkspace(){
  };
  const refresh=useCallback(async()=>{
   const requestSequence=++customerRequestSequence.current;
+  // A refresh invalidates any in-flight older-customer response; clear its
+  // spinner now, because the stale request deliberately skips its finally.
+  setLoadingCustomerPage(false);
   setLoading(true);setError('');
   try{
    const [list,crm,catalog]=await Promise.all([
