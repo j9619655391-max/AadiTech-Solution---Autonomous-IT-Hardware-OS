@@ -563,6 +563,8 @@ jobs:
         run: bun run test:fc-runtime-privileges-mysql
       - name: Phase 1FD live MySQL CRM owner demotion/mutation lock regression
         run: bun run test:fd-crm-owner-mysql
+      - name: Phase 1FK M04 quote OWNER role transition, replay and revision real MySQL regression
+        run: bun run test:fk-quote-owner-mysql
       - name: Verify owner-only inventory opening counts on disposable MySQL
         run: bun run test:inventory-mysql
       - name: Verify supplier attestation, independent purchase review and held PO
