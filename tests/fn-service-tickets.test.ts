@@ -113,7 +113,7 @@ test('1FP ticket audit detail bounds newest events and retains chronological dis
  assert.match(route,/ORDER BY a\.version_after DESC LIMIT 101/);
  assert.match(route,/verifyInternalTicketAuditWindow\(newestFirst,/);
  assert.equal((route.match(/db\.getConnection\(\)\.catch\(\(\)=>null\)/g)||[]).length,2);
- assert.match(route,/historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false/);
+ assert.match(route,/res\\.json\\(\\{\\.\\.\\.data,mode:'INTERNAL_HELD',externalDispatchEnabled:false\\}\\)/);
 });
 
 test('1FQ keyset history cursor rejects array, query pollution, zero and noncanonical integer',()=>{
