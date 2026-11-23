@@ -47,7 +47,7 @@ export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
     env.NODE_ENV==='test')return 'ci';
  if(env.STAGING_DISPOSABLE_CONFIRMED==='YES' &&
     /^aaditech_staging_[a-z0-9_]+$/.test(env.DB_NAME??'') &&
-    env.DB_SSL==='true')return 'staging';
+    env.DB_SSL==='true' && env.NODE_ENV!=='production')return 'staging';
  throw Error('Refusing preflight: target is not disposable CI or explicitly confirmed TLS staging DB');
 }
 

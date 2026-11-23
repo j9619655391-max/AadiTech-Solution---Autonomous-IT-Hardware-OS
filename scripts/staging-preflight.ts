@@ -7,9 +7,8 @@ import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-c
 // Phase 1EZ: read installed enforcement metadata without running migrations,
 // repairing triggers, opening reviewer scopes or elevating release status.
 export async function checkInstalledEwTriggerIntegrity(db: Pick<mysql.Pool,'query'>):Promise<void>{
- const [rows]=await db.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema.TRIGGERS
-  WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'
-    AND EVENT_MANIPULATION='UPDATE'`);
+ const [rows]=await db.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION FROM information_schema.TRIGGERS
+  WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'`);
  verifyEwTriggerBodies(rows);
 }
 

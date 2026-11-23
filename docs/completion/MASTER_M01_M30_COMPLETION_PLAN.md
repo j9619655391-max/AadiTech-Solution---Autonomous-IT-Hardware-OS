@@ -961,3 +961,10 @@ Corrective test-only change: `tests/provider-bridge-mysql.integration.ts`, `test
 - [ ] **All original Issue #2 and M01–M30 acceptance items remain open**, including authoritative business workflows and historical reconciliation, genuine external provider/legal/CCA/RCAI/eMudhra/MCA/live signed revocation proofs, protected-main nonauthor approvals, signed CI, immutable WORM/CAS/DR and independently accepted staging/security/business/operations evidence.
 
 **Unchanged HARD HOLD:** `productionReleaseAuthorized=false`; `productionReleaseBlocked=true`; `releaseDecision=HOLD`. No main merge, production deployment, genuine credential enrollment, messages, quotes, PO/GRN, stock/finance/tax posting.
+
+
+## Phase 1FB — full auth_users trigger event inventory (23 November 2026 IST)
+
+- [x] Development-only installed-trigger inventory in both 0048 migration rerun and read-only staging preflight covers INSERT/UPDATE/DELETE event kinds, not only UPDATE. Exact two named AFTER UPDATE bodies remain pinned; unexpected trigger/event metadata fails closed. Production-mode preflight is rejected. Fixture and adversarial tests updated; migration SQL unchanged. [Runbook](../phase-1/PHASE_1FB_FULL_TRIGGER_EVENT_INVENTORY_HARD_HOLD.md).
+- [ ] Record exact source-HEAD push/PR CI and disposable MySQL; independent DBA privilege/definer review, after-check drift and transaction-concurrency proof remain unverified.
+- [ ] Issue #2 and M01–M30 external/legal/CA/real-business acceptance remain OPEN. Draft PR unmerged, main unchanged, productionReleaseAuthorized=false, productionReleaseBlocked=true, releaseDecision=HOLD.

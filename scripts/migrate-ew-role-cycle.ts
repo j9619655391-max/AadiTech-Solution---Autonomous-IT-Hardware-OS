@@ -19,7 +19,7 @@ export function ewRoleCycleMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'
 // trigger still revokes reviewer grants and invalidates sessions. This validates
 // observed MySQL ACTION_STATEMENT bodies; it is NOT an external attestation or
 // protection against privileged SQL actors changing them after this check.
-export type EwInstalledTrigger={TRIGGER_NAME:string;ACTION_STATEMENT:string|null;ACTION_TIMING:string};
+export type EwInstalledTrigger={TRIGGER_NAME:string;ACTION_STATEMENT:string|null;ACTION_TIMING:string;EVENT_MANIPULATION:string};
 const expectedTriggerBodies=new Map([
  ['trg_ew_reviewer_grant_quarantine',
   "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)"],
@@ -57,6 +57,7 @@ export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
   const name=String(row.TRIGGER_NAME??'').toLowerCase();
   const expected=expectedTriggerBodies.get(name);
   if(!expected||seen.has(name))throw Error('1EX unknown or duplicate auth_users UPDATE trigger');
+  if(row.EVENT_MANIPULATION!=='UPDATE')throw Error('1FB unexpected auth_users trigger event');
   if(row.ACTION_TIMING!=='AFTER')throw Error('1EY unexpected auth_users BEFORE UPDATE trigger');
   if(canonicalTriggerStatement(String(row.ACTION_STATEMENT??''))!==canonicalTriggerStatement(expected))
    throw Error('1EX trigger ACTION_STATEMENT drift: '+name);
@@ -65,9 +66,8 @@ export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
  if(seen.size!==expectedTriggerBodies.size)throw Error('1EX required trigger missing');
 }
 async function assertInstalled(conn:mysql.Connection){
- const [rows]=await conn.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema.TRIGGERS
-  WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'
-    AND EVENT_MANIPULATION='UPDATE'`);
+ const [rows]=await conn.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION FROM information_schema.TRIGGERS
+  WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'`);
  verifyEwTriggerBodies(rows);
 }
 async function main(){

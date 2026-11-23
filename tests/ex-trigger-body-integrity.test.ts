@@ -7,9 +7,9 @@ import {verifyEwTriggerBodies,type EwInstalledTrigger} from '../scripts/migrate-
 // trusting that a trigger name proves the enforcement body has not been changed.
 const expected:EwInstalledTrigger[]=[
  {TRIGGER_NAME:'trg_ew_reviewer_grant_quarantine',
-  ACTION_STATEMENT:"UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)",ACTION_TIMING:'AFTER'},
+  ACTION_STATEMENT:"UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)",ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'UPDATE'},
  {TRIGGER_NAME:'trg_ew_reviewer_session_quarantine',
-  ACTION_STATEMENT:'DELETE FROM auth_sessions WHERE user_id=NEW.id AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)',ACTION_TIMING:'AFTER'}
+  ACTION_STATEMENT:'DELETE FROM auth_sessions WHERE user_id=NEW.id AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)',ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'UPDATE'}
 ];
 function changed(index:number,body:string):EwInstalledTrigger[]{
  return expected.map((row,i)=>i===index?{...row,ACTION_STATEMENT:body}:{...row});
@@ -18,7 +18,7 @@ test('1EX accepts the exact enforcement bodies with MySQL whitespace/identifier-
  assert.doesNotThrow(()=>verifyEwTriggerBodies(expected));
  const formatted=expected.map(row=>({
   TRIGGER_NAME:row.TRIGGER_NAME.toUpperCase(),
-  ACTION_TIMING:row.ACTION_TIMING,
+  ACTION_TIMING:row.ACTION_TIMING,EVENT_MANIPULATION:row.EVENT_MANIPULATION,
   ACTION_STATEMENT:'  '+(row.ACTION_STATEMENT??'').replace(/ WHERE /g,'\n  WHERE ')
    .replace(/=/g,' = ').replace(/app_reviewer_scope_grants/g,'`app_reviewer_scope_grants`')+' '
  }));
@@ -39,7 +39,7 @@ test('1EX fails closed when a privileged actor preserves the names but changes t
 test('1EX fails closed on missing, extra, duplicate, swapped and NULL trigger bodies',()=>{
  for(const rows of [
   expected.slice(0,1),
-  [...expected,{TRIGGER_NAME:'trg_unapproved',ACTION_STATEMENT:'SELECT 1',ACTION_TIMING:'AFTER'}],
+  [...expected,{TRIGGER_NAME:'trg_unapproved',ACTION_STATEMENT:'SELECT 1',ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'UPDATE'}],
   [expected[0],expected[0]],
   [expected[1],expected[0],expected[1]],
   changed(1,String(expected[0].ACTION_STATEMENT)),
@@ -49,7 +49,7 @@ test('1EX fails closed on missing, extra, duplicate, swapped and NULL trigger bo
 });
 test('1EX runner queries installed body and checks on first apply and checksum-verified rerun',()=>{
  const src=readFileSync('scripts/migrate-ew-role-cycle.ts','utf8');
- assert.match(src,/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema\.TRIGGERS/);
+ assert.match(src,/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION FROM information_schema\.TRIGGERS/);
  assert.match(src,/verifyEwTriggerBodies\(rows\)/);
  assert.match(src,/if\(applied\.has\(id\)\)/);
  assert.match(src,/if\(applied\.get\(id\)!==checksum\)/);
@@ -72,12 +72,25 @@ test('1EY does not normalize altered SQL literal bytes or unsafe identifier quot
  assert.doesNotThrow(()=>verifyEwTriggerBodies(quoted));
 });
 test('1EY rejects unexpected BEFORE UPDATE triggers even when AFTER bodies still match',()=>{
- assert.throws(()=>verifyEwTriggerBodies(expected.map((x,i)=>i===0?{...x,ACTION_TIMING:'BEFORE'}:x)),/1EY/);
+ assert.throws(()=>verifyEwTriggerBodies(expected.map((x,i)=>i===0?{...x,ACTION_TIMING:'BEFORE',EVENT_MANIPULATION:'UPDATE'}:x)),/1EY/);
  assert.throws(()=>verifyEwTriggerBodies([...expected,{
-  TRIGGER_NAME:'trg_shadow_before',ACTION_STATEMENT:'SET NEW.role=OLD.role',ACTION_TIMING:'BEFORE'
+  TRIGGER_NAME:'trg_shadow_before',ACTION_STATEMENT:'SET NEW.role=OLD.role',ACTION_TIMING:'BEFORE',EVENT_MANIPULATION:'UPDATE'
  }]),/1EX|1EY/);
  const src=readFileSync('scripts/migrate-ew-role-cycle.ts','utf8');
- assert.match(src,/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema\.TRIGGERS/);
+ assert.match(src,/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION FROM information_schema\.TRIGGERS/);
  assert.doesNotMatch(src,/AND ACTION_TIMING='AFTER'/);
  assert.match(src,/row\.ACTION_TIMING!=='AFTER'/);
+});
+
+test('1FB rejects wrong event labels and unexpected non-UPDATE trigger inventory',()=>{
+ for(const event of ['INSERT','DELETE','insert','UPDATE '])
+  assert.throws(()=>verifyEwTriggerBodies(expected.map((row,i)=>
+   i===0?{...row,EVENT_MANIPULATION:event}:row)),/1FB/);
+ assert.throws(()=>verifyEwTriggerBodies([...expected,{
+  TRIGGER_NAME:'trg_shadow_insert',ACTION_STATEMENT:'SET @x=1',
+  ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'INSERT'
+ }]),/1EX/);
+ const src=readFileSync('scripts/migrate-ew-role-cycle.ts','utf8');
+ assert.doesNotMatch(src,/AND EVENT_MANIPULATION='UPDATE'/);
+ assert.match(src,/row\.EVENT_MANIPULATION!=='UPDATE'/);
 });

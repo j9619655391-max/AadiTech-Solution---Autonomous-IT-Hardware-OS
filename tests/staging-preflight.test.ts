@@ -9,6 +9,8 @@ test('read-only readiness is denied by default and outside disposable DB',()=>{
  assert.throws(()=>checkPreflightTarget({STAGING_PREFLIGHT:'1',DB_NAME:'aaditech_production'}),/Refusing/);
  assert.throws(()=>checkPreflightTarget({STAGING_PREFLIGHT:'1',DB_NAME:'aaditech_staging_test',
   STAGING_DISPOSABLE_CONFIRMED:'YES',DB_SSL:'false'}),/Refusing/);
+ assert.throws(()=>checkPreflightTarget({STAGING_PREFLIGHT:'1',DB_NAME:'aaditech_staging_test',
+  STAGING_DISPOSABLE_CONFIRMED:'YES',DB_SSL:'true',NODE_ENV:'production'}),/Refusing/);
  assert.equal(checkPreflightTarget({STAGING_PREFLIGHT:'1',CRM_TEST_DB:'1',
   DB_NAME:'aaditech_ci',NODE_ENV:'test'}),'ci');
  assert.equal(checkPreflightTarget({STAGING_PREFLIGHT:'1',DB_NAME:'aaditech_staging_restore',
@@ -28,10 +30,10 @@ test('all known migration checksums derive from checked-in SQL bytes',()=>{
 const ewInstalled:EwInstalledTrigger[]=[
  {TRIGGER_NAME:'trg_ew_reviewer_grant_quarantine',
   ACTION_STATEMENT:"UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)",
-  ACTION_TIMING:'AFTER'},
+  ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'UPDATE'},
  {TRIGGER_NAME:'trg_ew_reviewer_session_quarantine',
   ACTION_STATEMENT:'DELETE FROM auth_sessions WHERE user_id=NEW.id AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)',
-  ACTION_TIMING:'AFTER'}
+  ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'UPDATE'}
 ];
 function observedEwTriggers(rows:EwInstalledTrigger[],deny=false){
  const statements:string[]=[];
@@ -46,10 +48,10 @@ test('1EZ staging preflight independently queries all installed auth_users UPDAT
  const {db,statements}=observedEwTriggers(ewInstalled);
  await checkInstalledEwTriggerIntegrity(db);
  assert.equal(statements.length,1);
- assert.match(statements[0],/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING FROM information_schema\.TRIGGERS/);
+ assert.match(statements[0],/SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION FROM information_schema\.TRIGGERS/);
  assert.match(statements[0],/TRIGGER_SCHEMA=DATABASE\(\)/);
  assert.match(statements[0],/EVENT_OBJECT_TABLE='auth_users'/);
- assert.match(statements[0],/EVENT_MANIPULATION='UPDATE'/);
+ assert.doesNotMatch(statements[0],/AND EVENT_MANIPULATION='UPDATE'/);
  assert.doesNotMatch(statements[0],/ACTION_TIMING='AFTER'/);
  assert.doesNotMatch(statements[0],/\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\s+(?:TABLE|TRIGGER|INTO|auth_users)\b/i);
 });
@@ -58,10 +60,13 @@ test('1EZ fail-closed on missing or tampered trigger metadata, including BEFORE 
   ...row,ACTION_STATEMENT:String(row.ACTION_STATEMENT).replace("'REVOKED'","'REV`OKED'")
  }:row);
  const before=[...ewInstalled,{TRIGGER_NAME:'trg_shadow_before',
-  ACTION_STATEMENT:'SET NEW.role=OLD.role',ACTION_TIMING:'BEFORE'}];
- for(const rows of [[],ewInstalled.slice(0,1),changed,before]){
+  ACTION_STATEMENT:'SET NEW.role=OLD.role',ACTION_TIMING:'BEFORE',EVENT_MANIPULATION:'UPDATE'}];
+ const unexpected=[...ewInstalled,{TRIGGER_NAME:'trg_shadow_insert',
+  ACTION_STATEMENT:'SET @x=1',ACTION_TIMING:'AFTER',EVENT_MANIPULATION:'INSERT'}];
+ const wrongEvent=ewInstalled.map((row,i)=>i===0?{...row,EVENT_MANIPULATION:'DELETE'}:row);
+ for(const rows of [[],ewInstalled.slice(0,1),changed,before,unexpected,wrongEvent]){
   const {db}=observedEwTriggers(rows);
-  await assert.rejects(checkInstalledEwTriggerIntegrity(db),/1E[XY]/);
+  await assert.rejects(checkInstalledEwTriggerIntegrity(db),/1E[XY]|1FB/);
  }
  const {db}=observedEwTriggers(ewInstalled,true);
  await assert.rejects(checkInstalledEwTriggerIntegrity(db),/ACCESS DENIED/);
