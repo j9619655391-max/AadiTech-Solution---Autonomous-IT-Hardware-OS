@@ -65,6 +65,12 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
   if(parts[1]==='*'){
    reasons.push('Runtime schema-wide data access forbidden');continue;
   }
+  // Phase 1FH: an explicit table SELECT still exposes raw password/MFA and
+  // reviewer-authority records. A separate credential-limited auth service
+  // and redacted views require independent design and live acceptance.
+  if(privileges.includes('SELECT')&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
+   reasons.push('Runtime authority/authentication table read forbidden');continue;
+  }
   const hasWrite=privileges.some(priv=>priv!=='SELECT');
   if(hasWrite&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
    reasons.push('Runtime authority/authentication table mutation forbidden');continue;
