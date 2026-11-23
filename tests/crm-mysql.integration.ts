@@ -115,6 +115,41 @@ test('lead and product records persist; product SKU enforced unique',async()=>{
 });
 
 
+test('1FI real MySQL CRM cannot save a rounded-below-minimum product price',async()=>{
+ const p={sku:'FI-'+randomUUID(),brand:'Example',model:'High precision fixture',
+  category:'SERVER',specs:'Synthetic decimal comparison only',unitCost:'0.01',
+  minPrice:'9007199254740992.01',sellingPrice:'9007199254740992.02',hsn:'8471'};
+ const invalid=await call('/api/crm/products','POST',
+  {...p,sku:'FI-deny-'+randomUUID(),sellingPrice:'9007199254740992.00'});
+ assert.equal(invalid.status,400,'creation must reject one-paisa undercut beyond IEEE-754 precision');
+ const created=await call('/api/crm/products','POST',p);
+ assert.equal(created.status,201);
+ assert.equal(created.data.minPrice,'9007199254740992.01');
+ assert.equal(created.data.sellingPrice,'9007199254740992.02');
+ assert.equal(created.data.version,1);
+ const badSell=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,sellingPrice:'9007199254740992.00'});
+ assert.equal(badSell.status,409,'partial selling-price patch must use exact stored minPrice');
+ const badMin=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.03'});
+ assert.equal(badMin.status,409,'partial minPrice patch must use exact stored sellingPrice');
+ const unchanged=await call('/api/crm/products/'+created.data.id);
+ assert.equal(unchanged.status,200);
+ assert.equal(unchanged.data.version,1);
+ assert.equal(unchanged.data.sellingPrice,'9007199254740992.02');
+ const valid=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.02'});
+ assert.equal(valid.status,200);
+ assert.equal(valid.data.version,2);
+ assert.equal(valid.data.minPrice,'9007199254740992.02');
+ assert.equal((await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.00'})).status,409);
+ const [audit]=await db.query<any[]>(
+  "SELECT operation FROM crm_audit_events WHERE entity_type='products' AND entity_id=?",
+  [created.data.id]);
+ assert.equal(audit.length,2,'rejected attempts must not append mutation audit events');
+});
+
 test('authenticated quote drafts snapshot verified product prices and do not send anything',async()=>{
   const customer=await call('/api/crm/customers','POST',{
     name:'Quote Test Customer',contactPerson:'Buyer',email:'quote-buyer@example.invalid',
