@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { getPool } from '../db';
-import { MySQLCRMRepository, type CRMRepository, validId } from './repository';
+import { MySQLCRMRepository, CRMOwnerInactiveError, type CRMRepository, validId } from './repository';
 import { InputError, parsePagination, parseVersion, validate, type CRMEntity } from './validation';
 import { requireOwner } from '../auth/router';
 
@@ -15,6 +15,7 @@ function defaultProvider(): CRMRepository | null {
   return pool ? new MySQLCRMRepository(pool) : null;
 }
 function error(res:Response,e:unknown) {
+  if(e instanceof CRMOwnerInactiveError) {res.status(403).json({error:'Active OWNER account required'});return;}
   if (e instanceof InputError) {res.status(400).json({error:e.message});return;}
   if(e && typeof e==='object' && 'code' in e && (e.code==='ER_DUP_ENTRY')) {res.status(409).json({error:'Duplicate record'});return;}
   // Do not leak SQL or database credentials in response bodies.
