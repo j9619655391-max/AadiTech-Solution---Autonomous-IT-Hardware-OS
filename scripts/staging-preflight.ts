@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import mysql from 'mysql2/promise';
-import {getDatabaseConfig} from '../server/db';
+import {getDatabaseConfig,authDatabaseCredentialState} from '../server/db';
 import {checkPreflightTarget,runStagingPreflight} from './lib/stagingPreflight';
 import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-cycle';
 import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets} from './phase1fb-runtime-db-privileges';
@@ -72,15 +72,21 @@ async function main(){
     runtimeDbPrivileges='PASS';
    }catch{ /* denied metadata, wide grants, missing opt-in, wrong DB: HOLD */ }
   }
+  // Phase 1FL is a candidate pool split, not proof that all application
+  // transactions can run under genuinely restricted DB privileges.
+  const authCredentialSeparation=target==='ci'?'NOT_EVALUATED_CI':
+   authDatabaseCredentialState(process.env)==='SEPARATE_CANDIDATE'? 'UNVERIFIED_CANDIDATE':'HOLD';
   const problems=[...result.problems];
+  if(target==='staging')problems.push('1FL auth/runtime credential and end-to-end service separation not independently verified');
   if(triggerIntegrity!=='PASS')
    problems.push('1EZ installed auth_users UPDATE trigger integrity unverified');
   if(target==='staging'&&runtimeDbPrivileges!=='PASS')
    problems.push('1FC staging runtime DB grant envelope unverified');
   const inspected={...result,
    ready:result.ready&&triggerIntegrity==='PASS'&&
-    (target==='ci'||runtimeDbPrivileges==='PASS'),
-   triggerIntegrity,runtimeDbPrivileges,
+    (target==='ci'||runtimeDbPrivileges==='PASS')&&target==='ci',
+   triggerIntegrity,runtimeDbPrivileges,authCredentialSeparation,
+   authFunctionalSeparationVerified:false,
    independentDbaApprovalVerified:false,
    problems};
   process.stdout.write(JSON.stringify(inspected,null,2)+'\n');
