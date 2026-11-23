@@ -15,14 +15,41 @@ export function ewRoleCycleMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'staging'
     env.DB_SSL==='true'&&env.NODE_ENV!=='production')return 'staging';
  throw Error('1EW migration denied outside disposable CI or explicitly approved isolated TLS staging');
 }
-const expectedTriggers=['trg_ew_reviewer_grant_quarantine','trg_ew_reviewer_session_quarantine'];
+// Phase 1EX: a trigger name alone is insufficient evidence that the installed
+// trigger still revokes reviewer grants and invalidates sessions. This validates
+// observed MySQL ACTION_STATEMENT bodies; it is NOT an external attestation or
+// protection against privileged SQL actors changing them after this check.
+export type EwInstalledTrigger={TRIGGER_NAME:string;ACTION_STATEMENT:string|null};
+const expectedTriggerBodies=new Map([
+ ['trg_ew_reviewer_grant_quarantine',
+  "UPDATE app_reviewer_scope_grants SET state='REVOKED' WHERE reviewer_user_id=NEW.id AND state='ACTIVE' AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)"],
+ ['trg_ew_reviewer_session_quarantine',
+  'DELETE FROM auth_sessions WHERE user_id=NEW.id AND (OLD.role<>NEW.role OR OLD.status<>NEW.status)']
+]);
+// MySQL can preserve formatting differently. Ignore ONLY whitespace, case and
+// identifier quoting, never operators, predicates, tables or string literals.
+function canonicalTriggerStatement(sql:string){
+ return sql.replace(/`/g,'').replace(/\\s+/g,' ').replace(/\\s*([=<>(),])\\s*/g,'$1').trim().toUpperCase();
+}
+export function verifyEwTriggerBodies(rows:EwInstalledTrigger[]):void{
+ if(rows.length!==expectedTriggerBodies.size)
+  throw Error('1EX missing or unexpected auth_users AFTER UPDATE trigger');
+ const seen=new Set<string>();
+ for(const row of rows){
+  const name=String(row.TRIGGER_NAME??'').toLowerCase();
+  const expected=expectedTriggerBodies.get(name);
+  if(!expected||seen.has(name))throw Error('1EX unknown or duplicate auth_users AFTER UPDATE trigger');
+  if(canonicalTriggerStatement(String(row.ACTION_STATEMENT??''))!==canonicalTriggerStatement(expected))
+   throw Error('1EX trigger ACTION_STATEMENT drift: '+name);
+  seen.add(name);
+ }
+ if(seen.size!==expectedTriggerBodies.size)throw Error('1EX required trigger missing');
+}
 async function assertInstalled(conn:mysql.Connection){
- const [rows]=await conn.query<any[]>(`SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+ const [rows]=await conn.query<EwInstalledTrigger[] & mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT FROM information_schema.TRIGGERS
   WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='auth_users'
     AND ACTION_TIMING='AFTER' AND EVENT_MANIPULATION='UPDATE'`);
- const actual=new Set(rows.map(row=>String(row.TRIGGER_NAME)));
- if(!expectedTriggers.every(name=>actual.has(name)))
-  throw Error('1EW required database transition trigger missing');
+ verifyEwTriggerBodies(rows);
 }
 async function main(){
  ewRoleCycleMigrationTarget(process.env);
