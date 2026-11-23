@@ -107,6 +107,8 @@ test('1FN internal ticket creation is atomic with audit, owner scoped, and canno
  const detail=await request('/'+ticketId);
  assert.equal(detail.status,200);
  assert.equal(detail.data.history.length,1);
+ assert.equal(detail.data.historyLimit,100);
+ assert.equal(detail.data.historyHasMore,false);
  assert.equal(detail.data.history[0].operation,'CREATE');
  assert.equal(detail.data.history[0].versionAfter,1);
  assert.equal((await request('/'+ticketId,'GET',undefined,'other')).status,404);
@@ -151,6 +153,8 @@ test('1FN transition permissions, stale versions and held terminal state preserv
  assert.equal(detail.data.ticket.customerConsentState,'UNVERIFIED');
  assert.equal(detail.data.ticket.externalDispatchState,'DISABLED');
  assert.deepEqual(detail.data.history.map((x:{versionAfter:number})=>x.versionAfter),[1,2,3,4,5]);
+ assert.equal(detail.data.historyLimit,100);
+ assert.equal(detail.data.historyHasMore,false);
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[ticketId]),5);
 });
 
