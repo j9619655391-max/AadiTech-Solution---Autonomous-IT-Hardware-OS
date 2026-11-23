@@ -386,6 +386,7 @@ test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and 
 
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
  const before=await count('service_ticket_audit_internal','ticket_id=?',[ticketId]);
+ const beforeOwnedTickets=await count('service_tickets_internal','owner_user_id=?',[owner.id]);
  await db!.execute("UPDATE auth_users SET status='DISABLED' WHERE id=?",[owner.id]);
  const deniedCreate=await request('/','POST',payload(ownerCustomer));
  assert.ok([401,403].includes(deniedCreate.status));
@@ -393,7 +394,8 @@ test('1FN disabled OWNER cannot create or mutate, and no rows are appended',asyn
   expectedVersion:5,nextStatus:'TRIAGED_INTERNAL',note:'Inactive owner'});
  assert.ok([401,403].includes(deniedPatch.status));
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[ticketId]),before);
- assert.equal(await count('service_tickets_internal','owner_user_id=?',[owner.id]),1);
+ assert.equal(await count('service_tickets_internal','owner_user_id=?',[owner.id]),
+  beforeOwnedTickets,'role-disabled OWNER must not increase owned ticket count');
 });
 
 test('1FN real MySQL OWNER lock rejects mutation behind concurrent role demotion',async()=>{
