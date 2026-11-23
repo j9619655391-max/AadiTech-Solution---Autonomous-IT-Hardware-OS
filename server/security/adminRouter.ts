@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {ResultSetHeader,RowDataPacket} from 'mysql2/promise';
 import {requireOwner,requireStepUp} from '../auth/router';
 import {requirePrivilegedMfa} from '../auth/mfaPolicy';
-import {getPool} from '../db';
+import {getAuthPool} from '../db';
 
 const router=Router();
 router.use(requireOwner);
@@ -14,7 +14,7 @@ function fail(res:import('express').Response,e:unknown){
  res.status(503).json({error:'Security administration unavailable'});
 }
 router.get('/reviewers',async(_req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try {
   const [rows]=await db.query<RowDataPacket[]>(`SELECT u.id,u.email,u.full_name,u.status,
    (SELECT COUNT(*) FROM auth_sessions s WHERE s.user_id=u.id AND s.expires_at>UTC_TIMESTAMP(3)) AS active_sessions
@@ -23,7 +23,7 @@ router.get('/reviewers',async(_req,res)=>{
  }catch(e){fail(res,e);}
 });
 router.get('/alerts',async(_req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  try{
   const [rows]=await db.query<RowDataPacket[]>(`SELECT event_type,COUNT(*) AS event_count
    FROM auth_security_events
@@ -37,7 +37,7 @@ router.get('/alerts',async(_req,res)=>{
  }catch(e){fail(res,e);}
 });
 router.get('/events',async(req,res)=>{
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  const limit=req.query.limit===undefined?50:Number(req.query.limit);
  if(!Number.isSafeInteger(limit)||limit<1||limit>100){res.status(400).json({error:'Invalid limit'});return;}
  try{
@@ -55,7 +55,7 @@ async function change(req:import('express').Request,res:import('express').Respon
  if(action==='revoke'&&input!==undefined&&(typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==0)){
   res.status(400).json({error:'No user-selected scope permitted'});return;
  }
- const db=getPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
+ const db=getAuthPool();if(!db){res.status(503).json({error:'Database unavailable'});return;}
  const conn=await db.getConnection();
  try{
   await conn.beginTransaction();
