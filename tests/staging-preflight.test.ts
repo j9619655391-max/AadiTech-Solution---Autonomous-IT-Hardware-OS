@@ -85,8 +85,9 @@ function observedRuntimeGrants({
  user="runtime_service@%",schema='aaditech_staging_disposable',roles='NONE',
  grants=["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
   "GRANT SELECT ON aaditech_staging_disposable.crm_customers TO 'runtime_service'@'%'"],
- deny=false
-}:{user?:string;schema?:string;roles?:unknown;grants?:string[];deny?:boolean}={}){
+ deny=false,tableTypes=[{TABLE_NAME:'crm_customers',TABLE_TYPE:'BASE TABLE'}]
+}:{user?:string;schema?:string;roles?:unknown;grants?:string[];deny?:boolean;
+  tableTypes?:Array<{TABLE_NAME:string;TABLE_TYPE:string}>}={}){
  const sql:string[]=[];
  let acquire=0,release=0;
  const db={getConnection:async()=>{
@@ -98,6 +99,8 @@ function observedRuntimeGrants({
     return [[{authenticated_user:user,selected_schema:schema,active_roles:roles}],[]];
    if(query==='SHOW GRANTS FOR CURRENT_USER()')
     return [grants.map(value=>({'Grants for CURRENT_USER()':value})),[]];
+   if(query==='SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()')
+    return [tableTypes,[]];
    throw Error('Unexpected SQL');
   },release:()=>{release++;}};
  }} as unknown as Parameters<typeof checkStagingRuntimeDbPrivilegeIntegrity>[0];
@@ -111,7 +114,8 @@ test('1FC read-only staging runtime privilege gate observes authenticated curren
  assert.equal(released(),1);
  assert.deepEqual(sql,[
   'SELECT CURRENT_USER() AS authenticated_user, DATABASE() AS selected_schema, CURRENT_ROLE() AS active_roles',
-  'SHOW GRANTS FOR CURRENT_USER()'
+  'SHOW GRANTS FOR CURRENT_USER()',
+  'SELECT TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()'
  ]);
 });
 test('1FC privilege checks fail-closed on unexpected identity/schema, global grants, role grants and SQL denial',async()=>{
@@ -160,4 +164,24 @@ test('1FC staging CLI requires grant PASS; CI result explicitly declines actual 
  assert.match(src,/const conn=await db\.getConnection\(\)/);
  assert.match(src,/finally\{conn\.release\(\);\}/);
  assert.match(src,/if\(!inspected\.ready\)process\.exitCode=1/);
+});
+
+// 1FJ: even a very narrowly scoped SELECT grant can reference a DEFINER VIEW.
+// Refuse view aliases, absent/incomplete object inventory, and duplicate names.
+test('1FJ same-session base-table metadata denies DEFINER views and ambiguous objects',async()=>{
+ const granted="GRANT SELECT ON aaditech_staging_disposable.crm_customers TO 'runtime_service'@'%'";
+ const usage="GRANT USAGE ON *.* TO 'runtime_service'@'%'";
+ for(const tableTypes of [
+  [{TABLE_NAME:'crm_customers',TABLE_TYPE:'VIEW'}],
+  [],
+  [{TABLE_NAME:'crm_customers',TABLE_TYPE:'BASE TABLE'},
+   {TABLE_NAME:'CRM_CUSTOMERS',TABLE_TYPE:'VIEW'}],
+  [{TABLE_NAME:'other_table',TABLE_TYPE:'BASE TABLE'}]
+ ]){
+  const {db,released}=observedRuntimeGrants({grants:[usage,granted],tableTypes});
+  await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(db,'aaditech_staging_disposable'),/1FJ/);
+  assert.equal(released(),1);
+ }
+ const {db}=observedRuntimeGrants();
+ assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(db,'aaditech_staging_disposable')).dataGrantCount,1);
 });
