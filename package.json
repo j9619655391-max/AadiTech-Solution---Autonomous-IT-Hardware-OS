@@ -16,6 +16,7 @@
     "test:fa-role-cycle-mysql": "tsx --test tests/fa-role-cycle-concurrency-mysql.integration.ts",
     "test:fc-runtime-privileges-mysql": "tsx --test tests/fc-runtime-db-privileges-mysql.integration.ts",
     "test:fd-crm-owner-mysql": "tsx --test tests/fd-crm-owner-race-mysql.integration.ts",
+    "test:fk-quote-owner-mysql": "tsx --test tests/fk-quote-owner-race-mysql.integration.ts",
     "db:runtime-privileges:preflight": "tsx scripts/phase1fb-runtime-db-privileges.ts",
     "db:migrate:quotes": "tsx scripts/migrate-quotes.ts",
     "db:migrate:quote-idempotency": "tsx scripts/migrate-quote-idempotency.ts",
