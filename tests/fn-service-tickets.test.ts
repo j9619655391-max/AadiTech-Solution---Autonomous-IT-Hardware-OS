@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK
 } from '../server/serviceDesk/validation';
 import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
@@ -114,7 +114,7 @@ test('1FP ticket audit detail bounds newest events and retains chronological dis
  assert.match(route,/ORDER BY a\.version_after DESC LIMIT 101/);
  assert.match(route,/verifyInternalTicketAuditWindow\(newestFirst,/);
  assert.equal((route.match(/db\.getConnection\(\)\.catch\(\(\)=>null\)/g)||[]).length,2);
- assert.match(route,/res\.json\(\{\.\.\.data,mode:'INTERNAL_HELD',externalDispatchEnabled:false\}\)/);
+ assert.match(route,/ticket:maskedTicket\(data\.ticket\),history:maskedAuditHistory\(data\.history\),mode:'INTERNAL_HELD'/);
 });
 
 test('1FQ keyset history cursor rejects array, query pollution, zero and noncanonical integer',()=>{
@@ -318,4 +318,36 @@ test('1FT ticket admission blocks high-confidence credentials but permits ordina
  assert.match(router,/validateTicketCreate\(req\.body\)/);
  assert.match(router,/validateTicketTransition\(req\.body,old\.status\)/);
  assert.doesNotMatch(router,/sendEmail|customerConsentState:'VERIFIED'/);
+});
+
+test('1FU mask risky legacy ticket fields without modifying source records or disclosing substrings',()=>{
+ const unsafe=[
+  'Internal note password=SuperSecret123456789!',
+  'legacy GitHub token ghp_'+'Z'.repeat(30),
+  'Bearer legacy authorization: Bearer '+'Q'.repeat(40),
+  '-----BEGIN RSA PRIVATE KEY-----'
+ ];
+ for(const source of unsafe){
+  const masked=maskCredentialLikeTicketText(source);
+  assert.equal(masked.redacted,true);
+  assert.equal(masked.text,INTERNAL_TICKET_MASK);
+  assert.ok(!masked.text.includes(source.slice(-12)),'Never keep a potentially sensitive suffix');
+ }
+ for(const safe of ['Wi-Fi drops under load','No credentials captured','Password reset failed; no password shared']){
+  assert.deepEqual(maskCredentialLikeTicketText(safe),{text:safe,redacted:false});
+ }
+ for(const broken of [null,undefined,44,[],{}]){
+  assert.throws(()=>maskCredentialLikeTicketText(broken),/integrity/);
+ }
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ assert.match(route,/function maskedTicket\(row:RowDataPacket\)/);
+ assert.match(route,/function maskedAuditHistory/);
+ assert.match(route,/rows\.map\(maskedTicket\)/);
+ assert.match(route,/ticket:maskedTicket\(data\.ticket\)/);
+ assert.equal((route.match(/history:maskedAuditHistory\(data\.history\)/g)||[]).length,2,
+  'Both current detail and historic cursor API must mask audit notes');
+ assert.match(route,/noteRedacted:note\.redacted/);
+ const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
+ assert.match(ui,/legacy credential risk masked/);
+ assert.match(ui,/subjectRedacted/);
 });
