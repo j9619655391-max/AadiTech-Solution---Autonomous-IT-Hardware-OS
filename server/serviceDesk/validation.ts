@@ -58,12 +58,32 @@ export function isInternalTicketStatus(value:unknown):value is InternalTicketSta
 // this restores chronological order for the newest 100 while accurately
 // reporting whether older internal entries require future governed paging.
 export const INTERNAL_TICKET_HISTORY_LIMIT=100;
-export function boundedInternalTicketHistory<T>(newestFirst:readonly T[]){
+export function boundedInternalTicketHistory<T extends {versionAfter:number}>(newestFirst:readonly T[]){
  if(!Array.isArray(newestFirst)||newestFirst.length>INTERNAL_TICKET_HISTORY_LIMIT+1)
   throw Error('Internal ticket history query bound unverified');
- return {
-  history:newestFirst.slice(0,INTERNAL_TICKET_HISTORY_LIMIT).reverse(),
-  historyLimit:INTERNAL_TICKET_HISTORY_LIMIT,
-  historyHasMore:newestFirst.length>INTERNAL_TICKET_HISTORY_LIMIT
- };
+ const history=newestFirst.slice(0,INTERNAL_TICKET_HISTORY_LIMIT).reverse();
+ if(history.some(entry=>!Number.isSafeInteger(entry.versionAfter)||entry.versionAfter<1))
+  throw Error('Internal ticket audit version integrity unverified');
+ for(let i=1;i<history.length;i++){
+  if(history[i].versionAfter<=history[i-1].versionAfter)
+   throw Error('Internal ticket audit order integrity unverified');
+ }
+ const historyHasMore=newestFirst.length>INTERNAL_TICKET_HISTORY_LIMIT;
+ return {history,historyLimit:INTERNAL_TICKET_HISTORY_LIMIT,historyHasMore,
+  nextBeforeVersion:historyHasMore?history[0].versionAfter:null};
+}
+
+// Phase 1FQ: keyset-only older-audit query. No arbitrary OFFSET, loose
+// coercion, duplicate query inputs or unbounded page-size control.
+export function parseInternalTicketHistoryCursor(query:unknown):number{
+ if(!query||typeof query!=='object'||Array.isArray(query)||
+    Object.keys(query).length!==1||!Object.prototype.hasOwnProperty.call(query,'beforeVersion'))
+  throw new ServiceTicketInputError('Exact beforeVersion query required');
+ const value=(query as Record<string,unknown>).beforeVersion;
+ if(typeof value!=='string'||!/^[1-9][0-9]{0,9}$/.test(value))
+  throw new ServiceTicketInputError('Invalid audit history cursor');
+ const number=Number(value);
+ if(!Number.isSafeInteger(number)||number>2147483647)
+  throw new ServiceTicketInputError('Invalid audit history cursor');
+ return number;
 }
