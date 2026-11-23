@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
 import authRouter, { requireOwner } from "./server/auth/router";
 import troubleshootingRouter from "./server/troubleshooting/router";
+import internalServiceDeskRouter from "./server/serviceDesk/router";
 import crmRouter from "./server/crm/router";
 import inventoryRouter from "./server/inventory/router";
 import procurementOwnerRouter from "./server/procurement/ownerRouter";
@@ -68,6 +69,8 @@ app.use("/api/auth", authRouter);
 app.use("/api/auth/mfa", mfaRouter);
 // Phase 1FM internal, read-only Windows first-response knowledge base.
 app.use("/api/help/troubleshooting", troubleshootingRouter);
+// Phase 1FN internal owner-only tickets; no customer/technician communications.
+app.use("/api/service-desk/internal-tickets",internalServiceDeskRouter);
 app.use("/api/security", securityAdminRouter);
 app.use("/api/reviewer-scopes", reviewerScopeRouter);
 app.use("/api/crm", crmRouter);
