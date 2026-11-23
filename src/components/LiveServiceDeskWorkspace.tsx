@@ -14,7 +14,7 @@ type History={operation:'CREATE'|'STATUS_CHANGE';fromStatus:Status|null;toStatus
  note:string;versionAfter:number;createdAt:string};
 type Catalog={mode:'GUIDANCE_ONLY';items:{id:string;title:string}[]};
 type TicketList={items:Ticket[];mode:'INTERNAL_HELD';externalDispatchEnabled:false};
-type TicketDetail={ticket:Ticket;history:History[];mode:'INTERNAL_HELD';externalDispatchEnabled:false};
+type TicketDetail={ticket:Ticket;history:History[];historyLimit:number;historyHasMore:boolean;mode:'INTERNAL_HELD';externalDispatchEnabled:false};
 const nextStates:Record<Status,{status:Status;label:string}[]>={
  OPEN_INTERNAL:[{status:'TRIAGED_INTERNAL',label:'Triaged (internal)'}],
  TRIAGED_INTERNAL:[
@@ -217,6 +217,7 @@ export function LiveServiceDeskWorkspace(){
       className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Record status</button>
     </form>}
    <h4 className="text-sm font-semibold text-white">Versioned internal audit</h4>
+   <p className="text-xs text-slate-400">Showing latest {detail.history.length} internal audit entries (limit {detail.historyLimit}). {detail.historyHasMore?'Older entries exist but are not loaded; no complete-history attestation is implied.':'No older entries reported by this bounded read.'}</p>
    <ol className="space-y-1 text-xs text-slate-300">
     {detail.history.map(e=><li key={e.versionAfter} className="rounded border border-slate-800 p-2">
      v{e.versionAfter} · {e.operation} · {e.toStatus} · {e.note}
