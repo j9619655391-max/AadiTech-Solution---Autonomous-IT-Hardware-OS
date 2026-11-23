@@ -5,7 +5,7 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import {getPool,getDatabaseConfig} from '../server/db';
 import {hashToken} from '../server/auth/crypto';
-import serviceDeskRouter from '../server/serviceDesk/router';
+import serviceDeskRouter,{readInternalTicketSnapshot} from '../server/serviceDesk/router';
 import {MySQLCRMRepository,CRMOwnerInactiveError,lockActiveCrmOwner} from '../server/crm/repository';
 import {validate} from '../server/crm/validation';
 
@@ -205,6 +205,72 @@ test('1FQ real MySQL authenticated keyset audit walks past 100 events without BO
   assert.equal(invalid.status,400,'untrusted cursor was accepted: '+query);
  }
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),103);
+});
+
+test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and tampered events',async()=>{
+ const created=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ // Commit a legitimate transition *between* two SELECTs in the same
+ // read-only InnoDB snapshot; both queries must keep seeing version 1.
+ const writer=await db!.getConnection();
+ let begun=false;
+ try{
+  await readInternalTicketSnapshot(db!,async(snapshot)=>{
+   const [before]=await snapshot.query<any[]>(
+    'SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+   assert.equal(before[0].version,1);
+   assert.equal(before[0].status,'OPEN_INTERNAL');
+   await writer.beginTransaction();begun=true;
+   await writer.execute(
+    "UPDATE service_tickets_internal SET status='TRIAGED_INTERNAL',version=2 WHERE id=?",[id]);
+   await writer.execute(`INSERT INTO service_ticket_audit_internal
+    (id,ticket_id,actor_user_id,operation,from_status,to_status,note,version_after)
+    VALUES (?,?,?,'STATUS_CHANGE','OPEN_INTERNAL','TRIAGED_INTERNAL',?,2)`,
+    [randomUUID(),id,other.id,'1FR atomic external writer simulation in disposable CI']);
+   await writer.commit();begun=false;
+   const [after]=await snapshot.query<any[]>(
+    'SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+   const [audit]=await snapshot.query<any[]>(
+    'SELECT MAX(version_after) AS latest FROM service_ticket_audit_internal WHERE ticket_id=?',[id]);
+   assert.equal(after[0].version,1,'snapshot cannot silently switch to the committed writer version');
+   assert.equal(after[0].status,'OPEN_INTERNAL');
+   assert.equal(Number(audit[0].latest),1,'snapshot audit must match first ticket read');
+  });
+ }finally{
+  if(begun)await writer.rollback().catch(()=>{});
+  writer.release();
+ }
+ const now=await request('/'+id,'GET',undefined,'other');
+ assert.equal(now.status,200);
+ assert.equal(now.data.ticket.version,2);
+ assert.deepEqual(now.data.history.map((x:{versionAfter:number})=>x.versionAfter),[1,2]);
+ // These are isolated disposable DB mutations, NOT production repair or
+ // evidence verification. Restore every intentional corruption immediately.
+ try{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='WAITING_INTERNAL' WHERE ticket_id=? AND version_after=2",[id]);
+  assert.equal((await request('/'+id,'GET',undefined,'other')).status,503);
+  assert.equal((await request('/'+id+'/history?beforeVersion=3','GET',undefined,'other')).status,503);
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='TRIAGED_INTERNAL' WHERE ticket_id=? AND version_after=2",[id]);
+ }
+ try{
+  await db!.execute('UPDATE service_tickets_internal SET version=3 WHERE id=?',[id]);
+  assert.equal((await request('/'+id,'GET',undefined,'other')).status,503,
+   'Missing latest audit must refuse rather than return incomplete history');
+ }finally{
+  await db!.execute('UPDATE service_tickets_internal SET version=2 WHERE id=?',[id]);
+ }
+ try{
+  await db!.execute('UPDATE service_ticket_audit_internal SET version_after=7 WHERE ticket_id=? AND version_after=1',[id]);
+  assert.equal((await request('/'+id,'GET',undefined,'other')).status,503,
+   'Missing genesis entry must refuse');
+ }finally{
+  await db!.execute('UPDATE service_ticket_audit_internal SET version_after=1 WHERE ticket_id=? AND version_after=7',[id]);
+ }
+ assert.equal((await request('/'+id,'GET',undefined,'other')).status,200);
+ assert.equal((await request('/'+id+'/history?beforeVersion=3','GET',undefined,'other')).status,200);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),2);
 });
 
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
