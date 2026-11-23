@@ -87,3 +87,64 @@ export function parseInternalTicketHistoryCursor(query:unknown):number{
   throw new ServiceTicketInputError('Invalid audit history cursor');
  return number;
 }
+
+// Phase 1FR: an API success must not silently invent a complete, internally
+// consistent ticket history when the SQL ledger is missing or mutated. This
+// checks application event continuity, NOT cryptographic authenticity.
+export interface InternalTicketAuditEvent {
+ versionAfter:number;
+ operation:'CREATE'|'STATUS_CHANGE';
+ fromStatus:InternalTicketStatus|null;
+ toStatus:InternalTicketStatus;
+}
+export function verifyInternalTicketAuditWindow<T extends InternalTicketAuditEvent>(
+ newestFirst:readonly T[],
+ context:{currentVersion:number;currentStatus:InternalTicketStatus;beforeVersion?:number}
+){
+ const {currentVersion,currentStatus,beforeVersion}=context;
+ if(!Number.isSafeInteger(currentVersion)||currentVersion<1||
+    currentVersion>2147483647||!isInternalTicketStatus(currentStatus)||
+    (beforeVersion!==undefined&&(!Number.isSafeInteger(beforeVersion)||
+      beforeVersion<1||beforeVersion>currentVersion+1)))
+  throw Error('1FR ticket audit anchor invalid');
+ const window=boundedInternalTicketHistory(newestFirst);
+ const {history,historyHasMore}=window;
+ // A genuine ticket always has a CREATE(version=1) audit record. Empty
+ // pages are only valid when querying older than version 1.
+ if(!history.length){
+  if(beforeVersion!==1)throw Error('1FR audit record missing');
+  return window;
+ }
+ const expectedTop=beforeVersion===undefined?currentVersion:beforeVersion-1;
+ if(history[history.length-1].versionAfter!==expectedTop)
+  throw Error('1FR audit page top not contiguous with requested anchor');
+ if(beforeVersion===undefined&&history[history.length-1].toStatus!==currentStatus)
+  throw Error('1FR audit latest state drift');
+ if(!historyHasMore&&history[0].versionAfter!==1)
+  throw Error('1FR audit CREATE missing from oldest bounded page');
+ // The extra 101st record is a real adjoining event, not a fabricated
+ // hasMore flag pointing across an undetected gap.
+ if(historyHasMore&&newestFirst[INTERNAL_TICKET_HISTORY_LIMIT].versionAfter!==
+    history[0].versionAfter-1)
+  throw Error('1FR audit sentinel gap');
+ for(let i=0;i<history.length;i++){
+  const row=history[i];
+  if(i>0){
+   const previous=history[i-1];
+   if(row.versionAfter!==previous.versionAfter+1||
+      row.fromStatus!==previous.toStatus)
+    throw Error('1FR audit event sequence inconsistent');
+  }
+  if(row.versionAfter===1){
+   if(row.operation!=='CREATE'||row.fromStatus!==null||
+      row.toStatus!=='OPEN_INTERNAL')
+    throw Error('1FR audit genesis invalid');
+  }else if(row.operation!=='STATUS_CHANGE'||
+   !isInternalTicketStatus(row.fromStatus)||
+   !isInternalTicketStatus(row.toStatus)||
+   !transitions[row.fromStatus].includes(row.toStatus)){
+   throw Error('1FR audit transition invalid');
+  }
+ }
+ return window;
+}
