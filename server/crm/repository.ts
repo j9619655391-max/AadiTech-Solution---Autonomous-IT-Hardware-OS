@@ -29,9 +29,40 @@ const creatorScope=(alias:string)=>`EXISTS (SELECT 1 FROM crm_audit_events creat
 export class CRMOwnerInactiveError extends Error {
  constructor(){super('Active OWNER account required');this.name='CRMOwnerInactiveError';}
 }
+export type OwnerGuardMode='DIRECT_DEVELOPMENT'|'DEFINER_PROCEDURE'|'HOLD';
+export function ownerGuardMode(env:NodeJS.ProcessEnv):OwnerGuardMode{
+ const mode=env.NODE_ENV??'development';
+ const setting=env.AUTH_OWNER_GUARD_MODE??'';
+ if(!['development','test','staging','production'].includes(mode))return 'HOLD';
+ // A privileged SQL user is never a valid reason to fall back to raw
+ // auth_users SELECT from staging or production runtime connections.
+ if(mode==='staging'||mode==='production')
+  return setting==='procedure'?'DEFINER_PROCEDURE':'HOLD';
+ if(setting==='procedure')return 'DEFINER_PROCEDURE';
+ if(!setting||setting==='direct')return 'DIRECT_DEVELOPMENT';
+ return 'HOLD';
+}
 export async function lockActiveCrmOwner(
  connection:Pick<PoolConnection,'query'>,actor:string
 ):Promise<void>{
+ const mode=ownerGuardMode(process.env);
+ if(mode==='HOLD')throw Error('Runtime OWNER authorization guard unconfigured');
+ if(mode==='DEFINER_PROCEDURE'){
+  try{
+   // One atomic read/locking statement on the SAME application transaction.
+   // No SELECT/UPDATE grant on auth_users required for the runtime principal.
+   await connection.query('CALL aaditech_guard_active_owner(?)',[actor]);
+  }catch(error){
+   const e=error as {code?:unknown;sqlState?:unknown;sqlMessage?:unknown};
+   if(e?.code==='ER_SIGNAL_EXCEPTION'&&e.sqlState==='45000'&&
+      e.sqlMessage==='AUTH_OWNER_INACTIVE')
+    throw new CRMOwnerInactiveError();
+   // Missing routine/EXECUTE, drift, lock timeout or any MySQL error MUST
+   // propagate; never retry using raw auth_users reads.
+   throw error;
+  }
+  return;
+ }
  const [owners]=await connection.query<RowDataPacket[]>(
   'SELECT role,status FROM auth_users WHERE id=? FOR UPDATE',[actor]);
  if(owners.length!==1||owners[0].role!=='OWNER'||owners[0].status!=='ACTIVE')
