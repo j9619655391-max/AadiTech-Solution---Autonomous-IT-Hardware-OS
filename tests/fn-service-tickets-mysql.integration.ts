@@ -158,6 +158,55 @@ test('1FN transition permissions, stale versions and held terminal state preserv
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[ticketId]),5);
 });
 
+test('1FQ real MySQL authenticated keyset audit walks past 100 events without BOLA or overlap',async()=>{
+ // Generate 103 genuine internal application versions on a separate
+ // disposable CI ticket owned by the OTHER test actor, not the primary ticket.
+ const created=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ for(let version=2;version<=103;version++){
+  const nextStatus=version%2===0?'TRIAGED_INTERNAL':'WAITING_INTERNAL';
+  const changed=await request('/'+id+'/status','PATCH',{
+   expectedVersion:version-1,nextStatus,note:'CI-only verified audit pagination '+version
+  },'other');
+  assert.equal(changed.status,200,'transition '+version+' must commit its audit entry');
+  assert.equal(changed.data.version,version);
+ }
+ const first=await request('/'+id,'GET',undefined,'other');
+ assert.equal(first.status,200);
+ assert.equal(first.data.history.length,100);
+ assert.equal(first.data.historyLimit,100);
+ assert.equal(first.data.historyHasMore,true);
+ assert.equal(first.data.nextBeforeVersion,4);
+ assert.deepEqual(first.data.history.map((e:{versionAfter:number})=>e.versionAfter),
+  Array.from({length:100},(_,i)=>i+4));
+ const older=await request('/'+id+'/history?beforeVersion=4','GET',undefined,'other');
+ assert.equal(older.status,200);
+ assert.equal(older.data.cache,undefined);
+ assert.equal(older.cache,'no-store');
+ assert.equal(older.data.mode,'INTERNAL_HELD');
+ assert.equal(older.data.externalDispatchEnabled,false);
+ assert.equal(older.data.ticketId,id);
+ assert.equal(older.data.historyHasMore,false);
+ assert.equal(older.data.nextBeforeVersion,null);
+ assert.deepEqual(older.data.history.map((e:{versionAfter:number})=>e.versionAfter),[1,2,3]);
+ assert.equal(older.data.history[0].operation,'CREATE');
+ const oldest=await request('/'+id+'/history?beforeVersion=1','GET',undefined,'other');
+ assert.equal(oldest.status,200);
+ assert.deepEqual(oldest.data.history,[]);
+ assert.equal(oldest.data.historyHasMore,false);
+ assert.equal((await request('/'+id+'/history?beforeVersion=4')).status,404);
+ assert.equal((await request('/'+id+'/history?beforeVersion=4','GET',undefined,'reviewer')).status,403);
+ assert.equal((await request('/'+id+'/history?beforeVersion=4','GET',undefined,'anon')).status,401);
+ for(const query of ['','?beforeVersion=0','?beforeVersion=01','?beforeVersion=4.0',
+  '?beforeVersion=4&beforeVersion=3','?beforeVersion=4&limit=10000',
+  '?beforeVersion%5Bgt%5D=4']){
+  const invalid=await request('/'+id+'/history'+query,'GET',undefined,'other');
+  assert.equal(invalid.status,400,'untrusted cursor was accepted: '+query);
+ }
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),103);
+});
+
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
  const before=await count('service_ticket_audit_internal','ticket_id=?',[ticketId]);
  await db!.execute("UPDATE auth_users SET status='DISABLED' WHERE id=?",[owner.id]);
