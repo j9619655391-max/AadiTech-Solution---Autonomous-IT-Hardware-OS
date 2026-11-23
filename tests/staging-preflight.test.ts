@@ -132,6 +132,10 @@ test('1FC privilege checks fail-closed on unexpected identity/schema, global gra
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
    "GRANT UPDATE ON aaditech_staging_disposable.app_reviewer_scope_grants TO 'runtime_service'@'%'"]},
   {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+   "GRANT SELECT ON aaditech_staging_disposable.auth_users TO 'runtime_service'@'%'"]},
+  {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
+   "GRANT SELECT ON aaditech_staging_disposable.auth_totp_credentials TO 'runtime_service'@'%'"]},
+  {grants:["GRANT USAGE ON *.* TO 'runtime_service'@'%'",
    "GRANT 'role_admin'@'%' TO 'runtime_service'@'%'"]},
   {deny:true}
  ];
