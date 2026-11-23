@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import type {RowDataPacket,PoolConnection,Pool} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
+import {computeInternalAuditFingerprint,type InternalAuditFingerprintRow,InternalAuditFingerprintLimitError} from './fingerprint';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
  ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent
@@ -126,6 +127,53 @@ router.get('/:id/history',async(req,res)=>{
   if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
   res.json({...data,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
+});
+
+
+// Phase 1FS: evidence-inspection convenience only. Computes a reproducible
+// digest of at most 1000 source-scoped internal events in ONE database
+// snapshot, and NEVER returns a legally or cryptographically signed receipt.
+router.get('/:id/audit-fingerprint',async(req,res)=>{
+ if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
+ if(Object.keys(req.query).length!==0){
+  res.status(400).json({error:'Unexpected fingerprint query parameters'});return;
+ }
+ const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
+ try{
+  const data=await readInternalTicketSnapshot(db,async(conn)=>{
+   const [eligible]=await conn.query<InternalTicketAnchor[]>(`SELECT t.id,t.version,t.status
+    FROM service_tickets_internal t ${ownerScope}
+    WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,
+    [req.params.id,res.locals.auth.userId]);
+   if(eligible.length!==1)return null;
+   const ticket=eligible[0];
+   return computeInternalAuditFingerprint({
+    id:req.params.id,version:ticket.version,
+    status:ticket.status as InternalTicketAuditEvent['toStatus']
+   },async(beforeVersion)=>{
+    const [rows]=await conn.query<(InternalTicketAuditRow & InternalAuditFingerprintRow)[]>(`SELECT
+     a.operation,a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
+     a.version_after AS versionAfter,
+     DATE_FORMAT(a.created_at,'%Y-%m-%d %H:%i:%s.%f') AS createdAtSql
+     FROM service_ticket_audit_internal a
+     JOIN service_tickets_internal t ON t.id=a.ticket_id ${ownerScope}
+     WHERE t.id=? AND t.owner_user_id=? ${beforeVersion===undefined?'':'AND a.version_after<?'}
+     ORDER BY a.version_after DESC LIMIT 101`,
+     beforeVersion===undefined?
+      [req.params.id,res.locals.auth.userId]:
+      [req.params.id,res.locals.auth.userId,beforeVersion]);
+    return rows;
+   });
+  });
+  if(!data){res.status(404).json({error:'Internal ticket not found'});return;}
+  res.json({ticketId:req.params.id,...data});
+ }catch(e){
+  if(e instanceof InternalAuditFingerprintLimitError){
+   res.status(409).json({error:'Ticket audit exceeds bounded internal review cap; independent offline review required',
+    mode:'INTERNAL_HELD',externalDispatchEnabled:false});return;
+  }
+  fail(res,e);
+ }
 });
 
 router.post('/',async(req,res)=>{
