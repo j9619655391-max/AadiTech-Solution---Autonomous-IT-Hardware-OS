@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import {randomUUID} from 'node:crypto';
-import { getPool } from '../db';
+import { getAuthPool } from '../db';
 import type {ResultSetHeader} from 'mysql2/promise';
 import { hashToken, newSecret, verifyPassword } from './crypto';
 import {reserveLoginAttempt,reserveStepUpAttempt} from './limiter';
@@ -31,7 +31,7 @@ function isSameOrigin(req: Request): boolean {
 export interface Session { userId: string; email: string; role: 'OWNER' | 'REVIEWER'; csrf: string; mfaVerifiedAt: Date | null; }
 async function getSession(req: Request): Promise<Session | null> {
   const cookie = getSessionCookie(req);
-  const db = getPool();
+  const db = getAuthPool();
   if (!cookie || !db) return null;
   const [rows] = await db.execute<any[]>(`SELECT u.id AS userId,u.email,u.role,s.csrf_token AS csrf,s.mfa_verified_at AS mfaVerifiedAt
     FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
@@ -70,7 +70,7 @@ export async function requireStepUp(req:Request,res:Response,next:NextFunction){
  if(!session||!cookie||!token||!(/^[A-Za-z0-9_-]{43}$/).test(token)){
   res.status(403).json({error:'Recent password verification required'});return;
  }
- const db=getPool();
+ const db=getAuthPool();
  if(!db){res.status(503).json({error:'Authentication service unavailable'});return;}
  try{
   const [rows]=await db.execute<any[]>(
@@ -89,7 +89,7 @@ router.post('/step-up',requireAuthenticated,async(req,res)=>{
     Object.keys(req.body).join(',')!=='currentPassword'){
   res.status(400).json({error:'Current password required'});return;
  }
- const db=getPool(),cookie=getSessionCookie(req);
+ const db=getAuthPool(),cookie=getSessionCookie(req);
  if(!db||!cookie){res.status(503).json({error:'Authentication service unavailable'});return;}
  try{
   if(!await reserveStepUpAttempt(db,session.userId)){
@@ -117,7 +117,7 @@ router.post('/login', async (req, res) => {
   if (email.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || typeof password !== 'string' || password.length > 1024) {
     res.status(400).json({ error: 'Invalid credentials' }); return;
   }
-  const db = getPool();
+  const db = getAuthPool();
   if (!db) { res.status(503).json({ error: 'Authentication service unavailable' }); return; }
   try {
     if(!await reserveLoginAttempt(db,email,req.ip||'unknown')){
@@ -158,7 +158,7 @@ router.get('/me', requireAuthenticated, (req, res) => {
 });
 
 router.post('/logout', requireAuthenticated, async (req, res) => {
-  const db = getPool();
+  const db = getAuthPool();
   const token = getSessionCookie(req);
   if (!db || !token) { res.status(503).json({ error: 'Authentication service unavailable' }); return; }
   try {
@@ -169,7 +169,7 @@ router.post('/logout', requireAuthenticated, async (req, res) => {
 });
 
 router.post('/revoke-my-sessions',requireAuthenticated,requireStepUp,async(req,res)=>{
- const pool=getPool();
+ const pool=getAuthPool();
  if(!pool){res.status(503).json({error:'Authentication service unavailable'});return;}
  const userId=(res.locals.auth as Session).userId;
  const conn=await pool.getConnection();
