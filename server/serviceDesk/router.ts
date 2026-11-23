@@ -21,6 +21,8 @@ function fail(res:import('express').Response,error:unknown){
  console.error('Internal service ticket unavailable:',error instanceof Error?error.name:'Unknown');
  res.status(503).json({error:'Internal service desk unavailable'});
 }
+// MySQL RowDataPacket alone does not assert selected numeric audit aliases.
+interface InternalTicketAuditRow extends RowDataPacket {versionAfter:number}
 const listProjection=`t.id,t.customer_id AS customerId,c.name AS customerName,
  t.guide_id AS guideId,t.subject,t.description,t.priority,t.status,t.version,
  t.customer_consent_state AS customerConsentState,
@@ -52,7 +54,7 @@ router.get('/:id',async(req,res)=>{
   if(!rows.length){res.status(404).json({error:'Internal ticket not found'});return;}
   // Re-apply owner/customer provenance scope on the history query itself
   // rather than trusting an earlier read if access changes between queries.
-  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT a.operation,
+  const [newestFirst]=await db.query<InternalTicketAuditRow[]>(`SELECT a.operation,
     a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
     a.version_after AS versionAfter,a.created_at AS createdAt
     FROM service_ticket_audit_internal a
@@ -80,7 +82,7 @@ router.get('/:id/history',async(req,res)=>{
    WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,
    [req.params.id,res.locals.auth.userId]);
   if(eligible.length!==1){res.status(404).json({error:'Internal ticket not found'});return;}
-  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT a.operation,
+  const [newestFirst]=await db.query<InternalTicketAuditRow[]>(`SELECT a.operation,
     a.from_status AS fromStatus,a.to_status AS toStatus,a.note,
     a.version_after AS versionAfter,a.created_at AS createdAt
     FROM service_ticket_audit_internal a
