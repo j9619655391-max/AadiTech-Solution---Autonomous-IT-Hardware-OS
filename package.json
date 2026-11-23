@@ -108,7 +108,8 @@
     "db:migrate:ew-role-cycle": "tsx scripts/migrate-ew-role-cycle.ts",
     "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts",
     "db:migrate:service-tickets": "tsx scripts/migrate-service-tickets.ts",
-    "test:service-tickets-mysql": "tsx --test tests/fn-service-tickets-mysql.integration.ts"
+    "test:service-tickets-mysql": "tsx --test tests/fn-service-tickets-mysql.integration.ts",
+    "test:fo-owner-guard-mysql": "tsx --test tests/fo-owner-guard-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
