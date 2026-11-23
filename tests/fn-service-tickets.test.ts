@@ -5,6 +5,7 @@ import {
  validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK,parseInternalTicketListCursor,boundedInternalTicketList
 } from '../server/serviceDesk/validation';
 import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
+import {verifyServiceDeskCustomerPage,customerSelectionForPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE} from '../src/services/serviceDeskCustomerPaging';
 import {serviceTicketMigrationTarget} from '../scripts/migrate-service-tickets';
 import {MIGRATIONS} from '../scripts/lib/stagingPreflight';
 const customerId='123e4567-e89b-42d3-a456-426614174000';
@@ -407,4 +408,59 @@ test('1FV list SQL and UI retain scoped proof, bounded 101 sentinel, tie-break a
  assert.match(ui,/Load older 100 tickets/);
  assert.match(ui,/Return to latest tickets/);
  assert.match(ui,/nextBeforeCreatedAt/);
+});
+
+test('1FW bounded owner CRM selector respects 100-page size, customer identity and navigation',()=>{
+ const ids=Array.from({length:100},(_,i)=>
+  '123e4567-e89b-42d3-a456-'+String(426614174000+i).padStart(12,'0'));
+ const items=ids.map((id,i)=>({id,version:1,name:'Synthetic owner CRM customer '+i}));
+ const first=verifyServiceDeskCustomerPage({items,page:1,limit:100,total:203},1);
+ assert.equal(first.items.length,SERVICE_DESK_CUSTOMER_PAGE_SIZE);
+ assert.equal(first.page,1);assert.equal(first.totalPages,3);
+ assert.equal(first.hasPrevious,false);assert.equal(first.hasNext,true);
+ const second=verifyServiceDeskCustomerPage({
+  items:[{id:customerId,version:1,name:'Old CRM customer'}],page:2,limit:100,total:203
+ },2);
+ assert.equal(second.hasPrevious,true);assert.equal(second.hasNext,true);
+ assert.equal(customerSelectionForPage(customerId,second.items),customerId);
+ assert.equal(customerSelectionForPage(ids[0],second.items),customerId);
+ const third=verifyServiceDeskCustomerPage({items:[],page:3,limit:100,total:203},3);
+ assert.equal(third.totalPages,3);assert.equal(third.hasNext,false);
+ assert.equal(customerSelectionForPage(customerId,third.items),'');
+ const invalid=[
+  {items,page:2,limit:100,total:203},
+  {items,page:1,limit:10000,total:203},
+  {items,page:1,limit:100,total:NaN},
+  {items,page:1,limit:100,total:-1},
+  {items,page:1,limit:100,total:10000001},
+  {items:[...items,items[0]],page:1,limit:100,total:203},
+  {items:[items[0],items[0]],page:1,limit:100,total:203},
+  {items:[{id:'../../auth_users',version:1,name:'Unverified'}],page:1,limit:100,total:1},
+  {items:[{id:customerId,version:1,name:'  '}],page:1,limit:100,total:1}
+ ];
+ for(const data of invalid)
+  assert.throws(()=>verifyServiceDeskCustomerPage(data,1),/Unverified|Invalid CRM/);
+ for(const page of [0,-1,100001,1.5,Number.POSITIVE_INFINITY])
+  assert.throws(()=>verifyServiceDeskCustomerPage({items:[],page,limit:100,total:0},page),/Unverified/);
+});
+test('1FW M16 uses owner-scoped existing CRM pagination with bounded UI and stale-request guard',()=>{
+ const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
+ const crm=readFileSync('server/crm/router.ts','utf8');
+ const repo=readFileSync('server/crm/repository.ts','utf8');
+ const helper=readFileSync('src/services/serviceDeskCustomerPaging.ts','utf8');
+ assert.match(ui,/crmClient\.list\('customers',requestedPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE\)/);
+ assert.match(ui,/customerRequestSequence=useRef\(0\)/);
+ assert.match(ui,/requestSequence!==customerRequestSequence\.current/);
+ assert.match(ui,/setLoadingCustomerPage\(false\)/);
+ assert.match(ui,/Previous 100 customers/);
+ assert.match(ui,/Next 100 customers/);
+ assert.match(ui,/customerSelectionForPage\(prev,result\.items\)/);
+ assert.match(ui,/disabled=\{busy\|\|loading\|\|loadingCustomerPage\|\|!customerId/);
+ assert.doesNotMatch(ui,/setCustomers\(prev=>\[\.\.\.prev/);
+ assert.match(crm,/router\.use\(requireOwner\)/);
+ assert.match(crm,/const \{limit,offset,page\}=parsePagination\(req\.query\)/);
+ assert.match(repo,/ORDER BY record\.created_at DESC,record\.id DESC LIMIT \? OFFSET \?/);
+ assert.match(repo,/creatorScope\('record'\)/);
+ assert.match(helper,/SERVICE_DESK_CUSTOMER_PAGE_SIZE=100/);
+ assert.match(helper,/customerIdPattern/);
 });
