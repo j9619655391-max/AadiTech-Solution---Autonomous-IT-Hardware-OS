@@ -5,7 +5,7 @@ import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,boundedInternalTicketHistory
 } from './validation';
 
 const router=Router();
@@ -50,11 +50,12 @@ router.get('/:id',async(req,res)=>{
    `SELECT ${listProjection} FROM service_tickets_internal t ${ownerScope}
     WHERE t.id=? AND t.owner_user_id=? LIMIT 1`,[req.params.id,res.locals.auth.userId]);
   if(!rows.length){res.status(404).json({error:'Internal ticket not found'});return;}
-  const [history]=await db.query<RowDataPacket[]>(`SELECT operation,from_status AS fromStatus,
+  const [newestFirst]=await db.query<RowDataPacket[]>(`SELECT operation,from_status AS fromStatus,
     to_status AS toStatus,note,version_after AS versionAfter,created_at AS createdAt
     FROM service_ticket_audit_internal WHERE ticket_id=?
-    ORDER BY version_after ASC`,[req.params.id]);
-  res.json({ticket:rows[0],history,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
+    ORDER BY version_after DESC LIMIT 101`,[req.params.id]);
+  const historyWindow=boundedInternalTicketHistory(newestFirst);
+  res.json({ticket:rows[0],...historyWindow,mode:'INTERNAL_HELD',externalDispatchEnabled:false});
  }catch(e){fail(res,e);}
 });
 
@@ -63,7 +64,10 @@ router.post('/',async(req,res)=>{
  try{input=validateTicketCreate(req.body);}
  catch(e){fail(res,e);return;}
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
- const conn=await db.getConnection();
+ // Acquire failures must return a bounded service error, not an unhandled
+ // Express 4 async rejection before the transaction try/finally starts.
+ const conn=await db.getConnection().catch(()=>null);
+ if(!conn){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
   await conn.beginTransaction();
   await lockActiveCrmOwner(conn,res.locals.auth.userId);
@@ -97,7 +101,10 @@ router.post('/',async(req,res)=>{
 router.patch('/:id/status',async(req,res)=>{
  if(!validId(req.params.id)){res.status(400).json({error:'Invalid ticket ID'});return;}
  const db=getPool();if(!db){res.status(503).json({error:'Internal service desk unavailable'});return;}
- const conn=await db.getConnection();
+ // Acquire failures must return a bounded service error, not an unhandled
+ // Express 4 async rejection before the transaction try/finally starts.
+ const conn=await db.getConnection().catch(()=>null);
+ if(!conn){res.status(503).json({error:'Internal service desk unavailable'});return;}
  try{
   await conn.beginTransaction();
   await lockActiveCrmOwner(conn,res.locals.auth.userId);
