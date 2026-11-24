@@ -235,3 +235,44 @@ export function boundedInternalTicketList<T extends {id:string;createdAtKey:stri
   nextBeforeId:hasMore?last.id:null
  };
 }
+
+// Phase 1FY: a status append must verify the entire existing structural
+// ledger, not merely its most recent 101 events. The resulting ledger
+// must remain within the bounded internal review capacity.
+export const MAX_INTERNAL_AUDIT_APPEND_EVENTS=1000;
+export class InternalAuditAppendLimitError extends Error {}
+export function assertAppendableInternalAuditVersion(version:number){
+ if(!Number.isSafeInteger(version)||version<1||version>2147483647)
+  throw Error('1FY invalid audit version anchor');
+ if(version>=MAX_INTERNAL_AUDIT_APPEND_EVENTS)
+  throw new InternalAuditAppendLimitError('Internal audit append cap reached');
+}
+export function verifyInternalTicketAuditForAppend<T extends InternalTicketAuditEvent & {actorUserId:string}>(
+ newestFirst:readonly T[],
+ context:{currentVersion:number;currentStatus:InternalTicketStatus;ownerUserId:string}
+){
+ const {currentVersion,currentStatus,ownerUserId}=context;
+ assertAppendableInternalAuditVersion(currentVersion);
+ if(!validId(ownerUserId)||!Array.isArray(newestFirst)||newestFirst.length!==currentVersion)
+  throw Error('1FY audit count or owner anchor inconsistent');
+ if(newestFirst.some(event=>event.actorUserId!==ownerUserId))
+  throw Error('1FY historical audit actor ownership inconsistent');
+ // Use overlapping 101-record windows from a SINGLE locked result.
+ // Each sentinel is also the top row of the following window, so no
+ // cross-page boundary is skipped or replaced by another database view.
+ let cursor:number|undefined;
+ for(let offset=0;offset<newestFirst.length;offset+=INTERNAL_TICKET_HISTORY_LIMIT){
+  const page=verifyInternalTicketAuditWindow(
+   newestFirst.slice(offset,offset+INTERNAL_TICKET_HISTORY_LIMIT+1),
+   {currentVersion,currentStatus,beforeVersion:cursor});
+  if(!page.historyHasMore){
+   if(offset+page.history.length!==currentVersion)
+    throw Error('1FY audit end inconsistent');
+   return;
+  }
+  if(page.nextBeforeVersion===null)
+   throw Error('1FY audit continuation missing');
+  cursor=page.nextBeforeVersion;
+ }
+ throw Error('1FY audit genesis not reached');
+}
