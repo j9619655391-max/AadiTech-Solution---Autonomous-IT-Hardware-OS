@@ -665,6 +665,87 @@ test('1FX real MySQL mutation checks the 101st boundary sentinel of an older lon
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),104);
 });
 
+test('1FY real MySQL status append rejects genesis and actor corruption beyond the recent 101 rows',async()=>{
+ const id=pagedTicketId;
+ const detail=await request('/'+id,'GET',undefined,'other');
+ assert.equal(detail.status,200);
+ assert.equal(detail.data.ticket.version,104);
+ assert.equal(detail.data.ticket.status,'TRIAGED_INTERNAL');
+ const next={expectedVersion:104,nextStatus:'WAITING_INTERNAL',note:'CI-only full ledger append'};
+ async function unchanged(){
+  const [rows]=await db!.query<any[]>('SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+  assert.equal(rows[0].version,104);
+  assert.equal(rows[0].status,'TRIAGED_INTERNAL');
+  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),104);
+ }
+ // The latest 101 window comprises versions 104..4. These historical
+ // mutations are deliberately outside that window and only in disposable CI.
+ try{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='TRIAGED_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+  assert.equal((await request('/'+id,'GET',undefined,'other')).status,200,
+   'bounded latest detail is not a full historical integrity proof');
+  const denied=await request('/'+id+'/status','PATCH',next,'other');
+  assert.equal(denied.status,503);
+  assert.equal(denied.data.error,'Internal service desk unavailable');
+  await unchanged();
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='OPEN_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+ }
+ try{
+  await db!.execute('UPDATE service_ticket_audit_internal SET actor_user_id=? WHERE ticket_id=? AND version_after=2',[owner.id,id]);
+  assert.equal((await request('/'+id+'/status','PATCH',next,'other')).status,503);
+  await unchanged();
+ }finally{
+  await db!.execute('UPDATE service_ticket_audit_internal SET actor_user_id=? WHERE ticket_id=? AND version_after=2',[other.id,id]);
+ }
+ assert.equal((await request('/'+id+'/status','PATCH',next,'other')).status,200);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),105);
+ const verified=await request('/'+id+'/audit-fingerprint','GET',undefined,'other');
+ assert.equal(verified.status,200);assert.equal(verified.data.eventCount,105);
+});
+
+test('1FY real MySQL full valid 999-event fixture permits one append to 1000 then fails closed',async()=>{
+ const created=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ // Populate a structurally valid long ledger in disposable MySQL only.
+ // This is not proof of real customer/technician actions.
+ const fixture=await db!.getConnection();
+ try{
+  await fixture.beginTransaction();
+  for(let start=2;start<=999;start+=100){
+   const values:unknown[]=[],tuples:string[]=[];
+   for(let v=start;v<=Math.min(start+99,999);v++){
+    tuples.push('(?,?,?,?,?,?,?,?)');
+    values.push(randomUUID(),id,other.id,'STATUS_CHANGE',
+     v===2?'OPEN_INTERNAL':v%2===0?'WAITING_INTERNAL':'TRIAGED_INTERNAL',
+     v%2===0?'TRIAGED_INTERNAL':'WAITING_INTERNAL','CI-only long audit fixture',v);
+   }
+   await fixture.query('INSERT INTO service_ticket_audit_internal (id,ticket_id,actor_user_id,operation,from_status,to_status,note,version_after) VALUES '+tuples.join(','),values);
+  }
+  await fixture.execute("UPDATE service_tickets_internal SET version=999,status='WAITING_INTERNAL' WHERE id=?",[id]);
+  await fixture.commit();
+ }catch(e){await fixture.rollback();throw e;}finally{fixture.release();}
+ const allowed=await request('/'+id+'/status','PATCH',{
+  expectedVersion:999,nextStatus:'TRIAGED_INTERNAL',note:'CI final bounded append'
+ },'other');
+ assert.equal(allowed.status,200);assert.equal(allowed.data.version,1000);
+ const denied=await request('/'+id+'/status','PATCH',{
+  expectedVersion:1000,nextStatus:'WAITING_INTERNAL',note:'CI over-cap must not write'
+ },'other');
+ assert.equal(denied.status,409);
+ assert.equal(denied.data.mode,'INTERNAL_HELD');
+ assert.equal(denied.data.externalDispatchEnabled,false);
+ assert.match(denied.data.error,/append cap reached/);
+ const [rows]=await db!.query<any[]>('SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+ assert.equal(rows[0].version,1000);
+ assert.equal(rows[0].status,'TRIAGED_INTERNAL');
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),1000);
+ const fp=await request('/'+id+'/audit-fingerprint','GET',undefined,'other');
+ assert.equal(fp.status,200);assert.equal(fp.data.eventCount,1000);
+ assert.equal(fp.data.signatureVerified,false);
+});
+
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
  const before=await count('service_ticket_audit_internal','ticket_id=?',[ticketId]);
  const beforeOwnedTickets=await count('service_tickets_internal','owner_user_id=?',[owner.id]);
