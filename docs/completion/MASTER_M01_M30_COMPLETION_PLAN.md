@@ -1168,3 +1168,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - Phase 1GE PR CI 45441724551 CANCELLED, not verified; preserve historical run.
 - [x] [1GF runbook](../phase-1/PHASE_1GF_DATABASE_PROVENANCE_WRITE_ONCE_HARD_HOLD.md): CI-only additive 0051, historical conflict refusal, unique CREATE origin and quote binding, immutable request identity/hash and one-time same-owner pointer; exact metadata checks and restricted MySQL regression source. M03/M04 acceptance ledger updated. No real migration or release.
 - [ ] Exact-head push/PR CI, independent DBA-approved historic reconciliation/definer/restore, authentic legal ownership and all external acceptance remain OPEN.
+
+
+## Phase 1GG — Provenance installation readback and interruption guard (HARD HOLD)
+
+- Historical 1GF exact PR run 45449749870 FAILURE (7/8, generated-column metadata readback failed; prior real MySQL/Chromium checks passed). No waiver.
+- [x] [1GG runbook](../phase-1/PHASE_1GG_PROVENANCE_INSTALLATION_RECOVERY_HARD_HOLD.md): narrow generated-column metadata verification, bounded disposable diagnostics, refuse fresh DDL on partial/conflicting installation, unit regression fixtures; unchanged checksum-registered 0051 SQL bytes.
+- [ ] Exact-head dual CI and independently authorized first-event/initial binding authority, real historical reconciliation and restore evidence, all M01–M30 external acceptance remain OPEN.

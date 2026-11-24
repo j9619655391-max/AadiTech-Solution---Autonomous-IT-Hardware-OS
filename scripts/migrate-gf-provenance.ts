@@ -27,7 +27,34 @@ export async function assertGfHistoricalIntegrity(db:Pick<mysql.Connection,'quer
 function canonical(s:string){
  return s.split(/('(?:''|[^'])*')/).map((part,i)=>i%2?part:part.replace(/\x60/g,'').replace(/\s+/g,'').toLowerCase()).join('');
 }
-export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>){
+// Narrow grammar, not a general SQL-equivalence parser. MySQL may introduce
+// a charset on the enum literal or parenthesize the comparison. Preserve
+// quoted literal bytes and reject arbitrary SQL, functions and predicates.
+export function verifiedGfOriginColumn(rows:readonly unknown[]):boolean{
+ if(!Array.isArray(rows)||rows.length!==1||!rows[0]||typeof rows[0]!=='object')return false;
+ const row=rows[0] as {EXTRA?:unknown;GENERATION_EXPRESSION?:unknown;DATA_TYPE?:unknown;CHARACTER_MAXIMUM_LENGTH?:unknown;IS_NULLABLE?:unknown;COLLATION_NAME?:unknown};
+ if(typeof row.EXTRA!=='string'||row.EXTRA.trim().toUpperCase()!=='STORED GENERATED'||
+    row.DATA_TYPE!=='char'||Number(row.CHARACTER_MAXIMUM_LENGTH)!==36||
+    row.IS_NULLABLE!=='YES'||row.COLLATION_NAME!=='utf8mb4_unicode_ci'||
+    typeof row.GENERATION_EXPRESSION!=='string'||row.GENERATION_EXPRESSION.length>512)return false;
+ const expr=canonical(row.GENERATION_EXPRESSION);
+ const literal="(?:_utf8mb4|_utf8mb3|_utf8)?'CREATE'";
+ const comparison='operation='+literal;
+ return new RegExp("^casewhen(?:"+comparison+"|\\("+comparison+"\\))thenentity_id(?:elsenull)?end$").test(expr);
+}
+// Before applying any DDL, refuse existing named artifacts even when the
+// migration ledger is absent. Never overwrite a partly installed constraint.
+export async function assertGfFreshInstall(db:Pick<mysql.Connection,'query'>){
+ const [rows]=await db.query<mysql.RowDataPacket[]>(`SELECT 1 AS present FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crm_audit_events' AND COLUMN_NAME='gf_create_entity_id'
+  UNION ALL SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
+   AND INDEX_NAME IN ('uq_gf_crm_create_origin','uq_gf_quote_binding')
+  UNION ALL SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()
+   AND (EVENT_OBJECT_TABLE='sales_quote_create_requests' OR TRIGGER_NAME IN ('trg_gf_quote_unbound_insert','trg_gf_quote_bind_once'))
+  LIMIT 1`);
+ if(rows.length!==0)throw Error('1GG partial or conflicting provenance installation; independent reconciliation required');
+}
+export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>,options:{disposableCiDiagnostics?:boolean}={}){
  const [indexes]=await db.query<mysql.RowDataPacket[]>(`SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME
   FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
   AND INDEX_NAME IN ('uq_gf_crm_create_origin','uq_gf_quote_binding') ORDER BY INDEX_NAME,SEQ_IN_INDEX`);
@@ -38,12 +65,17 @@ export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>){
  ];
  if(JSON.stringify(indexes.map(x=>[x.TABLE_NAME,x.INDEX_NAME,Number(x.NON_UNIQUE),Number(x.SEQ_IN_INDEX),x.COLUMN_NAME]))!==JSON.stringify(expected))
   throw Error('1GF installed unique index shape unverified');
- const [columns]=await db.query<mysql.RowDataPacket[]>(`SELECT EXTRA,GENERATION_EXPRESSION FROM information_schema.COLUMNS
+ const [columns]=await db.query<mysql.RowDataPacket[]>(`SELECT EXTRA,GENERATION_EXPRESSION,DATA_TYPE,CHARACTER_MAXIMUM_LENGTH,IS_NULLABLE,COLLATION_NAME FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crm_audit_events' AND COLUMN_NAME='gf_create_entity_id'`);
- // MySQL formats generated expressions with parentheses and charset introducers.
- const expr=canonical(String(columns[0]?.GENERATION_EXPRESSION??'')).replace(/_utf8mb4/g,'').replace(/[()]/g,'');
- if(columns.length!==1||columns[0].EXTRA!=='STORED GENERATED'||expr!=="casewhenoperation='CREATE'thenentity_idelsenullend")
+ if(!verifiedGfOriginColumn(columns)){
+  // Only the CI migration runner opts in; never log live staging metadata.
+  if(options.disposableCiDiagnostics)
+   console.error('1GF disposable generated-column metadata:',JSON.stringify(columns.map(row=>({
+    extra:row.EXTRA,expression:String(row.GENERATION_EXPRESSION??'').slice(0,512),
+    type:row.DATA_TYPE,length:row.CHARACTER_MAXIMUM_LENGTH,nullable:row.IS_NULLABLE,collation:row.COLLATION_NAME
+   }))).slice(0,2048));
   throw Error('1GF generated origin expression unverified');
+ }
  const [triggers]=await db.query<mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION
   FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='sales_quote_create_requests'`);
  const expectedTriggers=new Map(statements().slice(2).map(s=>{
@@ -78,13 +110,14 @@ async function main(){
   const checksum=createHash('sha256').update(readFileSync(file)).digest('hex');
   if(applied.has(id)){
    if(applied.get(id)!==checksum)throw Error('1GF migration checksum drift');
-   await checkInstalledGfIntegrity(db);console.log('Already applied:',id);return;
+   await checkInstalledGfIntegrity(db,{disposableCiDiagnostics:true});console.log('Already applied:',id);return;
   }
+  await assertGfFreshInstall(db);
   await assertGfHistoricalIntegrity(db);
   // MySQL DDL is nontransactional across statements. Partial installs are
   // intentionally not repaired or dropped; reset disposable CI after review.
   for(const sql of statements())await db.query(sql);
-  await checkInstalledGfIntegrity(db);
+  await checkInstalledGfIntegrity(db,{disposableCiDiagnostics:true});
   await db.execute('INSERT INTO schema_migrations(id,checksum) VALUES (?,?)',[id,checksum]);
   console.log('Applied:',id);
  }finally{try{if(locked)await db.query("SELECT RELEASE_LOCK('aaditech-auth-migrations')");}finally{await db.end();}}

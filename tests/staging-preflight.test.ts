@@ -5,6 +5,7 @@ import {checkPreflightTarget,migrationChecksums,MIGRATIONS} from '../scripts/lib
 import {checkInstalledEwTriggerIntegrity,checkStagingRuntimeDbPrivilegeIntegrity,checkStagingAuthPrincipalBoundary} from '../scripts/staging-preflight';
 import {authDatabaseCredentialState} from '../server/db';
 import type {EwInstalledTrigger} from '../scripts/migrate-ew-role-cycle';
+import {verifiedGfOriginColumn,assertGfFreshInstall,assertGfHistoricalIntegrity,gfMigrationTarget} from '../scripts/migrate-gf-provenance';
 test('read-only readiness is denied by default and outside disposable DB',()=>{
  assert.throws(()=>checkPreflightTarget({}),/STAGING_PREFLIGHT/);
  assert.throws(()=>checkPreflightTarget({STAGING_PREFLIGHT:'1',DB_NAME:'aaditech_production'}),/Refusing/);
@@ -322,4 +323,54 @@ test('1FO staging reports technical dual-principal observation but never promote
  assert.match(src,/&&target==='ci'/);
  assert.match(src,/authFunctionalSeparationVerified:false/);
  assert.match(src,/independentDbaApprovalVerified:false/);
+});
+
+test('1GG generated CRM origin readback accepts only narrow equivalent SQL formatting',()=>{
+ const row={EXTRA:'STORED GENERATED',DATA_TYPE:'char',CHARACTER_MAXIMUM_LENGTH:36,IS_NULLABLE:'YES',
+  COLLATION_NAME:'utf8mb4_unicode_ci',GENERATION_EXPRESSION:"case when (\x60operation\x60 = _utf8mb4'CREATE') then \x60entity_id\x60 else NULL end"};
+ for(const expression of [
+  row.GENERATION_EXPRESSION,
+  "CASE WHEN operation='CREATE' THEN entity_id ELSE NULL END",
+  "case when (operation = _utf8mb3'CREATE') then entity_id else null end",
+  "case when operation = _utf8'CREATE' then entity_id end"
+ ])assert.equal(verifiedGfOriginColumn([{...row,GENERATION_EXPRESSION:expression}]),true,expression);
+ for(const expression of [
+  "CASE WHEN operation='DELETE' THEN entity_id ELSE NULL END",
+  "CASE WHEN operation='create' THEN entity_id ELSE NULL END",
+  "CASE WHEN operation='CREATE' THEN actor_user_id ELSE NULL END",
+  "CASE WHEN operation='CREATE' THEN entity_id ELSE entity_id END",
+  "CASE WHEN operation='CREATE' OR 1=1 THEN entity_id ELSE NULL END",
+  "CASE WHEN operation=_latin1'CREATE' THEN entity_id ELSE NULL END",
+  "CASE WHEN operation='CRE ATE' THEN entity_id ELSE NULL END",
+  "CASE WHEN operation='CREATE' THEN CONCAT(entity_id,'') ELSE NULL END"
+ ])assert.equal(verifiedGfOriginColumn([{...row,GENERATION_EXPRESSION:expression}]),false,expression);
+ for(const changed of [{EXTRA:'VIRTUAL GENERATED'},{DATA_TYPE:'varchar'},{CHARACTER_MAXIMUM_LENGTH:35},
+  {IS_NULLABLE:'NO'},{COLLATION_NAME:'utf8mb4_bin'}])
+  assert.equal(verifiedGfOriginColumn([{...row,...changed}]),false);
+ assert.equal(verifiedGfOriginColumn([]),false);
+ assert.equal(verifiedGfOriginColumn([row,row]),false);
+});
+test('1GG pre-DDL inspection refuses partial artifacts, historical conflicts and metadata errors',async()=>{
+ type Reader=Parameters<typeof assertGfFreshInstall>[0];
+ const mock=(replies:unknown[][],fail=false)=>{
+  const queries:string[]=[];
+  const db={query:async(sql:string)=>{
+   queries.push(sql);if(fail)throw Error('metadata unavailable');
+   return [replies[queries.length-1]??[],[]];
+  }} as unknown as Reader;
+  return {db,queries};
+ };
+ const fresh=mock([[]]);await assertGfFreshInstall(fresh.db);
+ assert.match(fresh.queries[0],/information_schema\.COLUMNS/);
+ assert.match(fresh.queries[0],/information_schema\.STATISTICS/);
+ assert.match(fresh.queries[0],/information_schema\.TRIGGERS/);
+ await assert.rejects(assertGfFreshInstall(mock([[{present:1}]]).db),/partial or conflicting/);
+ await assert.rejects(assertGfFreshInstall(mock([],true).db),/metadata unavailable/);
+ const valid=mock([[],[],[]]);await assertGfHistoricalIntegrity(valid.db);assert.equal(valid.queries.length,3);
+ for(let i=0;i<3;i++){
+  const rows:unknown[][]=[[],[],[]];rows[i]=[{present:1}];
+  await assert.rejects(assertGfHistoricalIntegrity(mock(rows).db),/manual quarantine required/);
+ }
+ await assert.rejects(assertGfHistoricalIntegrity(mock([],true).db),/metadata unavailable/);
+ assert.throws(()=>gfMigrationTarget({NODE_ENV:'production',DB_NAME:'aaditech_ci',DB_SSL:'false',CRM_TEST_DB:'1'}),/CI-only/);
 });
