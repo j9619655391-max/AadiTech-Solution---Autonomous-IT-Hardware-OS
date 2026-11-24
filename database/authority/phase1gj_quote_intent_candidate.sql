@@ -28,13 +28,17 @@ BEGIN
  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_found=0;
  -- The same caller transaction must contain both binding and consumption.
  -- A savepoint makes failed calls atomic even when the caller catches SIGNAL.
+ -- A SAVEPOINT followed by ROLLBACK TO fails in autocommit without a transaction.
+ -- The guard is outside the mutation handler, so failed probes cannot mask errors.
+ SAVEPOINT gj_intent_candidate;
+ ROLLBACK TO SAVEPOINT gj_intent_candidate;
+ BEGIN
  DECLARE EXIT HANDLER FOR SQLEXCEPTION
  BEGIN
   ROLLBACK TO SAVEPOINT gj_intent_candidate;
   RELEASE SAVEPOINT gj_intent_candidate;
   RESIGNAL;
  END;
- SAVEPOINT gj_intent_candidate;
  SELECT 1 INTO v_found FROM auth_gj_quote_intents_candidate
   WHERE intent_hash=p_intent_hash AND consumed_at IS NULL
    AND expires_at>UTC_TIMESTAMP(3)
@@ -53,4 +57,5 @@ BEGIN
   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GJ_INTENT_DENIED';
  END IF;
  RELEASE SAVEPOINT gj_intent_candidate;
+ END;
 END

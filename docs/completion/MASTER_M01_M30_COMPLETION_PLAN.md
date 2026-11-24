@@ -1196,3 +1196,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - 1GI exact Draft PR 45455592992 FAILED (7/8; session-ID collation conflict); 0051 restricted race test passed. Historical result preserved.
 - [x] [1GJ runbook](../phase-1/PHASE_1GJ_ISSUER_BOUND_QUOTE_INTENT_CANDIDATE_HARD_HOLD.md): explicit local collation and binary session identity correction; CI-only distinct issuer/runtime principals, exact request/session/quote-bound one-use intent and transaction rollback/race test source, custody inventory updated. No app or staging adoption.
 - [ ] Exact-head dual CI, trusted issuer/cryptographic intent, caller transaction/lock order verification, first CRM CREATE issuance, independent DBA recovery and all external acceptance remain OPEN.
+
+
+## Phase 1GK — Customer CREATE intent and issuer boundary candidate (HARD HOLD)
+
+- [x] 1GJ exact Draft PR 45456721979 SUCCESS 8/8, including 1GI corrected binding, 1GJ one-use intent, migration 0051 and post-install HTTP. No independent push CI observed.
+- [x] [1GK runbook](../phase-1/PHASE_1GK_CUSTOMER_CREATE_INTENT_AND_ISSUER_BOUNDARY_HARD_HOLD.md): isolated customer CREATE/audit/consume candidate, issuer column-only grants, caller transaction probe and negative/race/rollback tests. No app/staging adoption.
+- [ ] Exact-head CI, lead/product issuance, cryptographic issuer and independent validation, broader transaction/recovery tests and all external acceptance remain OPEN.

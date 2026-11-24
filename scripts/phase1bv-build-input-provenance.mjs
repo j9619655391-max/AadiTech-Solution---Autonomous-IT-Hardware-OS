@@ -144,6 +144,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'database/authority/phase1fo_active_owner_guard.sql',
  'database/authority/phase1gi_session_quote_bind_candidate.sql',
  'database/authority/phase1gj_quote_intent_candidate.sql',
+ 'database/authority/phase1gk_customer_create_intent_candidate.sql',
  'tests/fo-definer-owner-guard.test.ts',
  'tests/fo-owner-guard-mysql.integration.ts',
  'database/migrations/0051_gf_crm_quote_write_once.sql',
