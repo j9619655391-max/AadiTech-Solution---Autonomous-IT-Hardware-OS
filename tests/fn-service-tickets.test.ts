@@ -464,3 +464,23 @@ test('1FW M16 uses owner-scoped existing CRM pagination with bounded UI and stal
  assert.match(helper,/SERVICE_DESK_CUSTOMER_PAGE_SIZE=100/);
  assert.match(helper,/customerIdPattern/);
 });
+
+test('1FX status mutation verifies recent audit anchor, actor and sentinel before any DML',()=>{
+ const route=readFileSync('server/serviceDesk/router.ts','utf8');
+ const patch=route.slice(route.indexOf("router.patch('/:id/status'"));
+ const ownerLock=patch.indexOf('await lockActiveCrmOwner(');
+ const ticketLock=patch.indexOf('WHERE t.id=? AND t.owner_user_id=? FOR UPDATE');
+ const auditLock=patch.indexOf('ORDER BY a.version_after DESC LIMIT 101 FOR SHARE');
+ const integrity=patch.indexOf('verifyInternalTicketAuditWindow(lockedAudit,');
+ const actor=patch.indexOf('lockedAudit.some(event=>event.actorUserId!==res.locals.auth.userId)');
+ const mutation=patch.indexOf('UPDATE service_tickets_internal SET status=?');
+ const append=patch.indexOf('INSERT INTO service_ticket_audit_internal');
+ const commit=patch.indexOf('await conn.commit()');
+ const ordered=[ownerLock,ticketLock,auditLock,integrity,actor,mutation,append,commit];
+ assert.ok(ordered.every((n,i)=>n>=0&&(i===0||n>ordered[i-1])),
+  'Owner/ticket/audit locks and integrity checks must precede both writes');
+ assert.match(patch,/WHERE a\.ticket_id=\?\s+ORDER BY a\.version_after DESC LIMIT 101 FOR SHARE/);
+ assert.match(patch,/currentVersion:old\.version,currentStatus:old\.status/);
+ assert.match(patch,/catch\(e\)\{await conn\.rollback\(\);fail\(res,e\);\}/);
+ assert.match(patch,/externalDispatchEnabled:false/);
+});
