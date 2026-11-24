@@ -18,7 +18,7 @@ export type GrTableDigest={table:string;rowCount:number;sha256:string};
 export type GrManifest={version:1;audience:typeof audience;sequence:number;previousSha256:string;sourceCommit:string;observedAtMs:number;tables:GrTableDigest[]};
 const hex=/^[0-9a-f]{64}$/;
 const maxRows=10000;
-const fail=():never=>{throw Error('GR_RECOVERY_HOLD');};
+function fail():never{throw Error('GR_RECOVERY_HOLD');}
 function digest(v:unknown):v is string{return typeof v==='string'&&hex.test(v);}
 function obj(value:unknown,keys:string[]):Record<string,unknown>{
  if(!value||typeof value!=='object'||Object.getPrototypeOf(value)!==Object.prototype)fail();
@@ -32,7 +32,7 @@ export function grManifestBytes(value:unknown):Buffer{
  !digest(m.previousSha256)||typeof m.sourceCommit!=='string'||!/^[0-9a-f]{40}$/.test(m.sourceCommit)||
  typeof m.observedAtMs!=='number'||!Number.isSafeInteger(m.observedAtMs)||m.observedAtMs<=0||
  !Array.isArray(m.tables)||m.tables.length!==specs.length)fail();
- const tables=m.tables.map((value,i)=>{
+ const tables=Array.from(m.tables as unknown[],(value,i)=>{
   const t=obj(value,['table','rowCount','sha256']);
   if(t.table!==specs[i][0]||typeof t.rowCount!=='number'||!Number.isSafeInteger(t.rowCount)||t.rowCount<0||t.rowCount>maxRows||!digest(t.sha256))fail();
   return [t.table,t.rowCount,t.sha256];
@@ -49,7 +49,7 @@ export function grVerifyManifest(value:unknown,signature:unknown,expected:{seque
  !digest(expected.spkiSha256)||typeof signature!=='string'||!/^[A-Za-z0-9_-]{86}$/.test(signature)||
  typeof expected.publicKeyPem!=='string'||expected.publicKeyPem.length>4096||!expected.publicKeyPem.startsWith('-----BEGIN PUBLIC KEY-----'))fail();
  try{
-  const key=createPublicKey(expected.publicKeyPem),sig=Buffer.from(signature,'base64url');
+  const key=createPublicKey(expected.publicKeyPem),sig=Buffer.from(signature as string,'base64url');
   if(key.asymmetricKeyType!=='ed25519'||createHash('sha256').update(key.export({format:'der',type:'spki'})).digest('hex')!==expected.spkiSha256||
   sig.length!==64||sig.toString('base64url')!==signature||!verify(null,bytes,key,sig))fail();
  }catch{return fail();}
@@ -60,12 +60,12 @@ export function grVerifyManifest(value:unknown,signature:unknown,expected:{seque
 // Cast each explicit column to UTF-8 text inside MySQL (preserves decimal and
 // DATETIME precision; SQL NULL stays null). Primary-key ordering is binary.
 // No row contents leave this helper; bounded row count and per-row bytes.
-export async function grCaptureAuthorityDigests(c:Pick<PoolConnection,'query'>):Promise<GrTableDigest[]>{
+export async function grCaptureAuthorityDigests(c:Pick<PoolConnection,'query'>,restored=false):Promise<GrTableDigest[]>{
  gfMigrationTarget(process.env);
  const output:GrTableDigest[]=[];
  for(const [table,pk,columns] of specs){
   const fields=columns.split(',');
-  const [rows]=await c.query<RowDataPacket[]>('SELECT '+fields.map(k=>'CAST('+k+' AS CHAR CHARACTER SET utf8mb4) AS '+k).join(',')+' FROM '+table+' ORDER BY BINARY '+pk+' LIMIT '+(maxRows+1));
+  const [rows]=await c.query<RowDataPacket[]>('SELECT '+fields.map(k=>'CAST('+k+' AS CHAR CHARACTER SET utf8mb4) AS '+k).join(',')+' FROM '+(restored?'gs_restore_'+table:table)+' ORDER BY BINARY '+pk+' LIMIT '+(maxRows+1));
   if(rows.length>maxRows)fail();
   const hash=createHash('sha256').update(JSON.stringify(['GR_TABLE_V1',table,fields])+'\n');
   for(const row of rows){
@@ -88,4 +88,48 @@ export async function grCaptureConsistentAuthority(pool:Pick<Pool,'getConnection
   if((await gqInspectAuthoritySnapshot(c)).status!=='PASS')fail();
   return await grCaptureAuthorityDigests(c);
  }finally{try{await c.rollback();}catch(e){c.destroy();throw e;}finally{c.release();}}
+}
+
+
+// 1GS isolated logical row export/import rehearsal. Temporary tables are
+// session-local, not application tables. CREATE LIKE does not copy FKs/triggers.
+// Source must be quiescent for the schema capture; data is a consistent snapshot.
+// Never emit raw source rows or call on live data.
+export async function gsRehearseLogicalRestore(pool:Pick<Pool,'getConnection'>){
+ gfMigrationTarget(process.env);
+ const source=await pool.getConnection();
+ let restore:PoolConnection|undefined;
+ const created:string[]=[];
+ try{
+  await source.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+  await source.query('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+  if((await gqInspectAuthoritySnapshot(source)).status!=='PASS')fail();
+  const original=await grCaptureAuthorityDigests(source);
+  restore=await pool.getConnection();
+  let totalBytes=0;
+  for(const [table,pk,columns] of specs){
+   const dest='gs_restore_'+table,fields=columns.split(',');
+   const [rows]=await source.query<RowDataPacket[]>('SELECT '+fields.map(k=>'CAST('+k+' AS CHAR CHARACTER SET utf8mb4) AS '+k).join(',')+' FROM '+table+' ORDER BY BINARY '+pk+' LIMIT '+(maxRows+1));
+   if(rows.length>maxRows)fail();
+   await restore.query('CREATE TEMPORARY TABLE '+dest+' LIKE '+table);created.push(dest);
+   for(const row of rows){
+    const values=fields.map(k=>row[k]);
+    if(values.some(v=>v!==null&&typeof v!=='string'))fail();
+    totalBytes+=Buffer.byteLength(JSON.stringify(values),'utf8');
+    if(totalBytes>16*1024*1024)fail();
+    await restore.execute('INSERT INTO '+dest+'('+columns+') VALUES ('+fields.map(()=>'?').join(',')+')',values);
+   }
+  }
+  const restored=await grCaptureAuthorityDigests(restore,true);
+  if(JSON.stringify(original)!==JSON.stringify(restored))fail();
+  // Deliberately remove one row ONLY from the temporary restored copy.
+  const [result]=await restore.query<import('mysql2/promise').ResultSetHeader>('DELETE FROM gs_restore_auth_gn_intent_nonces_candidate LIMIT 1');
+  if(result.affectedRows!==1)fail();
+  const damaged=await grCaptureAuthorityDigests(restore,true);
+  if(JSON.stringify(original)===JSON.stringify(damaged))fail();
+  return {original,restored,damaged,productionReleaseAuthorized:false as const};
+ }finally{
+  if(restore){try{for(const table of created.reverse())await restore.query('DROP TEMPORARY TABLE '+table);}finally{restore.destroy();}}
+  try{await source.rollback();}catch(e){source.destroy();throw e;}finally{source.release();}
+ }
 }

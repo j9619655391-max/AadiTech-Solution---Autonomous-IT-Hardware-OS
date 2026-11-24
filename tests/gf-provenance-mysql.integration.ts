@@ -7,7 +7,8 @@ import {assessRuntimeGrantEnvelope} from '../scripts/phase1fb-runtime-db-privile
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {gfMigrationTarget,checkInstalledGfIntegrity} from '../scripts/migrate-gf-provenance';
-import {grCaptureAuthorityDigests,grCaptureConsistentAuthority,grMakeManifest,grManifestBytes,grVerifyManifest} from '../scripts/lib/grAuthorityRecoveryManifest';
+import {gsCaptureSchemaEvidence,gsRecoveryBytes,gsVerifySchemaBinding} from '../scripts/lib/gsAuthoritySchemaEvidence';
+import {gsRehearseLogicalRestore,grCaptureAuthorityDigests,grCaptureConsistentAuthority,grMakeManifest,grManifestBytes,grVerifyManifest} from '../scripts/lib/grAuthorityRecoveryManifest';
 import {gqInspectAuthoritySnapshot,gqReconcileAuthority} from '../scripts/lib/gqAuthorityReconciliation';
 import {GM_AUDIENCE,gmCanonicalIntent,gmIssueVerifiedIntent,gmApproveIssuedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
 
@@ -436,7 +437,7 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
  }
 });
 
-test('1GN–1GR combined authority, revocation ordering, deadlock/disconnect and recovery manifest',async()=>{
+test('1GN–1GS combined authority, transaction recovery, logical restore and schema binding',async()=>{
  gfMigrationTarget(process.env);
  const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
  const suffix=randomBytes(7).toString('hex'),iss='ci_gn_iss_'+suffix,rt='ci_gn_rt_'+suffix;
@@ -709,6 +710,15 @@ test('1GN–1GR combined authority, revocation ordering, deadlock/disconnect and
   const snapshot=await grCaptureConsistentAuthority(admin),manifest=grMakeManifest(snapshot,anchor);
   const signature=sign(null,grManifestBytes(manifest),checkpointKey.privateKey).toString('base64url');
   const expected={...anchor,publicKeyPem:checkpointKey.publicKey.export({format:'pem',type:'spki'}).toString(),spkiSha256:createHash('sha256').update(checkpointKey.publicKey.export({format:'der',type:'spki'})).digest('hex')};
+  assert.equal(grVerifyManifest(manifest,signature,expected,await grCaptureConsistentAuthority(admin)).status,'MATCH');
+  const schema=await gsCaptureSchemaEvidence(admin);
+  const schemaSig=sign(null,gsRecoveryBytes(manifest,schema.sha256),checkpointKey.privateKey).toString('base64url');
+  assert.equal(gsVerifySchemaBinding(manifest,schema.sha256,(await gsCaptureSchemaEvidence(admin)).sha256,schemaSig,expected).status,'MATCH');
+  const restore=await gsRehearseLogicalRestore(admin);
+  assert.equal(grVerifyManifest(manifest,signature,expected,restore.restored).status,'MATCH');
+  assert.throws(()=>grVerifyManifest(manifest,signature,expected,restore.damaged),/GR_RECOVERY_HOLD/);
+  assert.deepEqual(restore.original,snapshot);
+  assert.equal((await gsCaptureSchemaEvidence(admin)).sha256,schema.sha256);
   assert.equal(grVerifyManifest(manifest,signature,expected,await grCaptureConsistentAuthority(admin)).status,'MATCH');
   // Simulate a partial restored registry row inside a reversible transaction.
   const corrupt=await admin.getConnection();

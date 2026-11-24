@@ -1252,3 +1252,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GQ exact Draft PR 45482963983 SUCCESS 8/8; combined GN–GQ MySQL subtest passed, no separate push receipt observed.
 - [x] [1GR runbook](../phase-1/PHASE_1GR_DEADLOCK_INTERRUPTION_AND_RECOVERY_MANIFEST_BATCH_HARD_HOLD.md): forced lock-cycle and connection interruption regression, signed seven-table recovery digest manifest and tamper tests, custody updated.
 - [ ] Exact-head CI, actual backup/restore and independently authenticated manifest, complete business/quote content verification, issuer/approval custody, app/staging and external acceptance remain OPEN.
+
+
+## Phase 1GS — Logical restore and schema evidence batch (HARD HOLD)
+
+- [x] 1GR exact Draft PR 45485896211 FAILED 7/8, baseline TS2339/TS2769; MySQL forced-deadlock/disconnect and recovery-manifest subtest passed; provenanceIntegrity PASS. No separate push receipt.
+- [x] [1GS runbook](../phase-1/PHASE_1GS_LOGICAL_RESTORE_AND_SCHEMA_EVIDENCE_BATCH_HARD_HOLD.md): TypeScript narrowing corrections, dense manifest arrays, seven-table temporary logical export/import and damage detection, schema evidence and Ed25519 binding with regressions. BV/BW custody updated.
+- [ ] Exact-head CI, full schema+business restore, actual backup storage, independent signer/custody, quote content and CRM audit payload reconciliation, app/staging integration and independent acceptance remain OPEN.

@@ -158,6 +158,7 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'scripts/lib/gmSignedIntentCandidate.ts',
  'scripts/lib/gqAuthorityReconciliation.ts',
  'scripts/lib/grAuthorityRecoveryManifest.ts',
+ 'scripts/lib/gsAuthoritySchemaEvidence.ts',
  'tests/gr-authority-recovery-manifest.test.ts',
  'tests/gm-signed-intent-candidate.test.ts',
  'tests/procurement-mysql.integration.ts',
