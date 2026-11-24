@@ -1155,3 +1155,9 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 
 - [x] [1GD runbook](../phase-1/PHASE_1GD_CRM_QUOTE_PROVENANCE_PRIVILEGE_ENVELOPE_HARD_HOLD.md): narrow runtime grants across eight CRM/quotation tables, retain same-transaction exclusive OWNER guard with immutable quote parent FOR SHARE, remove unnecessary CRM customer DELETE fixture grant. Unit, twelve actual disposable MySQL grant-widening and restricted HTTP create/replay/revision race/soft-delete regression source added.
 - [ ] Exact-head dual CI and independent DBA-authenticated installed grants, legal tenancy, external provider and all business/staging acceptance remain OPEN. No production release.
+
+
+## Phase 1GE — Ambiguous CRM provenance and quotation replay quarantine (24 November 2026, HARD HOLD)
+
+- [x] [1GE runbook](../phase-1/PHASE_1GE_AMBIGUOUS_CRM_PROVENANCE_QUOTE_REPLAY_HARD_HOLD.md): deny ambiguous CREATE provenance across CRM, new quotes, M16 and M17; compare bounded immutable original quote snapshot on replay and check conditional reservation binding. Restricted MySQL tampering/recovery regression source added.
+- [ ] Exact-head dual CI; database-enforced unique provenance/write-once reservation, historical reconciliation, real legal ownership and independently approved DBA/Security/staging remain OPEN. No production release.

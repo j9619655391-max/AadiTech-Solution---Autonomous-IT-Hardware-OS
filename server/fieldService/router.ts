@@ -22,7 +22,7 @@ function fail(res:Response,e:unknown){
 }
 const scope="JOIN crm_customers c ON c.id=t.customer_id AND c.deleted_at IS NULL "+
  "AND EXISTS (SELECT 1 FROM crm_audit_events creator WHERE creator.entity_type='customers' "+
- "AND creator.entity_id=c.id AND creator.operation='CREATE' AND creator.actor_user_id=t.owner_user_id)";
+ "AND creator.entity_id=c.id AND creator.operation='CREATE' AND creator.actor_user_id=t.owner_user_id AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=creator.entity_type AND origin.entity_id=creator.entity_id AND origin.operation='CREATE')=1)";
 interface AuditRow extends RowDataPacket,InternalTicketAuditEvent{actorUserId:string}
 
 router.get('/',async(req,res)=>{

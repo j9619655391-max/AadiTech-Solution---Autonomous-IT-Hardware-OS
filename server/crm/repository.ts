@@ -22,7 +22,7 @@ function clean(entity:CRMEntity,row:RowDataPacket):object {
 // never be silently assigned to a different OWNER or treated as legal tenancy.
 const creatorScope=(alias:string)=>`EXISTS (SELECT 1 FROM crm_audit_events creator
  WHERE creator.entity_type=? AND creator.entity_id=${alias}.id
- AND creator.operation='CREATE' AND creator.actor_user_id=?)`;
+ AND creator.operation='CREATE' AND creator.actor_user_id=? AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=creator.entity_type AND origin.entity_id=creator.entity_id AND origin.operation='CREATE')=1)`;
 // A role/status check in the HTTP middleware is not enough: the account may
 // be disabled or demoted before a later transaction takes its first write lock.
 // The shared auth_users row lock serializes CRM mutation against such changes.

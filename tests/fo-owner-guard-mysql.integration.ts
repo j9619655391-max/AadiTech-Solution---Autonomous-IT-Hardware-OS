@@ -143,6 +143,21 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   assert.equal(replay.status,200,JSON.stringify(replay.data));
   assert.equal(replay.data.id,quote.data.id);
   assert.equal(replay.data.replayed,true);
+  // A runtime SQL writer can still change a request pointer. Verify that
+  // a mismatched same-owner immutable snapshot is refused rather than replayed.
+  const alternate=await invoke(base,'/api/quotes/drafts','POST',
+   {customerId,items:[{productId:String(product.data.id),quantity:3}]},
+   {'idempotency-key':randomUUID()});
+  assert.equal(alternate.status,201,JSON.stringify(alternate.data));
+  await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
+   [alternate.data.id,actor,requestKey]);
+  const corruptReplay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
+  assert.equal(corruptReplay.status,409,JSON.stringify(corruptReplay.data));
+  await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
+   [quote.data.id,actor,requestKey]);
+  const recoveredReplay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
+  assert.equal(recoveredReplay.status,200,JSON.stringify(recoveredReplay.data));
+  assert.equal(recoveredReplay.data.id,quote.data.id);
   const revisionPath='/api/quotes/drafts/'+quote.data.id+'/revisions';
   const revisionInput={expectedRevision:0,reason:'1GD restricted concurrent internal revision',
    items:[{productId:String(product.data.id),quantity:2}]};
@@ -205,6 +220,25 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
    (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_DBACCESS_DENIED_ERROR');
   await assert.rejects(runtime.query('DELETE FROM field_service_plan_audit_internal WHERE plan_id=?',[heldPlan.data.plan.id]),
    (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_DBACCESS_DENIED_ERROR');
+  // A second CREATE assertion (even by the same actor) is ambiguous.
+  // The synthetic corruption is removed by the CI admin, never by runtime.
+  const forgedId=randomUUID();
+  await runtime.query("INSERT INTO crm_audit_events (id,actor_user_id,entity_type,entity_id,operation,before_data,after_data) VALUES (?,?,'customers',?,'CREATE',NULL,?)",
+   [forgedId,actor,customerId,JSON.stringify({id:customerId})]);
+  try{
+   const rejectedCustomer=await invoke(base,'/api/crm/customers/'+customerId);
+   assert.equal(rejectedCustomer.status,404,JSON.stringify(rejectedCustomer.data));
+   const rejectedQuote=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':randomUUID()});
+   assert.equal(rejectedQuote.status,400,JSON.stringify(rejectedQuote.data));
+   const rejectedTicket=await invoke(base,'/api/service-desk/internal-tickets/'+ticket.data.ticket.id);
+   assert.equal(rejectedTicket.status,404,JSON.stringify(rejectedTicket.data));
+   const rejectedPlan=await invoke(base,'/api/field-service/internal-plans?ticketId='+ticket.data.ticket.id);
+   assert.equal(rejectedPlan.status,404,JSON.stringify(rejectedPlan.data));
+  }finally{
+   await admin.query('DELETE FROM crm_audit_events WHERE id=?',[forgedId]);
+  }
+  const recoveredCustomer=await invoke(base,'/api/crm/customers/'+customerId);
+  assert.equal(recoveredCustomer.status,200,JSON.stringify(recoveredCustomer.data));
   // The guard prevents stale middleware privileges: an in-flight role change
   // holds the same InnoDB auth_users row lock reached *through* the definer.
   const blocker=await admin.getConnection();

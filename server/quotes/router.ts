@@ -83,17 +83,27 @@ router.post('/',async(req,res)=>{
       if(!claims[0].quote_id)throw new Error('Existing request without committed draft');
       const existingId=String(claims[0].quote_id);
       const [prior]=await connection.query<RowDataPacket[]>(
-        'SELECT id,customer_id,subtotal,tax_estimate,total_estimate FROM sales_quote_drafts WHERE id=? AND created_by=?',
+        'SELECT id,customer_id,lead_id,subtotal,tax_estimate,total_estimate FROM sales_quote_drafts WHERE id=? AND created_by=?',
         [existingId,res.locals.auth.userId]);
+      if(prior.length!==1)throw new Error('Idempotency reference missing draft');
       const [items]=await connection.query<RowDataPacket[]>(
-        'SELECT COUNT(*) AS n FROM sales_quote_draft_items WHERE quote_id=?',[existingId]);
-      if(!prior.length)throw new Error('Idempotency reference missing draft');
+        'SELECT position,product_id,quantity FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position LIMIT 41',[existingId]);
+      // 1GE: even a matching request hash must not replay a reassigned
+      // quote with different original customer, lead or ordered quantities.
+      const normalizedId=(value:unknown)=>typeof value==='string'?value.toLowerCase():null;
+      if(normalizedId(prior[0].customer_id)!==normalizedId(body.customerId)||
+         normalizedId(prior[0].lead_id)!==normalizedId(body.leadId)||
+         items.length!==body.items.length||
+         items.some((row,i)=>Number(row.position)!==i+1||
+          normalizedId(row.product_id)!==normalizedId(body.items[i].productId)||
+          Number(row.quantity)!==body.items[i].quantity))
+        throw new QuoteConflictError('Idempotency reference does not match original draft input');
       await connection.commit();
       res.status(200).json({
         id:existingId,draftNumber:draftNumber(existingId),replayed:true,status:'DRAFT',
         customerId:prior[0].customer_id,subtotal:prior[0].subtotal,
         taxEstimate:prior[0].tax_estimate,totalEstimate:prior[0].total_estimate,
-        lineCount:Number(items[0].n),
+        lineCount:items.length,
         message:'Previously saved internal draft returned. No new draft created.'
       });
       return;
@@ -102,14 +112,14 @@ router.post('/',async(req,res)=>{
     // supply customer identity, lead details or confidential SKU prices.
     const [customer]=await connection.query<RowDataPacket[]>(`SELECT c.id,c.name FROM crm_customers c WHERE c.id=? AND c.deleted_at IS NULL
        AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='customers'
-        AND a.entity_id=c.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+        AND a.entity_id=c.id AND a.operation='CREATE' AND a.actor_user_id=? AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=a.entity_type AND origin.entity_id=a.entity_id AND origin.operation='CREATE')=1) FOR UPDATE`,
        [body.customerId,res.locals.auth.userId]);
     if(!customer.length)throw new QuoteInputError('Active customer not found');
     if(body.leadId){
       const [lead]=await connection.query<RowDataPacket[]>(`SELECT lead_record.id,lead_record.company FROM crm_leads lead_record
        WHERE lead_record.id=? AND lead_record.deleted_at IS NULL
        AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='leads'
-        AND a.entity_id=lead_record.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+        AND a.entity_id=lead_record.id AND a.operation='CREATE' AND a.actor_user_id=? AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=a.entity_type AND origin.entity_id=a.entity_id AND origin.operation='CREATE')=1) FOR UPDATE`,
        [body.leadId,res.locals.auth.userId]);
       if(!lead.length)throw new QuoteInputError('Active lead not found');
     }
@@ -122,7 +132,7 @@ router.post('/',async(req,res)=>{
       const [products]=await connection.query<RowDataPacket[]>(`SELECT p.id,p.sku,p.brand,p.model,p.hsn,p.unitCost,p.sellingPrice,
         p.minPrice,p.gstRate FROM crm_products p WHERE p.id=? AND p.deleted_at IS NULL
         AND EXISTS (SELECT 1 FROM crm_audit_events a WHERE a.entity_type='products'
-         AND a.entity_id=p.id AND a.operation='CREATE' AND a.actor_user_id=?) FOR UPDATE`,
+         AND a.entity_id=p.id AND a.operation='CREATE' AND a.actor_user_id=? AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=a.entity_type AND origin.entity_id=a.entity_id AND origin.operation='CREATE')=1) FOR UPDATE`,
         [item.productId,res.locals.auth.userId]);
       if(!products.length)throw new QuoteInputError('Active catalog product not found');
       const p=products[0];
@@ -142,9 +152,10 @@ router.post('/',async(req,res)=>{
         (id,quote_id,position,product_id,sku_snapshot,name_snapshot,hsn_snapshot,quantity,unit_cost,unit_price,gst_rate,line_subtotal,line_tax_estimate)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[randomUUID(),id,i+1,p.id,p.sku,p.name,p.hsn,p.quantity,p.cost,p.price,p.gstRate,rupees(p.subtotal),rupees(p.tax)]);
     }
-    await connection.execute(
-      'UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
-      [id,res.locals.auth.userId,idempotencyKey]);
+    const [bound]=await connection.execute<ResultSetHeader>(
+      'UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=? AND request_hash=? AND quote_id IS NULL',
+      [id,res.locals.auth.userId,idempotencyKey,requestHash]);
+    if(bound.affectedRows!==1)throw new Error('Idempotency reservation binding failed');
     await connection.commit();
     res.status(201).json({id,draftNumber:draftNumber(id),replayed:false,status:'DRAFT',customerId:body.customerId,subtotal:rupees(sum),taxEstimate:rupees(tax),totalEstimate:rupees(sum+tax),lineCount:snapshot.length,
       message:'Internal draft saved only. Not approved, sent, reserved or invoiced.'});

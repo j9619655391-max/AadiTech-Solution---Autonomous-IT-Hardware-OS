@@ -69,7 +69,7 @@ const listProjection=`t.id,t.customer_id AS customerId,c.name AS customerName,
 const ownerScope=`JOIN crm_customers c ON c.id=t.customer_id AND c.deleted_at IS NULL
  AND EXISTS (SELECT 1 FROM crm_audit_events creator
   WHERE creator.entity_type='customers' AND creator.entity_id=c.id
-   AND creator.operation='CREATE' AND creator.actor_user_id=t.owner_user_id)`;
+   AND creator.operation='CREATE' AND creator.actor_user_id=t.owner_user_id AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=creator.entity_type AND origin.entity_id=creator.entity_id AND origin.operation='CREATE')=1)`;
 
 router.get('/',async(req,res)=>{
  let cursor:ReturnType<typeof parseInternalTicketListCursor>;
@@ -218,7 +218,7 @@ router.post('/',async(req,res)=>{
    `SELECT c.id FROM crm_customers c WHERE c.id=? AND c.deleted_at IS NULL
     AND EXISTS (SELECT 1 FROM crm_audit_events creator
      WHERE creator.entity_type='customers' AND creator.entity_id=c.id
-      AND creator.operation='CREATE' AND creator.actor_user_id=?) FOR UPDATE`,
+      AND creator.operation='CREATE' AND creator.actor_user_id=? AND (SELECT COUNT(*) FROM crm_audit_events origin WHERE origin.entity_type=creator.entity_type AND origin.entity_id=creator.entity_id AND origin.operation='CREATE')=1) FOR UPDATE`,
    [input.customerId,res.locals.auth.userId]);
   if(customers.length!==1){
    await conn.rollback();res.status(404).json({error:'Active owned customer not found'});return;
