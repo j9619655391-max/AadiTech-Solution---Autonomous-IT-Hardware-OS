@@ -1203,3 +1203,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GJ exact Draft PR 45456721979 SUCCESS 8/8, including 1GI corrected binding, 1GJ one-use intent, migration 0051 and post-install HTTP. No independent push CI observed.
 - [x] [1GK runbook](../phase-1/PHASE_1GK_CUSTOMER_CREATE_INTENT_AND_ISSUER_BOUNDARY_HARD_HOLD.md): isolated customer CREATE/audit/consume candidate, issuer column-only grants, caller transaction probe and negative/race/rollback tests. No app/staging adoption.
 - [ ] Exact-head CI, lead/product issuance, cryptographic issuer and independent validation, broader transaction/recovery tests and all external acceptance remain OPEN.
+
+
+## Phase 1GL — Batch CRM provenance and governance repair (HARD HOLD)
+
+- 1GK exact PR 45458921802 FAILED 6/8: actual MySQL GK/GJ tests passed; baseline TS2345 and PR description 8684 > 8192 byte limit failed.
+- [x] [1GL runbook](../phase-1/PHASE_1GL_BATCH_CRM_PROVENANCE_AND_GOVERNANCE_HARD_HOLD.md): fix test type, archive historical PR index, isolated lead/product exact CREATE and audit/consume candidates, bounded SQL payload validation and negative/race/rollback tests; BV/BW updated. Existing governance budget unchanged.
+- [ ] Exact-head CI, app integration, independent cryptographic issuer and business/DBA verification, revocation/recovery and all external acceptance remain OPEN.

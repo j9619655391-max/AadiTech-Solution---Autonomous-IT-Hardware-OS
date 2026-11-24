@@ -285,7 +285,7 @@ test('1GK restricted customer CREATE intent issues exact record and audit atomic
   await assert.rejects(issuer.query('UPDATE auth_gk_customer_intents_candidate SET consumed_at=NULL WHERE 1=0'),denied);
   await issuer.execute(issueSql,[intent,actor,session,customer,audit]);
   await issuer.execute(issueSql,[oldIntent,actor,session,historical,randomUUID()]);
-  const call=(c:Pick<mysql.PoolConnection,'query'>,a=actor,s=session,i=intent)=>c.query('CALL aaditech_gk_create_customer_candidate(?,?,?)',[a,s,i]);
+  const call=(c:Pick<mysql.PoolConnection,'query'>,a:string=actor,s:string=session,i:string=intent)=>c.query('CALL aaditech_gk_create_customer_candidate(?,?,?)',[a,s,i]);
   const observe=async()=>{
    const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM auth_gk_customer_intents_candidate WHERE intent_hash=?',[intent]);
    const [customers]=await admin.query<mysql.RowDataPacket[]>('SELECT id,name FROM crm_customers WHERE id=?',[customer]);
@@ -321,6 +321,97 @@ test('1GK restricted customer CREATE intent issues exact record and audit atomic
   if(rtCreated)await admin.query('DROP USER '+rtAccount);if(issCreated)await admin.query('DROP USER '+issAccount);
   if(routineCreated)await admin.query('DROP PROCEDURE aaditech_gk_create_customer_candidate');
   if(tableCreated)await admin.query('DROP TABLE auth_gk_customer_intents_candidate');
+  await admin.end();
+ }
+});
+
+// 1GL: fixed source-defined entity specs, no caller-controlled SQL identifiers.
+for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-bound CREATE/audit, business guard, rollback and replay',async()=>{
+ gfMigrationTarget(process.env);
+ const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
+ const suffix=randomBytes(7).toString('hex'),rt='ci_gl_rt_'+suffix,iss='ci_gl_iss_'+suffix;
+ const rtAccount="'"+rt+"'@'%'",issAccount="'"+iss+"'@'%'";
+ const rtPassword=randomBytes(32).toString('base64url'),issPassword=randomBytes(32).toString('base64url');
+ const actor=randomUUID(),id=randomUUID(),audit=randomUUID(),historical=randomUUID(),badId=randomUUID(),badAudit=randomUUID(),collideId=randomUUID();
+ const session=hashToken(randomBytes(32).toString('base64url')),intent=hashToken(randomUUID()),oldIntent=hashToken(randomUUID()),badIntent=hashToken(randomUUID()),collision=hashToken(randomUUID());
+ const table='auth_gl_'+entity+'_intents_candidate',routine='aaditech_gl_create_'+entity+'_candidate',target='crm_'+entity+'s';
+ const fields=entity==='lead'?['name','company','email','phone','source','status','score','scoreReason','intentScore','requirement','estimatedBudget','location','gstin']:
+  ['sku','brand','model','category','specs','unitCost','freightCost','riskBuffer','sellingPrice','minPrice','gstRate','hsn','warrantyMonths','leadTimeDays'];
+ const payload:(string|number|null)[]=entity==='lead'?['GL lead','CI company','gl@example.invalid','0000000000','WEBSITE','NEW','NURTURE','',10,'Synthetic hardware requirement','100.00','Mumbai',null]:
+  ['GL-'+randomUUID(),'CI','GL server','SERVER','Synthetic hardware','100.00','0.00','0.00','200.00','150.00','18.00','8471',12,0];
+ const historicalPayload=[...payload];if(entity==='product')historicalPayload[0]='GL-'+randomUUID();
+ const invalidPayload=[...payload];if(entity==='lead')invalidPayload[8]=101;else{invalidPayload[0]='GL-'+randomUUID();invalidPayload[9]='200.01';}
+ const collidePayload=[...payload];if(entity==='product')collidePayload[0]='GL-'+randomUUID();
+ let runtime:mysql.Pool|undefined,issuer:mysql.Pool|undefined,rtCreated=false,issCreated=false,tableCreated=false,routineCreated=false;
+ try{
+  await checkInstalledGfIntegrity(admin);
+  const [rs]=await admin.query<mysql.RowDataPacket[]>('SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME=?',[routine]);
+  const [ts]=await admin.query<mysql.RowDataPacket[]>('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[table]);
+  assert.equal(rs.length+ts.length,0);
+  const statements=readFileSync('database/authority/phase1gl_'+entity+'_create_intent_candidate.sql','utf8').split(/^-- statement-break$/m);
+  assert.equal(statements.length,2);await admin.query(statements[0]);tableCreated=true;await admin.query(statements[1]);routineCreated=true;
+  await admin.execute("INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,'CI-INVALID-HASH','OWNER')",[actor,'gl-'+actor+'@example.invalid','GL synthetic owner']);
+  await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[session,actor,randomBytes(32).toString('base64url')]);
+  const rawInsert='INSERT INTO '+target+'(id,'+fields.join(',')+') VALUES ('+Array(fields.length+1).fill('?').join(',')+')';
+  await admin.execute(rawInsert,[historical,...historicalPayload]);
+  const existingAudit=randomUUID();
+  await admin.execute("INSERT INTO crm_audit_events(id,actor_user_id,entity_type,entity_id,operation) VALUES (?,?,?,?,'UPDATE')",[existingAudit,actor,entity+'s',historical]);
+  await admin.query('CREATE USER '+rtAccount+' IDENTIFIED BY ?',[rtPassword]);rtCreated=true;
+  await admin.query('CREATE USER '+issAccount+' IDENTIFIED BY ?',[issPassword]);issCreated=true;
+  await admin.query('GRANT EXECUTE ON PROCEDURE aaditech_ci.'+routine+' TO '+rtAccount);
+  await admin.query('GRANT SELECT ON aaditech_ci.'+target+' TO '+rtAccount);
+  const issueCols=['intent_hash','actor_id','session_hash',entity+'_id','audit_id',...fields,'expires_at'];
+  await admin.query('GRANT INSERT ('+issueCols.join(',')+') ON aaditech_ci.'+table+' TO '+issAccount);
+  runtime=mysql.createPool({...cfg,user:rt,password:rtPassword,connectionLimit:3});
+  issuer=mysql.createPool({...cfg,user:iss,password:issPassword,connectionLimit:1});
+  const denied=(e:any)=>['ER_TABLEACCESS_DENIED_ERROR','ER_COLUMNACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_PROCACCESS_DENIED_ERROR'].includes(e?.code);
+  const intentDenied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlState==='45000'&&e?.sqlMessage==='GL_'+entity.toUpperCase()+'_INTENT_DENIED';
+  const issueSql='INSERT INTO '+table+'('+issueCols.join(',')+') VALUES ('+Array(issueCols.length-1).fill('?').join(',')+',DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 2 MINUTE))';
+  await assert.rejects(runtime.execute(issueSql,[intent,actor,session,id,audit,...payload]),denied);
+  await assert.rejects(runtime.execute(rawInsert,[id,...payload]),denied);
+  await assert.rejects(runtime.query("INSERT INTO crm_audit_events(id,actor_user_id,entity_type,entity_id,operation) VALUES (?,?,?,?,'CREATE')",[randomUUID(),actor,entity+'s',historical]),denied);
+  await assert.rejects(runtime.query('SELECT intent_hash FROM '+table+' LIMIT 0'),denied);
+  await assert.rejects(issuer.query('UPDATE '+table+' SET consumed_at=NULL WHERE 1=0'),denied);
+  await assert.rejects(issuer.query('INSERT INTO '+table+'(intent_hash,created_at) VALUES (?,UTC_TIMESTAMP(3))',[hashToken(randomUUID())]),denied);
+  await issuer.execute(issueSql,[intent,actor,session,id,audit,...payload]);
+  await issuer.execute(issueSql,[oldIntent,actor,session,historical,randomUUID(),...historicalPayload]);
+  await issuer.execute(issueSql,[badIntent,actor,session,badId,badAudit,...invalidPayload]);
+  await issuer.execute(issueSql,[collision,actor,session,collideId,existingAudit,...collidePayload]);
+  const call=(c:Pick<mysql.PoolConnection,'query'>,a:string=actor,s:string=session,i:string=intent)=>c.query('CALL '+routine+'(?,?,?)',[a,s,i]);
+  const conn=await runtime.getConnection();
+  try{
+   await assert.rejects(call(conn),(e:any)=>e?.code==='ER_SP_DOES_NOT_EXIST');
+   for(const [a,s,i] of [[randomUUID(),session,intent],[actor,'0'.repeat(64),intent],[actor,session,'0'.repeat(64)],[actor,session,badIntent]]){
+    await conn.beginTransaction();try{await assert.rejects(call(conn,a,s,i),intentDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
+   }
+   // Duplicate entity or audit ID cannot leave a partial CREATE even if caller commits after error.
+   for(const i of [oldIntent,collision]){
+    await conn.beginTransaction();try{await assert.rejects(call(conn,actor,session,i),(e:any)=>e?.code==='ER_DUP_ENTRY');await conn.commit();}catch(e){await conn.rollback();throw e;}
+   }
+   await conn.beginTransaction();try{await call(conn);}finally{await conn.rollback();}
+   const [none]=await admin.query<mysql.RowDataPacket[]>('SELECT id FROM '+target+' WHERE id IN (?,?,?)',[id,badId,collideId]);
+   assert.equal(none.length,0);
+   const [before]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+table+' WHERE consumed_at IS NOT NULL');
+   assert.equal(before.length,0);
+   const [oldEvents]=await admin.query<mysql.RowDataPacket[]>("SELECT id FROM crm_audit_events WHERE entity_id=? AND operation='CREATE'",[historical]);assert.equal(oldEvents.length,0);
+   const race=async()=>{const c=await runtime!.getConnection();try{await c.beginTransaction();await call(c);await c.commit();}catch(e){await c.rollback();throw e;}finally{c.release();}};
+   const outcomes=await Promise.allSettled([race(),race()]);
+   assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+   assert.ok(intentDenied((outcomes.find(x=>x.status==='rejected') as PromiseRejectedResult).reason));
+   const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT * FROM '+target+' WHERE id=?',[id]);assert.equal(rows.length,1);
+   const [events]=await admin.query<mysql.RowDataPacket[]>('SELECT actor_user_id,entity_id,operation,after_data FROM crm_audit_events WHERE id=?',[audit]);
+   assert.equal(events.length,1);assert.equal(events[0].actor_user_id,actor);assert.equal(events[0].entity_id,id);assert.equal(events[0].operation,'CREATE');
+   const after=typeof events[0].after_data==='string'?JSON.parse(events[0].after_data):events[0].after_data;
+   assert.equal(after.id,id);assert.equal(after[fields[0]],payload[0]);
+   assert.equal(rows[0][fields[0]],payload[0]);
+   const [consumed]=await admin.query<mysql.RowDataPacket[]>('SELECT intent_hash FROM '+table+' WHERE consumed_at IS NOT NULL');
+   assert.deepEqual(consumed.map(row=>row.intent_hash),[intent]);
+  }finally{conn.release();}
+ }finally{
+  if(runtime)await runtime.end();if(issuer)await issuer.end();
+  if(rtCreated)await admin.query('DROP USER '+rtAccount);if(issCreated)await admin.query('DROP USER '+issAccount);
+  if(routineCreated)await admin.query('DROP PROCEDURE '+routine);
+  if(tableCreated)await admin.query('DROP TABLE '+table);
   await admin.end();
  }
 });
