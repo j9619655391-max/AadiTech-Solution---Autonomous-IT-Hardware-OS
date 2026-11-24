@@ -24,6 +24,7 @@ function fail(res:import('express').Response,error:unknown){
 }
 // MySQL RowDataPacket alone does not assert selected numeric audit aliases.
 interface InternalTicketAuditRow extends RowDataPacket, InternalTicketAuditEvent {}
+interface LockedTicketAuditRow extends InternalTicketAuditRow {actorUserId:string}
 interface InternalTicketAnchor extends RowDataPacket {version:number;status:string}
 interface InternalTicketListRow extends RowDataPacket {id:string;createdAtKey:string}
 // Repeatable-read transaction snapshot is required: separate pool.query calls
@@ -260,6 +261,21 @@ router.patch('/:id/status',async(req,res)=>{
   if(input.expectedVersion!==old.version){
    await conn.rollback();res.status(409).json({error:'Ticket changed; reload before updating'});return;
   }
+  // Phase 1FX: a valid transition must not extend a known-inconsistent
+  // audit window. The owner and ticket row are already locked; read the
+  // current ledger with shared locks in the SAME transaction, not a stale
+  // consistent snapshot. Do not filter by audit actor: a wrong actor is
+  // corruption to reject, not an event to hide from the integrity check.
+  const [lockedAudit]=await conn.query<LockedTicketAuditRow[]>(`SELECT
+   a.version_after AS versionAfter,a.operation,a.from_status AS fromStatus,
+   a.to_status AS toStatus,a.actor_user_id AS actorUserId
+   FROM service_ticket_audit_internal a
+   WHERE a.ticket_id=?
+   ORDER BY a.version_after DESC LIMIT 101 FOR SHARE`,[req.params.id]);
+  verifyInternalTicketAuditWindow(lockedAudit,{
+   currentVersion:old.version,currentStatus:old.status});
+  if(lockedAudit.some(event=>event.actorUserId!==res.locals.auth.userId))
+   throw Error('1FX audit actor ownership inconsistent');
   await conn.execute(`UPDATE service_tickets_internal SET status=?,version=version+1 WHERE id=?`,
    [input.nextStatus,req.params.id]);
   await conn.execute(`INSERT INTO service_ticket_audit_internal
