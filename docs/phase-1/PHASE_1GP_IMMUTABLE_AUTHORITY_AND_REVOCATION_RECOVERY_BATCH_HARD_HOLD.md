@@ -5,3 +5,8 @@
 1GP adds fourteen CI-only triggers after GO: four intent UPDATE guards (immutable all issued columns, one-way consumption, ordered before GO checks), four DELETE denials, key identity/scope/interval immutability and one-way DB-time revocation, key DELETE denial, approval UPDATE/DELETE denial, global nonce one-way consumption and DELETE denial. The integrated fixture adds privileged DML mutation attempts, successful signed/approved quotation binding with rollback and replay checks, bounded real MySQL lock-wait timeout during an uncommitted session deletion and issuer key revocation, rollback then retry after revocation commit (must deny), and exact nonce-to-module identity/consumption reconciliation. Four valid operations and two revoke-first cases. No real key/credential enrolled. Exact-head CI pending; 0051 bytes unchanged; BV/BW custody updated.
 
 Limits: DML guards cannot resist a DBA with DDL or restore access; raw approver can forge receipt and SQL does not verify Ed25519. The test covers revocation holding locks first, not all commit-first interleavings or deadlock handling. Full backup/restore rehearsal, authenticated key enrollment and approval service isolation, independent quotation-content verification, actual app/staging migration and independent DBA/business/security approvals remain OPEN. Synthetic disposable fixture only. No real release, grant changes or external business activity.
+
+
+## Verified hosted receipt
+
+Exact Draft PR 45480434240 on 56d5c0e367d2ae32998d473bc6d7ce52a30d854e completed SUCCESS 8/8. Combined GN–GP MySQL subtest 7 and provenanceIntegrity PASS. No separate push receipt or independent external authority.

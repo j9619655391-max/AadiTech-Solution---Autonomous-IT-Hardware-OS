@@ -1238,3 +1238,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GO exact Draft PR 45478240952 SUCCESS 8/8; combined nonce/approval/revocation fixture passed, no separate push receipt observed.
 - [x] [1GP runbook](../phase-1/PHASE_1GP_IMMUTABLE_AUTHORITY_AND_REVOCATION_RECOVERY_BATCH_HARD_HOLD.md): fourteen isolated DML guards, all-four-operation consumption, successful quote rollback/replay, revoke-first lock timeout/retry tests and global/module reconciliation. BV/BW custody updated.
 - [ ] Exact-head CI, commit-first/deadlock and restore tests, non-bypassable independently authenticated approval, quote content verification, app/staging and external acceptance remain OPEN.
+
+
+## Phase 1GQ — Revocation ordering and authority reconciliation (HARD HOLD)
+
+- [x] 1GP exact Draft PR 45480434240 SUCCESS 8/8 including combined GN–GP MySQL subtest. No separate push receipt observed.
+- [x] [1GQ runbook](../phase-1/PHASE_1GQ_REVOCATION_ORDER_AND_AUTHORITY_RECONCILIATION_BATCH_HARD_HOLD.md): commit-first key/session revocation regression, native deadlock preservation, bidirectional read-only snapshot reconciliation and simulated orphan restore corruption detection; custody updated.
+- [ ] Exact-head CI, actual forced deadlock and full restore, quote content, independent issuer/approval and app/staging integration, independent external acceptance remain OPEN.

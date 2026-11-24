@@ -40,6 +40,9 @@ BEGIN
  SAVEPOINT gl_lead_candidate;
  ROLLBACK TO SAVEPOINT gl_lead_candidate;
  BEGIN
+ -- InnoDB deadlock rolls back the entire transaction; its savepoint is gone.
+ -- Preserve ER_LOCK_DEADLOCK so the caller knows to retry the entire unit.
+ DECLARE EXIT HANDLER FOR 1213 RESIGNAL;
  DECLARE EXIT HANDLER FOR SQLEXCEPTION
  BEGIN
   ROLLBACK TO SAVEPOINT gl_lead_candidate;

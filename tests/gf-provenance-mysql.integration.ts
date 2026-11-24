@@ -7,6 +7,7 @@ import {assessRuntimeGrantEnvelope} from '../scripts/phase1fb-runtime-db-privile
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {gfMigrationTarget,checkInstalledGfIntegrity} from '../scripts/migrate-gf-provenance';
+import {gqInspectAuthoritySnapshot,gqReconcileAuthority} from '../scripts/lib/gqAuthorityReconciliation';
 import {GM_AUDIENCE,gmCanonicalIntent,gmIssueVerifiedIntent,gmApproveIssuedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
 
 // Synthetic private keys never leave this test process. Real issuer custody is not established.
@@ -434,7 +435,7 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
  }
 });
 
-test('1GN–1GP combined nonce, approval, immutable authority, quote consumption and revoke-first recovery',async()=>{
+test('1GN–1GQ combined authority, bidirectional reconciliation and both revocation orders',async()=>{
  gfMigrationTarget(process.env);
  const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
  const suffix=randomBytes(7).toString('hex'),iss='ci_gn_iss_'+suffix,rt='ci_gn_rt_'+suffix;
@@ -555,21 +556,25 @@ test('1GN–1GP combined nonce, approval, immutable authority, quote consumption
   await admin.execute('INSERT INTO '+keyTable+'(key_id,spki_sha256,scope_mask,not_before,not_after) VALUES (?,?,15,DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 2 SECOND),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE))',[pin.keyId,pin.spkiSha256]);
   const goDenied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GO_CONSUMPTION_DENIED';
   const immutable=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GP_AUTHORITY_IMMUTABLE';
-  // Use six independent authorizations: four successes, then session/key revoke-first.
-  for(let attempt=0;attempt<6;attempt++){
+  // Four ordinary successes, two commit-first successes, then two revoke-first denials.
+  const second=generateKeyPairSync('ed25519');
+  const secondPin:GmPinnedKey={...pin,keyId:'gq-ci-key',publicKeyPem:second.publicKey.export({format:'pem',type:'spki'}).toString(),spkiSha256:createHash('sha256').update(second.publicKey.export({format:'der',type:'spki'})).digest('hex')};
+  await admin.execute('INSERT INTO '+keyTable+'(key_id,spki_sha256,scope_mask,not_before,not_after) VALUES (?,?,15,DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 2 SECOND),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE))',[secondPin.keyId,secondPin.spkiSha256]);
+  for(let attempt=0;attempt<8;attempt++){
    const i=Math.min(attempt,3);
-   const token=attempt===4?hashToken(randomUUID()):session;
-   if(attempt===4)await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[token,actor,randomBytes(32).toString('base64url')]);
+   const activePin=attempt===5?secondPin:pin,signer=attempt===5?second.privateKey:privateKey;
+   const token=attempt===4||attempt===6?hashToken(randomUUID()):session;
+   if(attempt===4||attempt===6)await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[token,actor,randomBytes(32).toString('base64url')]);
    const id=randomUUID(),audit=i===3?null:randomUUID(),n=hashToken(randomUUID());
    const p=[...payloads[i]];if(i===2)p[0]='GO-'+randomUUID();if(i===3)p[0]=randomUUID();
    const payload=i===3?{requestKey:p[0],requestHash:p[1]}:Object.fromEntries(fields[i].map((k,j)=>[k,p[j]]));
-   const e:GmEnvelope={version:1,audience:GM_AUDIENCE,keyId:pin.keyId,operation:ops[i],actorId:actor,sessionHash:token,intentHash:n,entityId:id,auditId:audit,issuedAtMs:now,expiresAtMs:now+120000,payload};
-   const sig=sign(null,gmCanonicalIntent(e).bytes,privateKey).toString('base64url');
+   const e:GmEnvelope={version:1,audience:GM_AUDIENCE,keyId:activePin.keyId,operation:ops[i],actorId:actor,sessionHash:token,intentHash:n,entityId:id,auditId:audit,issuedAtMs:now,expiresAtMs:now+120000,payload};
+   const sig=sign(null,gmCanonicalIntent(e).bytes,signer).toString('base64url');
    if(i===3){
     await admin.execute('INSERT INTO sales_quote_drafts(id,customer_id,created_by,subtotal,tax_estimate,total_estimate) VALUES (?,?,?,100,18,118)',[id,quoteCustomer,actor]);
     await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,p[0],p[1]]);
    }
-   await gmIssueVerifiedIntent(issuer,e,sig,[pin]);
+   await gmIssueVerifiedIntent(issuer,e,sig,[activePin]);
    const call=(c:Pick<mysql.PoolConnection,'query'>)=>c.query('CALL '+routines[i]+'('+Array(i===3?6:3).fill('?').join(',')+')',i===3?[actor,token,p[0],p[1],id,n]:[actor,token,n]);
    const observe=async()=>{
     const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+registry+' WHERE intent_hash=?',[n]);
@@ -584,10 +589,10 @@ test('1GN–1GP combined nonce, approval, immutable authority, quote consumption
     assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
     // A valid signature over different payload cannot approve the already issued row.
     const different:GmEnvelope={...e,payload:i===3?{...payload,requestHash:'b'.repeat(64)}:{...payload,[fields[i][0]]:'different'}};
-    const otherSig=sign(null,gmCanonicalIntent(different).bytes,privateKey).toString('base64url');
-    await assert.rejects(gmApproveIssuedIntent(approver,different,otherSig,[pin]),/GM_INTENT_REJECTED/);
-    assert.equal((await gmApproveIssuedIntent(approver,e,sig,[pin])).approved,true);
-    await assert.rejects(gmApproveIssuedIntent(approver,e,sig,[pin]),/GM_INTENT_REJECTED/);
+    const otherSig=sign(null,gmCanonicalIntent(different).bytes,signer).toString('base64url');
+    await assert.rejects(gmApproveIssuedIntent(approver,different,otherSig,[activePin]),/GM_INTENT_REJECTED/);
+    assert.equal((await gmApproveIssuedIntent(approver,e,sig,[activePin])).approved,true);
+    await assert.rejects(gmApproveIssuedIntent(approver,e,sig,[activePin]),/GM_INTENT_REJECTED/);
     // Even a privileged DML account cannot mutate the receipt, payload or nonce.
     await assert.rejects(admin.execute('UPDATE '+approvalTable+' SET evidence_sha256=? WHERE intent_hash=?',['f'.repeat(64),n]),immutable);
     await assert.rejects(admin.execute('DELETE FROM '+approvalTable+' WHERE intent_hash=?',[n]),immutable);
@@ -595,15 +600,15 @@ test('1GN–1GP combined nonce, approval, immutable authority, quote consumption
     await assert.rejects(admin.execute('DELETE FROM '+tables[i]+' WHERE intent_hash=?',[n]),immutable);
     await assert.rejects(admin.execute('UPDATE '+registry+' SET entity_id=?,consumed_at=UTC_TIMESTAMP(3) WHERE intent_hash=?',[randomUUID(),n]),immutable);
     await assert.rejects(admin.execute('DELETE FROM '+registry+' WHERE intent_hash=?',[n]),immutable);
-    await assert.rejects(admin.execute('UPDATE '+keyTable+' SET scope_mask=1 WHERE key_id=?',[pin.keyId]),immutable);
-    if(attempt>=4){
+    await assert.rejects(admin.execute('UPDATE '+keyTable+' SET scope_mask=1 WHERE key_id=?',[activePin.keyId]),immutable);
+    if(attempt>=6){
      // Hold the revocation write uncommitted. The consumer must not bypass the
      // row lock using a stale read. A one-second bounded timeout is explicit.
      const rev=await admin.getConnection();
      try{
       await rev.beginTransaction();
-      if(attempt===4)await rev.execute('DELETE FROM auth_sessions WHERE token_hash=?',[token]);
-      else await rev.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[pin.keyId]);
+      if(attempt===6)await rev.execute('DELETE FROM auth_sessions WHERE token_hash=?',[token]);
+      else await rev.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[activePin.keyId]);
       await conn.query('SET SESSION innodb_lock_wait_timeout=1');
       await conn.beginTransaction();
       try{await assert.rejects(call(conn),(e:any)=>e?.code==='ER_LOCK_WAIT_TIMEOUT');}
@@ -613,11 +618,31 @@ test('1GN–1GP combined nonce, approval, immutable authority, quote consumption
      }catch(e){await rev.rollback();throw e;}finally{rev.release();}
      await conn.beginTransaction();
      try{
-      await assert.rejects(call(conn),attempt===4?(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GI_BIND_AUTHORITY_DENIED':goDenied);
+      await assert.rejects(call(conn),attempt===6?(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GI_BIND_AUTHORITY_DENIED':goDenied);
       await conn.commit();
      }catch(e){await conn.rollback();throw e;}
      assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
-     if(attempt===5)await assert.rejects(admin.execute('UPDATE '+keyTable+' SET revoked_at=NULL WHERE key_id=?',[pin.keyId]),immutable);
+     if(attempt===7)await assert.rejects(admin.execute('UPDATE '+keyTable+' SET revoked_at=NULL WHERE key_id=?',[activePin.keyId]),immutable);
+    }else if(attempt===4||attempt===5){
+     // Consumer owns the lock first; revocation cannot commit before it.
+     await conn.beginTransaction();
+     try{
+      await call(conn);
+      const rev=await admin.getConnection();
+      try{
+       await rev.query('SET SESSION innodb_lock_wait_timeout=1');
+       await rev.beginTransaction();
+       const revoke=()=>attempt===4?rev.execute('DELETE FROM auth_sessions WHERE token_hash=?',[token]):
+        rev.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[activePin.keyId]);
+       try{await assert.rejects(revoke(),(e:any)=>e?.code==='ER_LOCK_WAIT_TIMEOUT');}finally{await rev.rollback();}
+       assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+       await conn.commit();
+       await rev.beginTransaction();
+       try{await revoke();await rev.commit();}catch(e){await rev.rollback();throw e;}
+      }finally{await rev.rollback();await rev.query('SET SESSION innodb_lock_wait_timeout=50');rev.release();}
+      const after=await observe();assert.ok(after.registry);assert.deepEqual(after.registry,after.intent);assert.equal(after.bound,id);
+      await conn.beginTransaction();try{await assert.rejects(call(conn),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION');}finally{await conn.rollback();}
+     }catch(e){await conn.rollback();throw e;}
     }else{
      await conn.beginTransaction();try{await call(conn);}finally{await conn.rollback();}
      assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
@@ -628,15 +653,25 @@ test('1GN–1GP combined nonce, approval, immutable authority, quote consumption
     }
    }finally{conn.release();}
   }
-  // Four successful operations, two revoke-first denials; compare every reservation
+  // Six successful operations, two revoke-first denials; compare every reservation
   // to its unique module row, including exact consumption timestamps.
   const [used]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry+' WHERE consumed_at IS NOT NULL');
-  assert.equal(Number(used[0].n),4);
+  assert.equal(Number(used[0].n),6);
   for(let i=0;i<4;i++){
    const [drift]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry+' g LEFT JOIN '+tables[i]+' t ON t.intent_hash=g.intent_hash WHERE g.operation=? AND (t.intent_hash IS NULL OR NOT (g.consumed_at <=> t.consumed_at) OR BINARY g.actor_id<>BINARY t.actor_id OR BINARY g.entity_id<>BINARY t.'+ids[i]+')',[ops[i]]);
    assert.equal(Number(drift[0].n),0);
   }
   await assert.rejects(admin.execute('DELETE FROM '+keyTable+' WHERE key_id=?',[pin.keyId]),immutable);
+  assert.deepEqual(await gqReconcileAuthority(admin),{status:'PASS',anomalies:[],productionReleaseAuthorized:false});
+  // Simulate a partial restored registry row inside a reversible transaction.
+  const corrupt=await admin.getConnection();
+  try{
+   await corrupt.beginTransaction();
+   await corrupt.execute('INSERT INTO '+registry+'(intent_hash,operation,actor_id,entity_id) VALUES (?,\'customers\',?,?)',[hashToken(randomUUID()),actor,randomUUID()]);
+   const result=await gqInspectAuthoritySnapshot(corrupt);
+   assert.equal(result.status,'HOLD');assert.ok(result.anomalies.includes('customers:REGISTRY_TO_MODULE'));
+  }finally{await corrupt.rollback();corrupt.release();}
+  assert.equal((await gqReconcileAuthority(admin)).status,'PASS');
 
  }finally{
   if(runtime)await runtime.end();if(issuer)await issuer.end();if(approver)await approver.end();
