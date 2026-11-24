@@ -23,7 +23,10 @@ export async function assertGfHistoricalIntegrity(db:Pick<mysql.Connection,'quer
   WHERE r.quote_id IS NOT NULL AND (q.id IS NULL OR q.created_by<>r.actor_id) LIMIT 1`);
  if(duplicates.length||reused.length||foreign.length)throw Error('1GF historical provenance conflict; manual quarantine required');
 }
-function canonical(s:string){return s.replace(/\x60/g,'').replace(/\s+/g,'').toLowerCase();}
+// Keep quoted SQL literal bytes intact; normalize only nonliteral tokens.
+function canonical(s:string){
+ return s.split(/('(?:''|[^'])*')/).map((part,i)=>i%2?part:part.replace(/\x60/g,'').replace(/\s+/g,'').toLowerCase()).join('');
+}
 export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>){
  const [indexes]=await db.query<mysql.RowDataPacket[]>(`SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME
   FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
@@ -39,7 +42,7 @@ export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>){
   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='crm_audit_events' AND COLUMN_NAME='gf_create_entity_id'`);
  // MySQL formats generated expressions with parentheses and charset introducers.
  const expr=canonical(String(columns[0]?.GENERATION_EXPRESSION??'')).replace(/_utf8mb4/g,'').replace(/[()]/g,'');
- if(columns.length!==1||columns[0].EXTRA!=='STORED GENERATED'||expr!=="casewhenoperation='create'thenentity_idelsenullend")
+ if(columns.length!==1||columns[0].EXTRA!=='STORED GENERATED'||expr!=="casewhenoperation='CREATE'thenentity_idelsenullend")
   throw Error('1GF generated origin expression unverified');
  const [triggers]=await db.query<mysql.RowDataPacket[]>(`SELECT TRIGGER_NAME,ACTION_STATEMENT,ACTION_TIMING,EVENT_MANIPULATION
   FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE='sales_quote_create_requests'`);
