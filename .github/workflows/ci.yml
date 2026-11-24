@@ -559,6 +559,10 @@ jobs:
         run: bun run db:migrate:service-tickets
       - name: Phase 1FN verify 0049 migration checksum and idempotent rerun
         run: bun run db:migrate:service-tickets
+      - name: Phase 1GA apply additive held field service plan schema 0050 in disposable CI
+        run: bun run db:migrate:field-service
+      - name: Phase 1GA verify 0050 checksum and idempotent rerun
+        run: bun run db:migrate:field-service
       - name: Run real MySQL integration tests
         run: bun run test:mysql
       - name: Phase 1FA adversarial InnoDB reviewer role/grant transaction orderings (CI only)

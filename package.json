@@ -109,6 +109,7 @@
     "test:bs-signed-revocation-mysql": "tsx --test tests/bs-signed-revocation-mysql.integration.ts",
     "db:migrate:service-tickets": "tsx scripts/migrate-service-tickets.ts",
     "test:service-tickets-mysql": "tsx --test tests/fn-service-tickets-mysql.integration.ts",
+    "db:migrate:field-service": "tsx scripts/migrate-field-service.ts",
     "test:fo-owner-guard-mysql": "tsx --test tests/fo-owner-guard-mysql.integration.ts"
   },
   "dependencies": {

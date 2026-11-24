@@ -20,10 +20,11 @@ test('read-only readiness is denied by default and outside disposable DB',()=>{
 test('all known migration checksums derive from checked-in SQL bytes',()=>{
  const entries=migrationChecksums();
  assert.equal(entries.length,MIGRATIONS.length);
- assert.equal(entries.at(-4)?.id,'0046_ep_proof_key_trust_review_scopes');
- assert.equal(entries.at(-3)?.id,'0047_eq_provider_review_scopes');
- assert.equal(entries.at(-2)?.id,'0048_ew_role_cycle_quarantine');
- assert.equal(entries.at(-1)?.id,'0049_fn_service_tickets_internal');
+ assert.equal(entries[45]?.id,'0046_ep_proof_key_trust_review_scopes');
+ assert.equal(entries[46]?.id,'0047_eq_provider_review_scopes');
+ assert.equal(entries[47]?.id,'0048_ew_role_cycle_quarantine');
+ assert.equal(entries[48]?.id,'0049_fn_service_tickets_internal');
+ assert.equal(entries[49]?.id,'0050_ga_field_service_plans_internal');
  assert.equal(new Set(entries.map(x=>x.id)).size,entries.length);
  assert.deepEqual(entries.map(x=>x.id),[...MIGRATIONS]);
  assert.ok(entries.every(x=>/^[a-f0-9]{64}$/.test(x.checksum)));

@@ -158,7 +158,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Total Sales Orders</span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold text-white">{salesOrders.length}</span>
-              <span className="text-[10px] text-emerald-400 font-medium">100% Verified</span>
+              <span className="text-[10px] text-slate-400 font-medium">Browser preview only</span>
             </div>
           </div>
 
@@ -186,7 +186,7 @@ export const OrdersAndLogisticsView: React.FC<OrdersAndLogisticsViewProps> = ({
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Active RMA Replacements</span>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-lg font-bold text-amber-400">{rmas.length}</span>
-              <span className="text-[10px] text-emerald-400 font-medium">DOA 14-Day Guard</span>
+              <span className="text-[10px] text-slate-400 font-medium">Entitlement NOT VERIFIED</span>
             </div>
           </div>
         </div>

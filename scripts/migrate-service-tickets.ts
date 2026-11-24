@@ -16,7 +16,7 @@ export function serviceTicketMigrationTarget(env:NodeJS.ProcessEnv):'ci'|'stagin
 async function main(){
  serviceTicketMigrationTarget(process.env);
  const id='0049_fn_service_tickets_internal';
- if(MIGRATIONS[MIGRATIONS.length-1]!==id)throw Error('1FN schema not registered as final additive migration');
+ if(MIGRATIONS[48]!==id)throw Error('1FN schema not registered as final additive migration');
  const cfg=getDatabaseConfig();
  if(!cfg.host||!cfg.user||!cfg.password||!cfg.database)throw Error('Complete SQL settings required');
  const db=await mysql.createConnection(cfg);let locked=false;
@@ -26,7 +26,7 @@ async function main(){
   locked=true;
   const [rows]=await db.query<any[]>('SELECT id,checksum FROM schema_migrations');
   const actual=new Map(rows.map(x=>[String(x.id),String(x.checksum)]));
-  for(const previous of MIGRATIONS.slice(0,-1)){
+  for(const previous of MIGRATIONS.slice(0,48)){
    const expected=createHash('sha256').update(readFileSync('database/migrations/'+previous+'.sql')).digest('hex');
    if(actual.get(previous)!==expected)throw Error('1FN missing/drifted previous migration: '+previous);
   }

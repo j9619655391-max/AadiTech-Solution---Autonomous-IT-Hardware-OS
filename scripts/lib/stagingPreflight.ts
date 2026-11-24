@@ -39,7 +39,8 @@ export const MIGRATIONS=[
  '0046_ep_proof_key_trust_review_scopes',
  '0047_eq_provider_review_scopes',
  '0048_ew_role_cycle_quarantine',
- '0049_fn_service_tickets_internal'
+ '0049_fn_service_tickets_internal',
+ '0050_ga_field_service_plans_internal'
 ] as const;
 
 export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {

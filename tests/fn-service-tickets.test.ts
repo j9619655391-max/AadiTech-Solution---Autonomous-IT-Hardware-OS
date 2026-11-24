@@ -76,7 +76,7 @@ test('1FN schema migration requires disposable CI or specifically approved isola
   {...staging,DB_NAME:'aaditech_production'},
   {...staging,DB_SSL:'false'}
  ])assert.throws(()=>serviceTicketMigrationTarget(denied));
- assert.equal(MIGRATIONS.at(-1),'0049_fn_service_tickets_internal');
+ assert.equal(MIGRATIONS[48],'0049_fn_service_tickets_internal');
  const ddl=readFileSync('database/migrations/0049_fn_service_tickets_internal.sql','utf8');
  assert.match(ddl,/external_dispatch_state ENUM\('DISABLED'\)/);
  assert.match(ddl,/customer_consent_state ENUM\('UNVERIFIED'\)/);

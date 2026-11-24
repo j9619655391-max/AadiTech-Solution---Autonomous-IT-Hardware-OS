@@ -4,6 +4,7 @@ import {authenticatedFetch} from '../services/authClient';
 import {crmClient,type CRMRecord} from '../services/crmClient';
 import {verifyServiceDeskCustomerPage,customerSelectionForPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE} from '../services/serviceDeskCustomerPaging';
 import {createServiceDeskReadGate} from '../services/serviceDeskReadGate';
+import {HeldFieldServicePlans} from './HeldFieldServicePlans';
 
 type Status='OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD';
 type Priority='LOW'|'NORMAL'|'HIGH';
@@ -429,6 +430,7 @@ export function LiveServiceDeskWorkspace(){
      <p className="break-all font-mono" aria-label="Unsigned internal audit SHA-256 fingerprint">{fingerprint.auditDigestSha256}</p>
     </div>}
    </div>
+   <HeldFieldServicePlans key={detail.ticket.id+":"+detail.ticket.version} ticketId={detail.ticket.id} version={detail.ticket.version} status={detail.ticket.status} disabled={busy}/>
    <h4 className="text-sm font-semibold text-white">Versioned internal audit</h4>
    <p className="text-xs text-slate-400">Showing {historyIsLatest?'latest':'older'} {detail.history.length} internal audit entries (limit {detail.historyLimit}). {detail.historyHasMore?'Earlier entries remain.':'No earlier entries reported by this bounded read.'} This is a single page, not immutable external evidence.</p>
    <div className="flex flex-wrap gap-2">

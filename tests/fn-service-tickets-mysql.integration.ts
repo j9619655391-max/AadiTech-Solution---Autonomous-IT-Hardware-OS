@@ -6,6 +6,7 @@ import mysql from 'mysql2/promise';
 import {getPool,getDatabaseConfig} from '../server/db';
 import {hashToken} from '../server/auth/crypto';
 import serviceDeskRouter,{readInternalTicketSnapshot} from '../server/serviceDesk/router';
+import fieldServiceRouter from '../server/fieldService/router';
 import {createCRMRouter} from '../server/crm/router';
 import {verifyServiceDeskCustomerPage} from '../src/services/serviceDeskCustomerPaging';
 import {MySQLCRMRepository,CRMOwnerInactiveError,lockActiveCrmOwner} from '../server/crm/repository';
@@ -67,6 +68,7 @@ test('1FN isolated owner, independent other owner/reviewer and CRM provenance fi
  otherCustomer=await makeCustomer(other,'FN CI different-owner customer');
  const app=express();app.use(express.json());
  app.use('/api/service-desk/internal-tickets',serviceDeskRouter);
+ app.use('/api/field-service/internal-plans',fieldServiceRouter);
  app.use('/api/crm',createCRMRouter(()=>repository));
  app.use('/api',(_req,res)=>res.status(404).json({error:'Unknown endpoint'}));
  const listener=app.listen(0,'127.0.0.1');
@@ -744,6 +746,51 @@ test('1FY real MySQL full valid 999-event fixture permits one append to 1000 the
  const fp=await request('/'+id+'/audit-fingerprint','GET',undefined,'other');
  assert.equal(fp.status,200);assert.equal(fp.data.eventCount,1000);
  assert.equal(fp.data.signatureVerified,false);
+});
+
+test('1GA real MySQL held work-order/RMA intake is source-version scoped and atomic',async()=>{
+ const created=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ const invoke=async(method:string,body?:unknown,who:Actor|null=other)=>{
+  const headers:Record<string,string>={};
+  if(who){headers.cookie=who.cookie;headers['x-csrf-token']=who.csrf;}
+  if(body!==undefined)headers['content-type']='application/json';
+  const response=await fetch(base+'/api/field-service/internal-plans'+(method==='GET'?'?ticketId='+id:''),{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+  return {status:response.status,data:await response.json() as any,cache:response.headers.get('cache-control')};
+ };
+ const plan={ticketId:id,expectedTicketVersion:2,kind:'WORK_ORDER',note:'CI internal planning only',acknowledgeUnverifiedAuthority:true};
+ assert.equal((await invoke('POST',plan)).status,409);
+ assert.equal((await request('/'+id+'/status','PATCH',{expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note:'CI triage'},'other')).status,200);
+ assert.equal((await invoke('POST',plan,owner)).status,404);
+ assert.equal((await invoke('POST',plan,reviewer)).status,403);
+ assert.equal((await invoke('POST',plan,null)).status,401);
+ assert.equal((await invoke('POST',{...plan,technicianId:other.id})).status,400);
+ try{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='TRIAGED_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+  assert.equal((await invoke('POST',plan)).status,503);
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='OPEN_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+ }
+ const results=await Promise.all([invoke('POST',plan),invoke('POST',plan)]);
+ assert.deepEqual(results.map(x=>x.status).sort(),[201,409]);
+ assert.equal((await invoke('POST',{...plan,kind:'RMA'})).status,201);
+ const listed=await invoke('GET');
+ assert.equal(listed.status,200);assert.equal(listed.cache,'no-store');
+ assert.equal(listed.data.items.length,2);
+ for(const row of listed.data.items){
+  assert.equal(row.status,'PLANNING_HELD');assert.equal(row.sourceTicketVersion,2);
+  assert.equal(row.customerConsentState,'UNVERIFIED');assert.equal(row.externalDispatchState,'DISABLED');
+ }
+ assert.equal(listed.data.technicianAssignmentEnabled,false);
+ assert.equal(listed.data.replacementApprovalEnabled,false);
+ assert.equal((await invoke('GET',undefined,owner)).status,404);
+ const [audit]=await db!.query<any[]>('SELECT COUNT(*) AS n FROM field_service_plan_audit_internal a JOIN field_service_plans_internal p ON p.id=a.plan_id WHERE p.ticket_id=?',[id]);
+ assert.equal(Number(audit[0].n),2);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),2);
+ assert.equal((await request('/'+id+'/status','PATCH',{expectedVersion:2,nextStatus:'WAITING_INTERNAL',note:'CI wait'},'other')).status,200);
+ assert.equal((await invoke('POST',plan)).status,409);
+ assert.equal((await invoke('GET')).status,200);
 });
 
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
