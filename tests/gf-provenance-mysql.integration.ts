@@ -67,7 +67,7 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
  gfMigrationTarget(process.env);
  const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
  const user='ci_gi_'+randomBytes(7).toString('hex'),account="'"+user+"'@'%'",password=randomBytes(32).toString('base64url');
- const actor=randomUUID(),other=randomUUID(),customer=randomUUID(),quote=randomUUID(),foreign=randomUUID(),key=randomUUID();
+ const actor=randomUUID(),other=randomUUID(),customer=randomUUID(),quote=randomUUID(),foreign=randomUUID(),freshQuote=randomUUID(),key=randomUUID();
  const session=hashToken(randomBytes(32).toString('base64url')),
   otherSession=hashToken(randomBytes(32).toString('base64url')),
   expired=hashToken(randomBytes(32).toString('base64url')),
@@ -87,7 +87,7 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
    await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL ? HOUR),'+(mfa?'UTC_TIMESTAMP(3)':'NULL')+')',
     [token,id,randomBytes(32).toString('base64url'),expiry]);
   await admin.execute("INSERT INTO crm_customers(id,name,contactPerson,email,phone,city,state) VALUES (?,'GI test','CI','gi@example.invalid','0000000000','Mumbai','Maharashtra')",[customer]);
-  for(const [id,owner] of [[quote,actor],[foreign,other]])await admin.execute(
+  for(const [id,owner] of [[quote,actor],[foreign,other],[freshQuote,actor]])await admin.execute(
    'INSERT INTO sales_quote_drafts(id,customer_id,created_by,subtotal,tax_estimate,total_estimate) VALUES (?,?,?,100,18,118)',[id,customer,owner]);
   await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);created=true;
   await admin.query('GRANT SELECT, INSERT ON aaditech_ci.sales_quote_create_requests TO '+account);
@@ -98,6 +98,7 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
   assert.equal(envelope.allowed,false,'experimental procedure must remain outside the staging grant envelope');
   await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,key,hash]);
   const denied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlState==='45000';
+  const authorityDenied=(e:any)=>denied(e)&&e?.sqlMessage==='GI_BIND_AUTHORITY_DENIED';
   const sqlDenied=(e:any)=>['ER_TABLEACCESS_DENIED_ERROR','ER_COLUMNACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR'].includes(e?.code);
   await assert.rejects(runtime.query('SELECT token_hash FROM auth_sessions LIMIT 0'),sqlDenied);
   await assert.rejects(runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',[quote,actor,key]),sqlDenied);
@@ -107,10 +108,10 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
   try{
    for(const token of ['0'.repeat(64),otherSession,expired,noMfa]){
     await conn.beginTransaction();
-    try{await assert.rejects(call(conn,token),denied);}finally{await conn.rollback();}
+    try{await assert.rejects(call(conn,token),authorityDenied);}finally{await conn.rollback();}
    }
    await conn.beginTransaction();
-   try{await assert.rejects(call(conn,session,quote,'d'.repeat(64)),denied);}finally{await conn.rollback();}
+   try{await assert.rejects(call(conn,session,quote,'d'.repeat(64)),authorityDenied);}finally{await conn.rollback();}
    await conn.beginTransaction();
    try{await assert.rejects(call(conn,session,foreign),denied);}finally{await conn.rollback();}
    // A rollback must also roll back the successful procedure mutation.
@@ -129,10 +130,20 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
    await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,nextKey,hash]);
    await admin.execute('DELETE FROM auth_sessions WHERE token_hash=?',[session]);
    await conn.beginTransaction();
-   try{await assert.rejects(conn.query('CALL aaditech_gi_bind_quote_candidate(?,?,?,?,?)',[actor,session,nextKey,hash,quote]),denied);}
+   try{await assert.rejects(conn.query('CALL aaditech_gi_bind_quote_candidate(?,?,?,?,?)',[actor,session,nextKey,hash,freshQuote]),authorityDenied);}
    finally{await conn.rollback();}
    const [unbound]=await runtime.query<mysql.RowDataPacket[]>('SELECT quote_id FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,nextKey]);
    assert.equal(unbound[0].quote_id,null);
+   // Fresh valid session and target still cannot bind after OWNER disable.
+   const live=hashToken(randomBytes(32).toString('base64url'));
+   await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',
+    [live,actor,randomBytes(32).toString('base64url')]);
+   await admin.execute("UPDATE auth_users SET status='DISABLED' WHERE id=?",[actor]);
+   await conn.beginTransaction();
+   try{await assert.rejects(conn.query('CALL aaditech_gi_bind_quote_candidate(?,?,?,?,?)',[actor,live,nextKey,hash,freshQuote]),authorityDenied);}
+   finally{await conn.rollback();}
+   const [stillUnbound]=await runtime.query<mysql.RowDataPacket[]>('SELECT quote_id FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,nextKey]);
+   assert.equal(stillUnbound[0].quote_id,null);
   }finally{conn.release();}
  }finally{
   if(runtime)await runtime.end();
