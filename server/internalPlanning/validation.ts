@@ -41,6 +41,6 @@ export function money(v:bigint):string{
 }
 export function array(v:unknown,min:number,max:number):unknown[]{
  if(!Array.isArray(v)||v.length<min||v.length>max||Object.keys(v).length!==v.length)reject('INVALID_ARRAY');
- return Array.from(v);
+ return Array.from({length:v.length},(_,i)=>{const x=Object.getOwnPropertyDescriptor(v,String(i));if(!x||!x.enumerable||!('value' in x))reject('INVALID_ARRAY');return x.value;});
 }
 export function unique(values:string[]){if(new Set(values).size!==values.length)reject('DUPLICATE_REFERENCE');}

@@ -12,6 +12,8 @@ import crmRouter from '../server/crm/router';
 import quoteDraftRouter from '../server/quotes/router';
 import reviewRouter from '../server/quotes/reviewRouter';
 import releaseRouter from '../server/quotes/releaseHoldRouter';
+import internalPlanningRouter from '../server/internalPlanning/router';
+import {gvExercisePlanningHttp} from './gv-planning-http-fixture';
 
 if(process.env.CRM_TEST_DB!=='1'||process.env.DB_NAME!=='aaditech_ci'||process.env.NODE_ENV!=='test')
  throw Error('Smoke suite requires disposable CI database only');
@@ -20,7 +22,7 @@ if(!db)throw Error('MySQL unavailable');
 let stop:()=>Promise<void>;
 after(async()=>{if(stop)await stop();await db.end();});
 
-test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',async()=>{
+test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',async(t)=>{
  const userId=randomUUID(),email='smoke-'+userId.slice(0,8)+'@example.invalid';
  const password='CI-MFA-Smoke-Password-2026',secret=generateTotpSecret();
  await db.execute('INSERT INTO auth_users (id,email,full_name,password_hash,role,status) VALUES (?,?,?,?,?,?)',
@@ -30,6 +32,7 @@ test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',
  const app=express();
  app.use(express.json({limit:'256kb'}));
  app.use('/api/auth',authRouter);
+ app.use('/api/internal-planning',internalPlanningRouter);
  app.use('/api/auth/mfa',mfaRouter);
  app.use('/api/crm',crmRouter);
  app.use('/api/quotes/drafts',quoteDraftRouter);
@@ -83,6 +86,7 @@ test('HTTP auth smoke: password -> TOTP -> MFA session -> owner only -> logout',
  assert.equal(read.response.status,200);
  const forbidden=await request('/api/quotes/reviews/queue',{headers:{cookie:cookie!}});
  assert.equal(forbidden.response.status,403);
+ await gvExercisePlanningHttp(t,db,request,cookie!,valid.data.csrfToken,userId);
  const noCsrf=await request('/api/auth/logout',{method:'POST',headers:{cookie:cookie!}});
  assert.equal(noCsrf.response.status,403);
  const logout=await request('/api/auth/logout',{method:'POST',
