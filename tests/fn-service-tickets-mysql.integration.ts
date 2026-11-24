@@ -585,6 +585,86 @@ test('1FR real MySQL read-only snapshot rejects mixed ticket/audit versions and 
  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),2);
 });
 
+test('1FX real MySQL status mutation refuses a corrupt locked audit window without writing',async()=>{
+ const created=await request('/','POST',payload(otherCustomer),'other');
+ assert.equal(created.status,201);
+ const id=String(created.data.ticket.id);
+ const statusRoute='/'+id+'/status';
+ const triage={expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note:'CI-only internal triage'};
+ async function assertUnchanged(version:number,status:string,auditCount:number){
+  const [rows]=await db!.query<any[]>('SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].version,version);assert.equal(rows[0].status,status);
+  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),auditCount);
+ }
+ // Test fixture tampering only; no real source evidence or customer data.
+ try{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='TRIAGED_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+  const denied=await request(statusRoute,'PATCH',triage,'other');
+  assert.equal(denied.status,503);
+  assert.equal(denied.data.error,'Internal service desk unavailable');
+  await assertUnchanged(1,'OPEN_INTERNAL',1);
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET to_status='OPEN_INTERNAL' WHERE ticket_id=? AND version_after=1",[id]);
+ }
+ try{
+  await db!.execute('UPDATE service_ticket_audit_internal SET actor_user_id=? WHERE ticket_id=? AND version_after=1',[owner.id,id]);
+  assert.equal((await request(statusRoute,'PATCH',triage,'other')).status,503);
+  await assertUnchanged(1,'OPEN_INTERNAL',1);
+ }finally{
+  await db!.execute('UPDATE service_ticket_audit_internal SET actor_user_id=? WHERE ticket_id=? AND version_after=1',[other.id,id]);
+ }
+ assert.equal((await request(statusRoute,'PATCH',triage,'owner')).status,404);
+ assert.equal((await request(statusRoute,'PATCH',triage,'other')).status,200);
+ const wait={expectedVersion:2,nextStatus:'WAITING_INTERNAL',note:'CI-only internal wait'};
+ await assertUnchanged(2,'TRIAGED_INTERNAL',2);
+ try{
+  await db!.execute('UPDATE service_ticket_audit_internal SET version_after=7 WHERE ticket_id=? AND version_after=2',[id]);
+  assert.equal((await request(statusRoute,'PATCH',wait,'other')).status,503);
+  await assertUnchanged(2,'TRIAGED_INTERNAL',2);
+ }finally{
+  await db!.execute('UPDATE service_ticket_audit_internal SET version_after=2 WHERE ticket_id=? AND version_after=7',[id]);
+ }
+ try{
+  await db!.execute("UPDATE service_ticket_audit_internal SET from_status='WAITING_INTERNAL' WHERE ticket_id=? AND version_after=2",[id]);
+  assert.equal((await request(statusRoute,'PATCH',wait,'other')).status,503);
+  await assertUnchanged(2,'TRIAGED_INTERNAL',2);
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET from_status='OPEN_INTERNAL' WHERE ticket_id=? AND version_after=2",[id]);
+ }
+ assert.equal((await request(statusRoute,'PATCH',wait,'other')).status,200);
+ await assertUnchanged(3,'WAITING_INTERNAL',3);
+ const detail=await request('/'+id,'GET',undefined,'other');
+ assert.equal(detail.status,200);
+ assert.deepEqual(detail.data.history.map((e:any)=>e.versionAfter),[1,2,3]);
+ assert.equal((await request('/'+id+'/audit-fingerprint','GET',undefined,'other')).status,200);
+});
+
+test('1FX real MySQL mutation checks the 101st boundary sentinel of an older long audit',async()=>{
+ const id=pagedTicketId;
+ const before=await request('/'+id,'GET',undefined,'other');
+ assert.equal(before.status,200);
+ assert.equal(before.data.ticket.version,103);
+ assert.equal(before.data.ticket.status,'WAITING_INTERNAL');
+ const next={expectedVersion:103,nextStatus:'TRIAGED_INTERNAL',note:'CI-only resume after integrity review'};
+ try{
+  // v3 is the 101st newest row when current version is 103.
+  await db!.execute("UPDATE service_ticket_audit_internal SET from_status='OPEN_INTERNAL' WHERE ticket_id=? AND version_after=3",[id]);
+  const denied=await request('/'+id+'/status','PATCH',next,'other');
+  assert.equal(denied.status,503);
+  const [rows]=await db!.query<any[]>('SELECT version,status FROM service_tickets_internal WHERE id=?',[id]);
+  assert.equal(rows[0].version,103);assert.equal(rows[0].status,'WAITING_INTERNAL');
+  assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),103);
+ }finally{
+  await db!.execute("UPDATE service_ticket_audit_internal SET from_status='TRIAGED_INTERNAL' WHERE ticket_id=? AND version_after=3",[id]);
+ }
+ const accepted=await request('/'+id+'/status','PATCH',next,'other');
+ assert.equal(accepted.status,200);
+ assert.equal(accepted.data.version,104);
+ assert.equal(accepted.data.externalDispatchEnabled,false);
+ assert.equal(await count('service_ticket_audit_internal','ticket_id=?',[id]),104);
+});
+
 test('1FN disabled OWNER cannot create or mutate, and no rows are appended',async()=>{
  const before=await count('service_ticket_audit_internal','ticket_id=?',[ticketId]);
  const beforeOwnedTickets=await count('service_tickets_internal','owner_user_id=?',[owner.id]);
