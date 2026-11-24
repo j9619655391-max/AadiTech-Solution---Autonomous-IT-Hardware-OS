@@ -1,0 +1,7 @@
+# Phase 1GC — M16 ticket history privilege envelope (HARD HOLD)
+
+24 November 2026 IST. The existing M16 API supports ticket creation and versioned status transitions, but no deletion or history rewriting. The runtime grant assessor previously permitted UPDATE/DELETE on service_ticket_audit_internal and DELETE on service_tickets_internal, despite that API contract.
+
+This increment rejects those privileges, including mixed grants and case-normalized table names. It preserves SELECT/INSERT on audit rows and SELECT/INSERT/UPDATE on tickets, matching the existing restricted-principal 1FO integration. The 1GB M17 envelope and all other authority controls remain unchanged. Unit tests cover positive and negative combinations. Disposable MySQL grant-widening regression observes refusal of each forbidden privilege and restoration after revocation; temporary users are removed. No live credentials or actual grants are changed.
+
+This is a read-only privilege assessment, not an installed privilege policy, independent DBA evidence or a cryptographically immutable audit. Exact-head push and Draft PR CI must complete successfully before claiming tested integration. M16/M17 remain SERVER_INTERNAL_HELD; independent business, DBA, security, legal, provider and staging acceptance remain OPEN. Main unchanged, PR #1 Draft/unmerged, Issue #2 open; productionReleaseAuthorized=false, productionReleaseBlocked=true, releaseDecision=HOLD.

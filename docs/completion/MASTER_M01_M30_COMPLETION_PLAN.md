@@ -1143,3 +1143,9 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 
 - [x] [1GB runbook](../phase-1/PHASE_1GB_M17_APPEND_ONLY_RUNTIME_PRIVILEGE_ENVELOPE_HARD_HOLD.md): deny observed table-specific UPDATE/DELETE on both held field-plan and creation-audit tables; preserve SELECT/INSERT. Unit and actual disposable MySQL grant-widening and revocation tests. No live privilege mutation. Exact-head dual CI required.
 - [ ] Independently approved staging runtime privileges, actual service authority and all external acceptance remain OPEN. No production release.
+
+
+## Phase 1GC — M16 ticket history privilege envelope (24 November 2026, HARD HOLD)
+
+- [x] [1GC runbook](../phase-1/PHASE_1GC_M16_TICKET_HISTORY_PRIVILEGE_ENVELOPE_HARD_HOLD.md): source rejects UPDATE/DELETE on the M16 audit table and DELETE on the ticket table; existing held ticket status transitions remain permitted. Unit and disposable MySQL grant-widening regression source added.
+- [ ] Exact-head dual CI and independent DBA-approved installed privileges, real customer/service authority and all external acceptance remain pending. No production release.

@@ -103,6 +103,13 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
      privileges.some(priv=>priv!=='SELECT'&&priv!=='INSERT')){
    reasons.push('Runtime field service immutable record mutation forbidden');continue;
   }
+  // 1GC: M16 supports status updates, never ticket deletion or audit rewriting.
+  const tableName=parts[1].toLowerCase();
+  if((tableName==='service_ticket_audit_internal'&&
+      privileges.some(priv=>priv!=='SELECT'&&priv!=='INSERT'))||
+     (tableName==='service_tickets_internal'&&privileges.includes('DELETE'))){
+   reasons.push('Runtime service ticket history mutation forbidden');continue;
+  }
   dataGrantCount++;
   dataGrantTables.add(parts[1].toLowerCase());
  }

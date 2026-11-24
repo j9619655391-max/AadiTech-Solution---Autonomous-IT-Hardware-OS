@@ -218,3 +218,29 @@ test('1GB real MySQL observed field service grants reject UPDATE and DELETE on e
   if(created)await admin.query('DROP USER '+account);
  }
 });
+
+test('1GC real MySQL rejects M16 audit rewriting and ticket deletion grants',async()=>{
+ const user='ci_gc_'+randomBytes(8).toString('hex');
+ const account="'"+user+"'@'%'",password=randomBytes(32).toString('base64url');
+ let candidate:mysql.Pool|undefined,created=false;
+ try{
+  await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);created=true;
+  await admin.query('GRANT SELECT, INSERT ON aaditech_ci.service_ticket_audit_internal TO '+account);
+  await admin.query('GRANT SELECT, INSERT, UPDATE ON aaditech_ci.service_tickets_internal TO '+account);
+  candidate=mysql.createPool({...getDatabaseConfig(),user,password,connectionLimit:1,waitForConnections:true});
+  assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,2);
+  for(const [table,privilege] of [
+   ['service_ticket_audit_internal','UPDATE'],['service_ticket_audit_internal','DELETE'],
+   ['service_tickets_internal','DELETE']
+  ]){
+   await admin.query('GRANT '+privilege+' ON aaditech_ci.'+table+' TO '+account);
+   await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+    /1FC runtime database grant envelope unverified/);
+   await admin.query('REVOKE '+privilege+' ON aaditech_ci.'+table+' FROM '+account);
+   assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,2);
+  }
+ }finally{
+  if(candidate)await candidate.end();
+  if(created)await admin.query('DROP USER '+account);
+ }
+});

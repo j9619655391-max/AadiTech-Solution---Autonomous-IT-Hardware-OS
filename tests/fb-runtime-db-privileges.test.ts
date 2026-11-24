@@ -172,3 +172,21 @@ test('1GB runtime plan and creation audit grants may only read or append',()=>{
   }
  }
 });
+
+test('1GC M16 audit is append-only and ticket deletion is forbidden',()=>{
+ for(const name of ['service_ticket_audit_internal','SERVICE_TICKET_AUDIT_INTERNAL']){
+  for(const privileges of ['SELECT','INSERT','SELECT, INSERT'])
+   assert.equal(assessRuntimeGrantEnvelope([usage,scoped,'GRANT '+privileges+' ON '+schema+'.'+name+' TO '+account],schema).allowed,true);
+  for(const privileges of ['UPDATE','DELETE','SELECT, INSERT, UPDATE','SELECT, DELETE']){
+   const result=assessRuntimeGrantEnvelope([usage,scoped,'GRANT '+privileges+' ON '+schema+'.'+name+' TO '+account],schema);
+   assert.equal(result.allowed,false);
+   assert.ok(result.reasons.includes('Runtime service ticket history mutation forbidden'));
+  }
+ }
+ for(const name of ['service_tickets_internal','SERVICE_TICKETS_INTERNAL']){
+  assert.equal(assessRuntimeGrantEnvelope([usage,scoped,'GRANT SELECT, INSERT, UPDATE ON '+schema+'.'+name+' TO '+account],schema).allowed,true);
+  const result=assessRuntimeGrantEnvelope([usage,scoped,'GRANT SELECT, DELETE ON '+schema+'.'+name+' TO '+account],schema);
+  assert.equal(result.allowed,false);
+  assert.ok(result.reasons.includes('Runtime service ticket history mutation forbidden'));
+ }
+});
