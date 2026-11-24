@@ -17,7 +17,16 @@ test('all thirty workstreams are recorded as held with genuine approval evidence
  assert.equal(result.officialInventoryAndFinancePosting,false);
  assert.deepEqual(src.modules.map(x=>x.id),
   Array.from({length:30},(_,i)=>'M'+String(i+1).padStart(2,'0')));
- assert.equal(src.modules.filter(x=>x.engineeringStatus==='LEGACY_PREVIEW_ONLY').length,12);
+ assert.equal(src.modules.filter(x=>x.engineeringStatus==='LEGACY_PREVIEW_ONLY').length,11);
+ assert.equal(src.modules.filter(x=>x.engineeringStatus==='SERVER_INTERNAL_HELD').length,13);
+ const m17=src.modules.find(x=>x.id==='M17');
+ assert.equal(m17.engineeringStatus,'SERVER_INTERNAL_HELD');
+ assert.equal(m17.sourcePath,'server/fieldService/router.ts');
+ assert.equal(m17.externalApprovalRequired,true);
+ assert.equal(m17.realExternalAuthorityVerified,false);
+ assert.equal(m17.productionEnabled,false);
+ assert.equal(m17.signedAcceptanceEvidence,null);
+ assert.equal(m17.releaseDecision,'HOLD');
  const m16=src.modules.find(x=>x.id==='M16');
  assert.equal(m16.engineeringStatus,'SERVER_INTERNAL_HELD');
  assert.equal(m16.externalApprovalRequired,true);
