@@ -1125,3 +1125,9 @@ The following are **disposable CI-guarded development changes**, not external pr
 - [ ] **Independent evidence and long-history governance OPEN:** structural validation is not signature/WORM or proof against coordinated privileged rewrite. Notes/timestamps and external identity/consent are not authenticated. Preserve original evidence; no automatic rollover or truncation. Independently authorized review, staging, provider/legal/business/security/DBA evidence, actual service authorization and remaining M01–M30 acceptance OPEN.
 
 M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleaseBlocked=true`, `releaseDecision=HOLD`. Main unchanged; PR #1 Draft/unmerged; Issue #2 OPEN. No external dispatch, real customer/supplier sends, production deploy/migration, provider or device activation, official quote/PO/GRN or stock/finance/tax postings.
+
+## Phase 1FZ — M16 asynchronous review response integrity (24 November 2026, HARD HOLD)
+
+- [x] [1FZ runbook](../phase-1/PHASE_1FZ_M16_ASYNC_REVIEW_RESPONSE_INTEGRITY_HARD_HOLD.md). Per-lane read tokens protect list/detail/history/fingerprint success/error/finally from superseded responses. Refresh/reselection invalidate dependent reviews; unmount invalidates pending reads. Detail identity and held flags checked; history and displayed fingerprint pinned to ticket ID/version. Synchronous duplicate-write guard and disabled selection/refresh while mutation pending.
+- [x] Deferred-promise token regression and source integration checks added; exact-head dual CI required for integrated verification. No actual external service action or server permission expansion.
+- [ ] Real independently authorized staging/browser acceptance, actual customer consent, legal/provider/DBA/security/business authority, signed WORM/DR and all M01–M30 external gates remain OPEN. M16 SERVER_INTERNAL_HELD; production HARD HOLD; main unchanged, PR #1 Draft/unmerged, Issue #2 OPEN.

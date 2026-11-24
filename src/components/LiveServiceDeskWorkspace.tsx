@@ -3,6 +3,7 @@ import {ClipboardList,RefreshCw,ShieldAlert} from 'lucide-react';
 import {authenticatedFetch} from '../services/authClient';
 import {crmClient,type CRMRecord} from '../services/crmClient';
 import {verifyServiceDeskCustomerPage,customerSelectionForPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE} from '../services/serviceDeskCustomerPaging';
+import {createServiceDeskReadGate} from '../services/serviceDeskReadGate';
 
 type Status='OPEN_INTERNAL'|'TRIAGED_INTERNAL'|'WAITING_INTERNAL'|'RESOLVED_HELD';
 type Priority='LOW'|'NORMAL'|'HIGH';
@@ -52,6 +53,8 @@ export function LiveServiceDeskWorkspace(){
  const [customerTotal,setCustomerTotal]=useState(0);
  const [loadingCustomerPage,setLoadingCustomerPage]=useState(false);
  const customerRequestSequence=useRef(0);
+ const readGate=useRef(createServiceDeskReadGate()).current;
+ const writeInFlight=useRef(false);
  const [guides,setGuides]=useState<{id:string;title:string}[]>([]);
  const [customerId,setCustomerId]=useState('');
  const [guideId,setGuideId]=useState('pc-slow');
@@ -61,6 +64,7 @@ export function LiveServiceDeskWorkspace(){
  const [acknowledge,setAcknowledge]=useState(false);
  const [selectedId,setSelectedId]=useState('');
  const [detail,setDetail]=useState<TicketDetail|null>(null);
+ const [loadingDetail,setLoadingDetail]=useState(false);
  const [nextStatus,setNextStatus]=useState<Status|' '>(' ');
  const [transitionNote,setTransitionNote]=useState('');
  const [busy,setBusy]=useState(false);
@@ -81,8 +85,18 @@ export function LiveServiceDeskWorkspace(){
    throw Error('Unverified bounded internal ticket list');
   return list;
  };
+ const clearTicketDetail=useCallback(()=>{
+  readGate.invalidate('detail','history','fingerprint');
+  setSelectedId('');setDetail(null);setFingerprint(null);
+  setHistoryIsLatest(true);setLoadingDetail(false);
+  setLoadingHistory(false);setFingerprintBusy(false);
+  setNextStatus(' ');setTransitionNote('');
+ },[readGate]);
  const refresh=useCallback(async()=>{
+  const current=readGate.begin('list');
   const requestSequence=++customerRequestSequence.current;
+  clearTicketDetail();
+  setLoadingOlderTickets(false);
   // A refresh invalidates any in-flight older-customer response; clear its
   // spinner now, because the stale request deliberately skips its finally.
   setLoadingCustomerPage(false);
@@ -93,6 +107,7 @@ export function LiveServiceDeskWorkspace(){
     crmClient.list('customers',1,100),
     responseBody<Catalog>(await authenticatedFetch('/api/help/troubleshooting'))
    ]);
+   if(!current())return;
    verifyList(list);
    if(catalog.mode!=='GUIDANCE_ONLY')throw Error('Unverified troubleshooting catalog');
    setTickets(list.items);
@@ -105,10 +120,13 @@ export function LiveServiceDeskWorkspace(){
     setCustomerId(prev=>customerSelectionForPage(prev,customerResult.items));
    }
    setGuides(catalog.items);
-  }catch(e){setError(e instanceof Error?e.message:'Service desk unavailable');}
-  finally{setLoading(false);}
- },[]);
- useEffect(()=>{void refresh();},[refresh]);
+  }catch(e){if(current())setError(e instanceof Error?e.message:'Service desk unavailable');}
+  finally{if(current())setLoading(false);}
+ },[readGate,clearTicketDetail]);
+ useEffect(()=>{
+  void refresh();
+  return ()=>{readGate.invalidateAll();++customerRequestSequence.current;};
+ },[refresh,readGate]);
  const loadCustomerPage=async(requestedPage:number)=>{
   const totalPages=Math.max(1,Math.ceil(customerTotal/SERVICE_DESK_CUSTOMER_PAGE_SIZE));
   if(loading||busy||loadingCustomerPage||requestedPage===customerPage||
@@ -131,13 +149,15 @@ export function LiveServiceDeskWorkspace(){
   }
  };
  const loadOlderTickets=async()=>{
-  if(!ticketCursor||loadingOlderTickets||loading)return;
+  if(!ticketCursor||loadingOlderTickets||loading||writeInFlight.current)return;
+  const current=readGate.begin('list');
   const cursor=ticketCursor;
   setLoadingOlderTickets(true);setError('');
   try{
    const page=verifyList(await responseBody<TicketList>(await authenticatedFetch(
     '/api/service-desk/internal-tickets?beforeCreatedAt='+
     encodeURIComponent(cursor.createdAt)+'&beforeId='+encodeURIComponent(cursor.id))));
+   if(!current())return;
    if(page.items.length===0||
       (page.hasMore&&(
        page.nextBeforeCreatedAt!>cursor.createdAt||
@@ -146,47 +166,62 @@ export function LiveServiceDeskWorkspace(){
    setTickets(page.items);
    setTicketCursor(page.hasMore?{createdAt:page.nextBeforeCreatedAt!,id:page.nextBeforeId!}:null);
    setTicketsOlderPage(true);
-  }catch(e){setError(e instanceof Error?e.message:'Older internal tickets unavailable');}
-  finally{setLoadingOlderTickets(false);}
+  }catch(e){if(current())setError(e instanceof Error?e.message:'Older internal tickets unavailable');}
+  finally{if(current())setLoadingOlderTickets(false);}
  };
- const openTicket=async(id:string)=>{
+ const openTicket=async(id:string,afterWrite=false)=>{
+  if(writeInFlight.current&&!afterWrite)return;
+  clearTicketDetail();
+  const current=readGate.begin('detail');
+  setSelectedId(id);setLoadingDetail(true);
   setError('');setSuccess('');
   try{
    const data=await responseBody<TicketDetail>(await authenticatedFetch(
     '/api/service-desk/internal-tickets/'+encodeURIComponent(id)));
-   if(data.mode!=='INTERNAL_HELD'||data.externalDispatchEnabled!==false)
+   if(!current())return;
+   if(data.mode!=='INTERNAL_HELD'||data.externalDispatchEnabled!==false||
+      data.ticket?.id!==id||data.ticket.customerConsentState!=='UNVERIFIED'||
+      data.ticket.externalDispatchState!=='DISABLED'||
+      !Number.isSafeInteger(data.ticket.version)||data.ticket.version<1||
+      !Object.prototype.hasOwnProperty.call(nextStates,data.ticket.status)||
+      data.historyLimit!==100||!Array.isArray(data.history)||data.history.length>100)
     throw Error('Unverified internal ticket response');
    setSelectedId(id);setDetail(data);setFingerprint(null);setHistoryIsLatest(true);setNextStatus(' ');setTransitionNote('');
-  }catch(e){setError(e instanceof Error?e.message:'Ticket unavailable');}
+  }catch(e){if(current()){setSelectedId('');setError(e instanceof Error?e.message:'Ticket unavailable');}}
+  finally{if(current())setLoadingDetail(false);}
  };
  const loadOlderHistory=async()=>{
-  if(!detail||!detail.historyHasMore||detail.nextBeforeVersion===null||loadingHistory)return;
-  const ticketId=detail.ticket.id,cursor=detail.nextBeforeVersion;
+  if(!detail||!detail.historyHasMore||detail.nextBeforeVersion===null||loadingHistory||writeInFlight.current)return;
+  const current=readGate.begin('history');
+  const ticketId=detail.ticket.id,version=detail.ticket.version,cursor=detail.nextBeforeVersion;
   setLoadingHistory(true);setError('');
   try{
    const response=await authenticatedFetch('/api/service-desk/internal-tickets/'+
     encodeURIComponent(ticketId)+'/history?beforeVersion='+cursor);
    const page=await responseBody<HistoryPage>(response);
+   if(!current())return;
    if(page.mode!=='INTERNAL_HELD'||page.externalDispatchEnabled!==false||
       page.ticketId!==ticketId||page.historyLimit!==100||!Array.isArray(page.history)||
       page.history.length>100||
       page.history.some(e=>!Number.isSafeInteger(e.versionAfter)||e.versionAfter>=cursor)||
       (page.historyHasMore&&(page.nextBeforeVersion===null||page.nextBeforeVersion>=cursor)))
     throw Error('Invalid bounded history response');
-   setDetail(prev=>prev?.ticket.id===ticketId?{...prev,history:page.history,
+   setDetail(prev=>prev?.ticket.id===ticketId&&prev.ticket.version===version?{...prev,history:page.history,
     historyLimit:page.historyLimit,historyHasMore:page.historyHasMore,
     nextBeforeVersion:page.nextBeforeVersion}:prev);
    setHistoryIsLatest(false);
-  }catch(e){setError(e instanceof Error?e.message:'Older audit history unavailable');}
-  finally{setLoadingHistory(false);}
+  }catch(e){if(current())setError(e instanceof Error?e.message:'Older audit history unavailable');}
+  finally{if(current())setLoadingHistory(false);}
  };
  const computeFingerprint=async()=>{
-  if(!detail||fingerprintBusy)return;
+  if(!detail||fingerprintBusy||writeInFlight.current)return;
+  const current=readGate.begin('fingerprint');
   const ticketId=detail.ticket.id,version=detail.ticket.version;
   setFingerprintBusy(true);setError('');setFingerprint(null);
   try{
    const data=await responseBody<InternalAuditFingerprint>(await authenticatedFetch(
     '/api/service-desk/internal-tickets/'+encodeURIComponent(ticketId)+'/audit-fingerprint'));
+   if(!current())return;
    if(data.ticketId!==ticketId||data.latestVersion!==version||data.mode!=='INTERNAL_HELD'||
       data.externalDispatchEnabled!==false||data.scope!=='APPLICATION_UNATTESTED'||
       data.signatureVerified!==false||data.externalAnchorVerified!==false||
@@ -196,13 +231,16 @@ export function LiveServiceDeskWorkspace(){
       !Number.isSafeInteger(data.eventCount)||data.eventCount!==version||data.eventCount>1000)
     throw Error('Unsigned internal audit fingerprint response invalid');
    setFingerprint(data);
-  }catch(e){setError(e instanceof Error?e.message:'Internal audit fingerprint unavailable');}
-  finally{setFingerprintBusy(false);}
+  }catch(e){if(current())setError(e instanceof Error?e.message:'Internal audit fingerprint unavailable');}
+  finally{if(current())setFingerprintBusy(false);}
  };
  const createTicket=async(event:React.FormEvent)=>{
   event.preventDefault();
+  if(writeInFlight.current||loading||loadingDetail)return;
   if(loadingCustomerPage){setError('Finish selecting an authorized CRM customer before saving.');return;}
   if(!acknowledge){setError('Acknowledge that customer consent is not verified.');return;}
+  writeInFlight.current=true;
+  clearTicketDetail();
   setBusy(true);setError('');setSuccess('');
   try{
    const response=await authenticatedFetch('/api/service-desk/internal-tickets',{
@@ -214,14 +252,17 @@ export function LiveServiceDeskWorkspace(){
    if(created.mode!=='INTERNAL_HELD'||created.externalDispatchEnabled!==false)
     throw Error('Unverified ticket creation result');
    setSubject('');setDescription('');setAcknowledge(false);
-   setSuccess('Internal ticket saved; no customer message or repair was performed.');
    await refresh();
-   await openTicket(created.ticket.id);
+   await openTicket(created.ticket.id,true);
+   setSuccess('Internal ticket saved; no customer message or repair was performed.');
   }catch(e){setError(e instanceof Error?e.message:'Ticket creation failed');}
-  finally{setBusy(false);}
+  finally{writeInFlight.current=false;setBusy(false);}
  };
  const updateStatus=async(event:React.FormEvent)=>{
-  event.preventDefault();if(!detail||nextStatus===' ')return;
+  event.preventDefault();if(!detail||nextStatus===' '||writeInFlight.current||loading||loadingDetail)return;
+  writeInFlight.current=true;
+  readGate.invalidate('history','fingerprint');
+  setLoadingHistory(false);setFingerprintBusy(false);setFingerprint(null);
   setBusy(true);setError('');setSuccess('');
   try{
    const response=await authenticatedFetch(
@@ -231,10 +272,10 @@ export function LiveServiceDeskWorkspace(){
     });
    await responseBody(response);
    await refresh();
-   await openTicket(detail.ticket.id);
+   await openTicket(detail.ticket.id,true);
    setSuccess('Internal status and versioned audit recorded. No external service action.');
   }catch(e){setError(e instanceof Error?e.message:'Unable to update ticket');}
-  finally{setBusy(false);}
+  finally{writeInFlight.current=false;setBusy(false);}
  };
  return <section className="space-y-5" aria-label="Internal service ticket workspace">
   <div className="rounded-xl border border-slate-700 bg-slate-900 p-5">
@@ -312,7 +353,7 @@ export function LiveServiceDeskWorkspace(){
       className="mt-0.5"/>
      I understand that this ticket is an unverified internal observation; customer consent and SLA are NOT confirmed.
     </label>
-    <button type="submit" disabled={busy||loading||loadingCustomerPage||!customerId||!acknowledge||!guides.length}
+    <button type="submit" disabled={busy||loading||loadingCustomerPage||!customerId||!acknowledge||!guides.length||loadingDetail}
      className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
      Save internal ticket
     </button>
@@ -320,7 +361,7 @@ export function LiveServiceDeskWorkspace(){
    <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900 p-4">
     <div className="flex items-center justify-between">
      <h3 className="font-semibold text-white">Owner-scoped internal tickets</h3>
-     <button type="button" onClick={()=>void refresh()} aria-label="Refresh internal tickets"
+     <button type="button" disabled={busy} onClick={()=>void refresh()} aria-label="Refresh internal tickets"
       className="rounded border border-slate-700 p-2 text-slate-200">
       <RefreshCw className="h-4 w-4" aria-hidden="true"/>
      </button>
@@ -329,7 +370,7 @@ export function LiveServiceDeskWorkspace(){
      tickets.length===0?<p className="text-sm text-slate-400">No internal tickets.</p>:
      <ul className="max-h-[420px] space-y-2 overflow-y-auto">
       {tickets.map(ticket=><li key={ticket.id}>
-       <button type="button" onClick={()=>void openTicket(ticket.id)}
+       <button type="button" disabled={busy} onClick={()=>void openTicket(ticket.id)}
         className={'w-full rounded-lg border p-3 text-left '+(selectedId===ticket.id?
          'border-cyan-600 bg-slate-800':'border-slate-700 bg-slate-950 hover:bg-slate-800')}>
         <span className="block text-sm font-semibold text-white">{ticket.subject}</span>
@@ -339,12 +380,12 @@ export function LiveServiceDeskWorkspace(){
      </ul>}
     <p className="text-xs text-slate-400">Showing {ticketsOlderPage?'older':'latest'} {tickets.length} internal tickets (100-page cap). External delivery DISABLED.</p>
     <div className="flex flex-wrap gap-2">
-     {ticketCursor&&<button type="button" disabled={loading||loadingOlderTickets}
+     {ticketCursor&&<button type="button" disabled={busy||loading||loadingOlderTickets}
       onClick={()=>void loadOlderTickets()}
       className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
       {loadingOlderTickets?'Loading…':'Load older 100 tickets'}
      </button>}
-     {ticketsOlderPage&&<button type="button" disabled={loading||loadingOlderTickets}
+     {ticketsOlderPage&&<button type="button" disabled={busy||loading||loadingOlderTickets}
       onClick={()=>void refresh()}
       className="rounded border border-slate-700 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
       Return to latest tickets
@@ -352,6 +393,7 @@ export function LiveServiceDeskWorkspace(){
     </div>
    </div>
   </div>
+  {loadingDetail&&<p role="status" className="text-sm text-slate-400">Loading selected internal ticket…</p>}
   {detail&&<div className="space-y-4 rounded-xl border border-slate-700 bg-slate-900 p-5">
    <h3 className="font-semibold text-white">{detail.ticket.subject}</h3>
    {(detail.ticket.subjectRedacted||detail.ticket.descriptionRedacted)&&
@@ -382,7 +424,7 @@ export function LiveServiceDeskWorkspace(){
      className="rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-100 disabled:opacity-50">
      {fingerprintBusy?'Checking bounded ledger…':'Compute unsigned audit fingerprint'}
     </button>
-    {fingerprint?.ticketId===detail.ticket.id&&<div className="space-y-1 text-xs text-slate-300">
+    {fingerprint?.ticketId===detail.ticket.id&&fingerprint.latestVersion===detail.ticket.version&&<div className="space-y-1 text-xs text-slate-300">
      <p>Internal events checked: {fingerprint.eventCount} · SHA-256, application-generated · Signature: NOT VERIFIED</p>
      <p className="break-all font-mono" aria-label="Unsigned internal audit SHA-256 fingerprint">{fingerprint.auditDigestSha256}</p>
     </div>}

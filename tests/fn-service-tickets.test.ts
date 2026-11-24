@@ -520,3 +520,43 @@ test('1FY verifies genesis through latest event, exact count and every historica
  for(const n of [0,NaN,-1,1.5])
   assert.throws(()=>assertAppendableInternalAuditVersion(n),/invalid audit version/);
 });
+
+
+test('1FZ read gate rejects out-of-order detail, list, history and fingerprint completions',async()=>{
+ const {createServiceDeskReadGate}=await import('../src/services/serviceDeskReadGate');
+ const gate=createServiceDeskReadGate();
+ let visible='',error='',loading=true;
+ let resolveOld!:()=>void;
+ const old=gate.begin('detail');
+ const delayed=new Promise<void>(resolve=>{resolveOld=resolve;}).then(()=>{
+  if(old())visible='old ticket';
+ }).finally(()=>{if(old())loading=false;});
+ const history=gate.begin('history'),fingerprint=gate.begin('fingerprint');
+ gate.invalidate('detail','history','fingerprint');
+ const fresh=gate.begin('detail');
+ if(fresh())visible='new ticket';
+ resolveOld();await delayed;
+ assert.equal(visible,'new ticket');assert.equal(loading,true);
+ assert.equal(history(),false);assert.equal(fingerprint(),false);
+ const listOld=gate.begin('list'),listNew=gate.begin('list');
+ if(listOld())error='stale error';
+ assert.equal(error,'');assert.equal(listNew(),true);
+ const olderSameTicket=gate.begin('history'),latestSameTicket=gate.begin('history');
+ assert.equal(olderSameTicket(),false);assert.equal(latestSameTicket(),true);
+ gate.invalidateAll();
+ assert.equal(fresh(),false);assert.equal(listNew(),false);assert.equal(latestSameTicket(),false);
+ assert.equal(gate.begin('detail')(),true);
+});
+test('1FZ workspace gates read responses and pins displayed fingerprint to current ticket version',()=>{
+ const ui=readFileSync('src/components/LiveServiceDeskWorkspace.tsx','utf8');
+ assert.match(ui,/readGate\.invalidate\('detail','history','fingerprint'\)/);
+ assert.match(ui,/readGate\.invalidateAll\(\)/);
+ for(const lane of ['list','detail','history','fingerprint'])
+  assert.ok(ui.includes("readGate.begin('"+lane+"')"));
+ assert.match(ui,/data\.ticket\?\.id!==id/);
+ assert.match(ui,/prev\?\.ticket\.id===ticketId&&prev\.ticket\.version===version/);
+ assert.match(ui,/fingerprint\?\.ticketId===detail\.ticket\.id&&fingerprint\.latestVersion===detail\.ticket\.version/);
+ assert.match(ui,/finally\{if\(current\(\)\)setLoadingDetail\(false\);\}/);
+ assert.match(ui,/writeInFlight\.current=true/);
+ assert.match(ui,/finally\{writeInFlight\.current=false;setBusy\(false\);\}/);
+});
