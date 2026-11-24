@@ -10,6 +10,7 @@ import {lockActiveCrmOwner,CRMOwnerInactiveError} from '../server/crm/repository
 import crmRouter from '../server/crm/router';
 import quoteRouter from '../server/quotes/router';
 import ticketRouter from '../server/serviceDesk/router';
+import fieldServiceRouter from '../server/fieldService/router';
 import {checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
 
 if(process.env.NODE_ENV!=='test'||process.env.CRM_TEST_DB!=='1'||
@@ -60,7 +61,9 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
    ['SELECT, INSERT, UPDATE','sales_quote_create_requests'],
    ['SELECT, INSERT','sales_quote_draft_revisions'],
    ['SELECT, INSERT, UPDATE','service_tickets_internal'],
-   ['SELECT, INSERT','service_ticket_audit_internal']
+   ['SELECT, INSERT','service_ticket_audit_internal'],
+   ['SELECT, INSERT','field_service_plans_internal'],
+   ['SELECT, INSERT','field_service_plan_audit_internal']
   ];
   for(const [privileges,table] of grants){
    await admin.query('GRANT '+privileges+' ON aaditech_ci.'+table+' TO '+account);
@@ -112,6 +115,7 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   app.use('/api/crm',crmRouter);
   app.use('/api/quotes/drafts',quoteRouter);
   app.use('/api/service-desk/internal-tickets',ticketRouter);
+  app.use('/api/field-service/internal-plans',fieldServiceRouter);
   listener=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>listener!.once('listening',resolve));
   const address=listener.address();
@@ -148,6 +152,19 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
     expectedVersion:1,nextStatus:'TRIAGED_INTERNAL',note:'CI-only owner internal triage'
    });
   assert.equal(updated.status,200,JSON.stringify(updated.data));
+  const heldPlan=await invoke(base,'/api/field-service/internal-plans','POST',{
+   ticketId:ticket.data.ticket.id,expectedTicketVersion:2,kind:'WORK_ORDER',
+   note:'CI-only restricted principal plan',acknowledgeUnverifiedAuthority:true
+  });
+  assert.equal(heldPlan.status,201,JSON.stringify(heldPlan.data));
+  assert.equal(heldPlan.data.plan.status,'PLANNING_HELD');
+  const readPlan=await invoke(base,'/api/field-service/internal-plans?ticketId='+ticket.data.ticket.id);
+  assert.equal(readPlan.status,200,JSON.stringify(readPlan.data));
+  assert.equal(readPlan.data.items.length,1);
+  await assert.rejects(runtime.query('UPDATE field_service_plans_internal SET note=note WHERE id=?',[heldPlan.data.plan.id]),
+   (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_DBACCESS_DENIED_ERROR');
+  await assert.rejects(runtime.query('DELETE FROM field_service_plan_audit_internal WHERE plan_id=?',[heldPlan.data.plan.id]),
+   (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_DBACCESS_DENIED_ERROR');
   // The guard prevents stale middleware privileges: an in-flight role change
   // holds the same InnoDB auth_users row lock reached *through* the definer.
   const blocker=await admin.getConnection();

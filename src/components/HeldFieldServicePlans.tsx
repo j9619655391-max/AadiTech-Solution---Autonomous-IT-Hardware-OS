@@ -2,7 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import {authenticatedFetch} from '../services/authClient';
 type Plan={id:string;ticketId:string;kind:'WORK_ORDER'|'RMA';note:string;noteRedacted?:boolean;status:'PLANNING_HELD';sourceTicketVersion:number;customerConsentState:'UNVERIFIED';externalDispatchState:'DISABLED'};
 const url='/api/field-service/internal-plans';
-export function HeldFieldServicePlans({ticketId,version,status,disabled}:{ticketId:string;version:number;status:string;disabled:boolean}){
+export function HeldFieldServicePlans({ticketId,version,status,disabled}:{ticketId:string;version:number;status:string;disabled:boolean;key?:string}){
  const [items,setItems]=useState<Plan[]>([]);
  const [note,setNote]=useState(''),[kind,setKind]=useState<'WORK_ORDER'|'RMA'>('WORK_ORDER');
  const [ack,setAck]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');

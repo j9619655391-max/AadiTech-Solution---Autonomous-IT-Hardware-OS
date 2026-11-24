@@ -1,6 +1,6 @@
 import {Router,type Response} from 'express';
 import {randomUUID} from 'node:crypto';
-import type {RowDataPacket} from 'mysql2/promise';
+import type {RowDataPacket,PoolConnection} from 'mysql2/promise';
 import {getPool} from '../db';
 import {requireOwner} from '../auth/router';
 import {CRMOwnerInactiveError,lockActiveCrmOwner,validId} from '../crm/repository';
@@ -64,7 +64,7 @@ router.get('/',async(req,res)=>{
 router.post('/',async(req,res)=>{
  let input:ReturnType<typeof validateHeldFieldPlan>;
  try{input=validateHeldFieldPlan(req.body);}catch(e){fail(res,e);return;}
- const db=getPool();const conn=await db?.getConnection().catch(()=>null);
+ const db=getPool();const conn:PoolConnection|null=db?await db.getConnection().catch(()=>null):null;
  if(!conn){res.status(503).json({error:'Internal field service unavailable'});return;}
  let discard=false;
  try{
