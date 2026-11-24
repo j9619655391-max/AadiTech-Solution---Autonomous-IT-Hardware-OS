@@ -6,7 +6,7 @@ import {requireOwner} from '../auth/router';
 import {computeInternalAuditFingerprint,type InternalAuditFingerprintRow,InternalAuditFingerprintLimitError} from './fingerprint';
 import {lockActiveCrmOwner,CRMOwnerInactiveError,validId} from '../crm/repository';
 import {
- ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent,maskCredentialLikeTicketText,parseInternalTicketListCursor,boundedInternalTicketList
+ ServiceTicketInputError,validateTicketCreate,validateTicketTransition,isInternalTicketStatus,verifyInternalTicketAuditWindow,parseInternalTicketHistoryCursor,type InternalTicketAuditEvent,maskCredentialLikeTicketText,parseInternalTicketListCursor,boundedInternalTicketList,MAX_INTERNAL_AUDIT_APPEND_EVENTS,InternalAuditAppendLimitError,assertAppendableInternalAuditVersion,verifyInternalTicketAuditForAppend
 } from './validation';
 
 const router=Router();
@@ -261,21 +261,18 @@ router.patch('/:id/status',async(req,res)=>{
   if(input.expectedVersion!==old.version){
    await conn.rollback();res.status(409).json({error:'Ticket changed; reload before updating'});return;
   }
-  // Phase 1FX: a valid transition must not extend a known-inconsistent
-  // audit window. The owner and ticket row are already locked; read the
-  // current ledger with shared locks in the SAME transaction, not a stale
-  // consistent snapshot. Do not filter by audit actor: a wrong actor is
-  // corruption to reject, not an event to hide from the integrity check.
+  // Phase 1FY: all existing events through genesis must be structurally
+  // consistent before appending. Owner/ticket locks are already held.
+  // A 1000th existing event exhausts the bounded resulting-ledger budget.
+  assertAppendableInternalAuditVersion(old.version);
   const [lockedAudit]=await conn.query<LockedTicketAuditRow[]>(`SELECT
    a.version_after AS versionAfter,a.operation,a.from_status AS fromStatus,
    a.to_status AS toStatus,a.actor_user_id AS actorUserId
    FROM service_ticket_audit_internal a
    WHERE a.ticket_id=?
-   ORDER BY a.version_after DESC LIMIT 101 FOR SHARE`,[req.params.id]);
-  verifyInternalTicketAuditWindow(lockedAudit,{
-   currentVersion:old.version,currentStatus:old.status});
-  if(lockedAudit.some(event=>event.actorUserId!==res.locals.auth.userId))
-   throw Error('1FX audit actor ownership inconsistent');
+   ORDER BY a.version_after DESC LIMIT ${MAX_INTERNAL_AUDIT_APPEND_EVENTS} FOR SHARE`,[req.params.id]);
+  verifyInternalTicketAuditForAppend(lockedAudit,{
+   currentVersion:old.version,currentStatus:old.status,ownerUserId:res.locals.auth.userId});
   await conn.execute(`UPDATE service_tickets_internal SET status=?,version=version+1 WHERE id=?`,
    [input.nextStatus,req.params.id]);
   await conn.execute(`INSERT INTO service_ticket_audit_internal
@@ -286,7 +283,14 @@ router.patch('/:id/status',async(req,res)=>{
   res.json({ticketId:req.params.id,status:input.nextStatus,version:old.version+1,
    mode:'INTERNAL_HELD',externalDispatchEnabled:false,
    message:'Internal status recorded; customer contact, SLA and repair remain unverified.'});
- }catch(e){await conn.rollback();fail(res,e);}finally{conn.release();}
+ }catch(e){
+  await conn.rollback();
+  if(e instanceof InternalAuditAppendLimitError){
+   res.status(409).json({error:'Ticket audit append cap reached; independent review required',
+    mode:'INTERNAL_HELD',externalDispatchEnabled:false});return;
+  }
+  fail(res,e);
+ }finally{conn.release();}
 });
 
 export default router;
