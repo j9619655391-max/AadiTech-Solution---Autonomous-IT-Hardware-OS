@@ -1175,3 +1175,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - Historical 1GF exact PR run 45449749870 FAILURE (7/8, generated-column metadata readback failed; prior real MySQL/Chromium checks passed). No waiver.
 - [x] [1GG runbook](../phase-1/PHASE_1GG_PROVENANCE_INSTALLATION_RECOVERY_HARD_HOLD.md): narrow generated-column metadata verification, bounded disposable diagnostics, refuse fresh DDL on partial/conflicting installation, unit regression fixtures; unchanged checksum-registered 0051 SQL bytes.
 - [ ] Exact-head dual CI and independently authorized first-event/initial binding authority, real historical reconciliation and restore evidence, all M01–M30 external acceptance remain OPEN.
+
+
+## Phase 1GH — Observed MySQL metadata and post-constraint HTTP compatibility (HARD HOLD)
+
+- 1GG exact PR 45451176514 FAILURE (7/8). Observed MySQL 8.0.46 generated-column representation contains outer parentheses and escaped literal delimiters; column shape matches.
+- [x] [1GH runbook](../phase-1/PHASE_1GH_OBSERVED_MYSQL_METADATA_AND_POST_CONSTRAINT_HTTP_HARD_HOLD.md): strict parser correction with exact observed fixture and negative variants, bounded CI trigger diagnostics, second real restricted HTTP fixture after 0051 with enforced migration-state check. No SQL migration byte changes.
+- [ ] Exact-head dual CI, independently authorized first-event provenance/initial quote binding and historical reconciliation/restore evidence remain OPEN. No production release.

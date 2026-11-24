@@ -37,10 +37,14 @@ export function verifiedGfOriginColumn(rows:readonly unknown[]):boolean{
     row.DATA_TYPE!=='char'||Number(row.CHARACTER_MAXIMUM_LENGTH)!==36||
     row.IS_NULLABLE!=='YES'||row.COLLATION_NAME!=='utf8mb4_unicode_ci'||
     typeof row.GENERATION_EXPRESSION!=='string'||row.GENERATION_EXPRESSION.length>512)return false;
- const expr=canonical(row.GENERATION_EXPRESSION);
- const literal="(?:_utf8mb4|_utf8mb3|_utf8)?'CREATE'";
- const comparison='operation='+literal;
- return new RegExp("^casewhen(?:"+comparison+"|\\("+comparison+"\\))thenentity_id(?:elsenull)?end$").test(expr);
+ // MySQL 8.0.46 observed metadata has one outer parenthesis pair
+ // and escaped quote delimiters, not an escaped CREATE literal value.
+ // Match token boundaries, exact identifiers and paired parentheses.
+ const raw=row.GENERATION_EXPRESSION.trim();
+ const expression=raw.startsWith('(')&&raw.endsWith(')')?raw.slice(1,-1).trim():raw;
+ const match=/^case\s+when\s+(\()?\s*(?:operation|\x60operation\x60)\s*=\s*(?:_utf8mb4|_utf8mb3|_utf8)?\s*('CREATE'|\\'CREATE\\')\s*(\))?\s+then\s+(?:entity_id|\x60entity_id\x60)(?:\s+else\s+null)?\s+end$/i.exec(expression);
+ return !!match&&Boolean(match[1])===Boolean(match[3])&&
+  (match[2]==="'CREATE'"||match[2]==="\\'CREATE\\'");
 }
 // Before applying any DDL, refuse existing named artifacts even when the
 // migration ledger is absent. Never overwrite a partly installed constraint.
@@ -87,8 +91,14 @@ export async function checkInstalledGfIntegrity(db:Pick<mysql.Pool,'query'>,opti
  for(const row of triggers){
   const wanted=expectedTriggers.get(row.TRIGGER_NAME);
   if(!wanted||row.ACTION_TIMING!=='BEFORE'||row.EVENT_MANIPULATION!==wanted.event||
-    canonical(String(row.ACTION_STATEMENT))!==canonical(wanted.body))
+    canonical(String(row.ACTION_STATEMENT))!==canonical(wanted.body)){
+   if(options.disposableCiDiagnostics)
+    console.error('1GF disposable trigger metadata:',JSON.stringify({
+     name:row.TRIGGER_NAME,timing:row.ACTION_TIMING,event:row.EVENT_MANIPULATION,
+     body:String(row.ACTION_STATEMENT??'').slice(0,4096)
+    }).slice(0,8192));
    throw Error('1GF installed trigger body unverified');
+  }
   expectedTriggers.delete(row.TRIGGER_NAME);
  }
 }

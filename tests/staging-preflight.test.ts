@@ -374,3 +374,19 @@ test('1GG pre-DDL inspection refuses partial artifacts, historical conflicts and
  await assert.rejects(assertGfHistoricalIntegrity(mock([],true).db),/metadata unavailable/);
  assert.throws(()=>gfMigrationTarget({NODE_ENV:'production',DB_NAME:'aaditech_ci',DB_SSL:'false',CRM_TEST_DB:'1'}),/CI-only/);
 });
+
+test('1GH exact MySQL 8.0.46 observed generated expression and near-miss forms',()=>{
+ const tick=String.fromCharCode(96),slash=String.fromCharCode(92);
+ const observed="(case when ("+tick+"operation"+tick+" = _utf8mb4"+slash+"'CREATE"+slash+"') then "+tick+"entity_id"+tick+" else NULL end)";
+ const row={EXTRA:'STORED GENERATED',DATA_TYPE:'char',CHARACTER_MAXIMUM_LENGTH:36,IS_NULLABLE:'YES',
+  COLLATION_NAME:'utf8mb4_unicode_ci',GENERATION_EXPRESSION:observed};
+ assert.equal(verifiedGfOriginColumn([row]),true);
+ for(const expression of [
+  observed.replace('CREATE','create'),observed.replace('CREATE','DELETE'),
+  observed.replace('CREATE','CRE ATE'),observed.replace(slash+"'CREATE", "'CREATE"),
+  observed.replace(tick+'operation'+tick,tick+'opera tion'+tick),
+  observed.replace('else NULL','else entity_id'),observed.replace('when (','when '),
+  observed.replace('then '+tick+'entity_id'+tick,'then actor_user_id'),
+  '('+observed,observed+' OR 1=1',observed.replace('case when','casewhen')
+ ])assert.equal(verifiedGfOriginColumn([{...row,GENERATION_EXPRESSION:expression}]),false,expression);
+});

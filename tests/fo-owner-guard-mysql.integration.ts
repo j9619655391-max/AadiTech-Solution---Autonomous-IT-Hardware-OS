@@ -12,6 +12,7 @@ import quoteRouter from '../server/quotes/router';
 import ticketRouter from '../server/serviceDesk/router';
 import fieldServiceRouter from '../server/fieldService/router';
 import {checkStagingRuntimeDbPrivilegeIntegrity} from '../scripts/staging-preflight';
+import {checkInstalledGfIntegrity,assertGfFreshInstall} from '../scripts/migrate-gf-provenance';
 
 if(process.env.NODE_ENV!=='test'||process.env.CRM_TEST_DB!=='1'||
  process.env.DB_NAME!=='aaditech_ci'||process.env.DB_SSL!=='false')
@@ -43,6 +44,14 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   return {status:r.status,data};
  };
  try{
+  const postConstraints=process.env.GF_POST_CONSTRAINTS==='1';
+  const [gfReceipt]=await admin.query<any[]>(
+   "SELECT COUNT(*) AS n FROM schema_migrations WHERE id='0051_gf_crm_quote_write_once'");
+  assert.equal(Number(gfReceipt[0].n),postConstraints?1:0,'fixture must run against declared migration state');
+  if(postConstraints){
+   await checkInstalledGfIntegrity(admin);
+   await assert.rejects(assertGfFreshInstall(admin),/partial or conflicting/);
+  }
   const [old]=await admin.query<any[]>(`SELECT COUNT(*) AS n FROM information_schema.ROUTINES
    WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME='aaditech_guard_active_owner'`);
   assert.equal(Number(old[0].n),0,'fixture must not replace an existing, differently defined routine');
@@ -146,15 +155,21 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   // A runtime SQL writer can still change a request pointer. Verify that
   // a mismatched same-owner immutable snapshot is refused rather than replayed.
   const alternate=await invoke(base,'/api/quotes/drafts','POST',
-   {customerId,items:[{productId:String(product.data.id),quantity:3}]},
+   {customerId,items:[{productId:String(product.data.id),quantity:postConstraints?1:3}]},
    {'idempotency-key':randomUUID()});
   assert.equal(alternate.status,201,JSON.stringify(alternate.data));
-  await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
-   [alternate.data.id,actor,requestKey]);
-  const corruptReplay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
-  assert.equal(corruptReplay.status,409,JSON.stringify(corruptReplay.data));
-  await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
-   [quote.data.id,actor,requestKey]);
+  if(postConstraints){
+   // Even an identical same-owner snapshot must not be substituted.
+   await assert.rejects(runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
+    [alternate.data.id,actor,requestKey]),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlState==='45000');
+  }else{
+   await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
+    [alternate.data.id,actor,requestKey]);
+   const corruptReplay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
+   assert.equal(corruptReplay.status,409,JSON.stringify(corruptReplay.data));
+   await runtime.query('UPDATE sales_quote_create_requests SET quote_id=? WHERE actor_id=? AND request_key=?',
+    [quote.data.id,actor,requestKey]);
+  }
   const recoveredReplay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
   assert.equal(recoveredReplay.status,200,JSON.stringify(recoveredReplay.data));
   assert.equal(recoveredReplay.data.id,quote.data.id);
@@ -223,19 +238,28 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   // A second CREATE assertion (even by the same actor) is ambiguous.
   // The synthetic corruption is removed by the CI admin, never by runtime.
   const forgedId=randomUUID();
-  await runtime.query("INSERT INTO crm_audit_events (id,actor_user_id,entity_type,entity_id,operation,before_data,after_data) VALUES (?,?,'customers',?,'CREATE',NULL,?)",
-   [forgedId,actor,customerId,JSON.stringify({id:customerId})]);
-  try{
-   const rejectedCustomer=await invoke(base,'/api/crm/customers/'+customerId);
-   assert.equal(rejectedCustomer.status,404,JSON.stringify(rejectedCustomer.data));
-   const rejectedQuote=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':randomUUID()});
-   assert.equal(rejectedQuote.status,400,JSON.stringify(rejectedQuote.data));
-   const rejectedTicket=await invoke(base,'/api/service-desk/internal-tickets/'+ticket.data.ticket.id);
-   assert.equal(rejectedTicket.status,404,JSON.stringify(rejectedTicket.data));
-   const rejectedPlan=await invoke(base,'/api/field-service/internal-plans?ticketId='+ticket.data.ticket.id);
-   assert.equal(rejectedPlan.status,404,JSON.stringify(rejectedPlan.data));
-  }finally{
-   await admin.query('DELETE FROM crm_audit_events WHERE id=?',[forgedId]);
+  if(postConstraints){
+   await assert.rejects(runtime.query("INSERT INTO crm_audit_events (id,actor_user_id,entity_type,entity_id,operation,before_data,after_data) VALUES (?,?,'customers',?,'CREATE',NULL,?)",
+    [forgedId,actor,customerId,JSON.stringify({id:customerId})]),(e:any)=>e?.code==='ER_DUP_ENTRY');
+   const existingTicket=await invoke(base,'/api/service-desk/internal-tickets/'+ticket.data.ticket.id);
+   assert.equal(existingTicket.status,200,JSON.stringify(existingTicket.data));
+   const existingPlan=await invoke(base,'/api/field-service/internal-plans?ticketId='+ticket.data.ticket.id);
+   assert.equal(existingPlan.status,200,JSON.stringify(existingPlan.data));
+  }else{
+   await runtime.query("INSERT INTO crm_audit_events (id,actor_user_id,entity_type,entity_id,operation,before_data,after_data) VALUES (?,?,'customers',?,'CREATE',NULL,?)",
+    [forgedId,actor,customerId,JSON.stringify({id:customerId})]);
+   try{
+    const rejectedCustomer=await invoke(base,'/api/crm/customers/'+customerId);
+    assert.equal(rejectedCustomer.status,404,JSON.stringify(rejectedCustomer.data));
+    const rejectedQuote=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':randomUUID()});
+    assert.equal(rejectedQuote.status,400,JSON.stringify(rejectedQuote.data));
+    const rejectedTicket=await invoke(base,'/api/service-desk/internal-tickets/'+ticket.data.ticket.id);
+    assert.equal(rejectedTicket.status,404,JSON.stringify(rejectedTicket.data));
+    const rejectedPlan=await invoke(base,'/api/field-service/internal-plans?ticketId='+ticket.data.ticket.id);
+    assert.equal(rejectedPlan.status,404,JSON.stringify(rejectedPlan.data));
+   }finally{
+    await admin.query('DELETE FROM crm_audit_events WHERE id=?',[forgedId]);
+   }
   }
   const recoveredCustomer=await invoke(base,'/api/crm/customers/'+customerId);
   assert.equal(recoveredCustomer.status,200,JSON.stringify(recoveredCustomer.data));
