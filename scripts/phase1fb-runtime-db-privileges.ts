@@ -22,6 +22,11 @@ export function inactiveRuntimeRoles(observed:unknown):boolean{
 export const OWNER_GUARD_ROUTINE='aaditech_guard_active_owner';
 export type RuntimeGrantAssessment={allowed:boolean;grantCount:number;dataGrantCount:number;dataGrantTables:string[];routineGrantCount:number;reasons:string[]};
 const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
+// 1GB: the application may read and append field-service planning records,
+// never rewrite or remove existing plan or creation-audit evidence.
+const FIELD_SERVICE_APPEND_ONLY_TABLES=new Set([
+ 'field_service_plans_internal','field_service_plan_audit_internal'
+]);
 // Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
 // quarantine by writing authority or authentication state tables directly.
 // An approved isolated authority writer must use separate credentials and
@@ -93,6 +98,10 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
   const hasWrite=privileges.some(priv=>priv!=='SELECT');
   if(hasWrite&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
    reasons.push('Runtime authority/authentication table mutation forbidden');continue;
+  }
+  if(FIELD_SERVICE_APPEND_ONLY_TABLES.has(parts[1].toLowerCase())&&
+     privileges.some(priv=>priv!=='SELECT'&&priv!=='INSERT')){
+   reasons.push('Runtime field service immutable record mutation forbidden');continue;
   }
   dataGrantCount++;
   dataGrantTables.add(parts[1].toLowerCase());

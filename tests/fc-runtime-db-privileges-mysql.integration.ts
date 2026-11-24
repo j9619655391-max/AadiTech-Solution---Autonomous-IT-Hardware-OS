@@ -193,3 +193,28 @@ test('1FL actual temporary MySQL principals enforce auth/runtime read separation
   if(authCreated)await admin.query('DROP USER '+authAccount);
  }
 });
+
+test('1GB real MySQL observed field service grants reject UPDATE and DELETE on explicit base tables',async()=>{
+ const account="'ci_gb_"+randomBytes(8).toString('hex')+"'@'%'";
+ const user=account.split("'")[1],password=randomBytes(32).toString('base64url');
+ let candidate:mysql.Pool|undefined,created=false;
+ try{
+  await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);created=true;
+  for(const table of ['field_service_plans_internal','field_service_plan_audit_internal'])
+   await admin.query('GRANT SELECT, INSERT ON aaditech_ci.'+table+' TO '+account);
+  candidate=mysql.createPool({...getDatabaseConfig(),user,password,connectionLimit:1,waitForConnections:true});
+  assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,2);
+  for(const table of ['field_service_plans_internal','field_service_plan_audit_internal']){
+   for(const privilege of ['UPDATE','DELETE']){
+    await admin.query('GRANT '+privilege+' ON aaditech_ci.'+table+' TO '+account);
+    await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+     /1FC runtime database grant envelope unverified/);
+    await admin.query('REVOKE '+privilege+' ON aaditech_ci.'+table+' FROM '+account);
+    assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,2);
+   }
+  }
+ }finally{
+  if(candidate)await candidate.end();
+  if(created)await admin.query('DROP USER '+account);
+ }
+});

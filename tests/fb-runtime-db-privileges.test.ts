@@ -157,3 +157,18 @@ test('1FJ runtime grant metadata distinguishes actual BASE TABLE from security-d
  assert.match(src,/information_schema\.TABLES WHERE TABLE_SCHEMA=DATABASE\(\)/);
  assert.match(src,/verifiedRuntimeBaseTableTargets\(receipt\.dataGrantTables,objects\)/);
 });
+
+test('1GB runtime plan and creation audit grants may only read or append',()=>{
+ for(const name of ['field_service_plans_internal','field_service_plan_audit_internal','FIELD_SERVICE_PLANS_INTERNAL']){
+  for(const privileges of ['SELECT','INSERT','SELECT, INSERT']){
+   const grant='GRANT '+privileges+' ON '+schema+'.'+name+' TO '+account;
+   assert.equal(assessRuntimeGrantEnvelope([usage,scoped,grant],schema).allowed,true);
+  }
+  for(const privileges of ['UPDATE','DELETE','SELECT, INSERT, UPDATE','SELECT, DELETE']){
+   const grant='GRANT '+privileges+' ON '+schema+'.'+name+' TO '+account;
+   const result=assessRuntimeGrantEnvelope([usage,scoped,grant],schema);
+   assert.equal(result.allowed,false);
+   assert.ok(result.reasons.includes('Runtime field service immutable record mutation forbidden'));
+  }
+ }
+});

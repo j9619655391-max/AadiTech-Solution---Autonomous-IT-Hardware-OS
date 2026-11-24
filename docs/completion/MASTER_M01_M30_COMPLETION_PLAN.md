@@ -1137,3 +1137,9 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] [1GA runbook](../phase-1/PHASE_1GA_M17_HELD_FIELD_SERVICE_PLANNING_HARD_HOLD.md). Additive 0050 schema; immutable one plan per owned triaged ticket/type and atomic creation audit; bounded complete M16 source history and current-version checks under active OWNER lock. Only held work-order/RMA planning, no external execution. Owner-scoped GET verifies source/audit provenance; M16 detail panel saves/reviews internal held plans.
 - [x] Unit and disposable MySQL scope, source integrity, stale version, duplicate race, two-type and held-state tests; schema checksum rerun and exact-head CI required. Ledger records engineering foundation only, not acceptance.
 - [ ] Real technician identity, serial entitlement, signed consent/repair, pickup/dispatch, replacement approval, SLA, stock/finance and independent DBA/Security/Legal/Business operational acceptance OPEN. No production migration, deployment, release or external action. M17 SERVER_INTERNAL_HELD. Main unchanged; PR #1 Draft/unmerged, Issue #2 OPEN. Production HARD HOLD.
+
+
+## Phase 1GB — M17 append-only runtime privilege envelope (24 November 2026, HARD HOLD)
+
+- [x] [1GB runbook](../phase-1/PHASE_1GB_M17_APPEND_ONLY_RUNTIME_PRIVILEGE_ENVELOPE_HARD_HOLD.md): deny observed table-specific UPDATE/DELETE on both held field-plan and creation-audit tables; preserve SELECT/INSERT. Unit and actual disposable MySQL grant-widening and revocation tests. No live privilege mutation. Exact-head dual CI required.
+- [ ] Independently approved staging runtime privileges, actual service authority and all external acceptance remain OPEN. No production release.
