@@ -110,7 +110,9 @@
     "db:migrate:service-tickets": "tsx scripts/migrate-service-tickets.ts",
     "test:service-tickets-mysql": "tsx --test tests/fn-service-tickets-mysql.integration.ts",
     "db:migrate:field-service": "tsx scripts/migrate-field-service.ts",
-    "test:fo-owner-guard-mysql": "tsx --test tests/fo-owner-guard-mysql.integration.ts"
+    "test:fo-owner-guard-mysql": "tsx --test tests/fo-owner-guard-mysql.integration.ts",
+    "db:migrate:gf-provenance": "tsx scripts/migrate-gf-provenance.ts",
+    "test:gf-provenance-mysql": "tsx --test tests/gf-provenance-mysql.integration.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

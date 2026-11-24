@@ -1161,3 +1161,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 
 - [x] [1GE runbook](../phase-1/PHASE_1GE_AMBIGUOUS_CRM_PROVENANCE_QUOTE_REPLAY_HARD_HOLD.md): deny ambiguous CREATE provenance across CRM, new quotes, M16 and M17; compare bounded immutable original quote snapshot on replay and check conditional reservation binding. Restricted MySQL tampering/recovery regression source added.
 - [ ] Exact-head dual CI; database-enforced unique provenance/write-once reservation, historical reconciliation, real legal ownership and independently approved DBA/Security/staging remain OPEN. No production release.
+
+
+## Phase 1GF — Database provenance/write-once candidate (HARD HOLD)
+
+- Phase 1GE PR CI 45441724551 CANCELLED, not verified; preserve historical run.
+- [x] [1GF runbook](../phase-1/PHASE_1GF_DATABASE_PROVENANCE_WRITE_ONCE_HARD_HOLD.md): CI-only additive 0051, historical conflict refusal, unique CREATE origin and quote binding, immutable request identity/hash and one-time same-owner pointer; exact metadata checks and restricted MySQL regression source. M03/M04 acceptance ledger updated. No real migration or release.
+- [ ] Exact-head push/PR CI, independent DBA-approved historic reconciliation/definer/restore, authentic legal ownership and all external acceptance remain OPEN.

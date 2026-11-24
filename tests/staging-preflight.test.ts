@@ -25,6 +25,7 @@ test('all known migration checksums derive from checked-in SQL bytes',()=>{
  assert.equal(entries[47]?.id,'0048_ew_role_cycle_quarantine');
  assert.equal(entries[48]?.id,'0049_fn_service_tickets_internal');
  assert.equal(entries[49]?.id,'0050_ga_field_service_plans_internal');
+ assert.equal(entries[50]?.id,'0051_gf_crm_quote_write_once');
  assert.equal(new Set(entries.map(x=>x.id)).size,entries.length);
  assert.deepEqual(entries.map(x=>x.id),[...MIGRATIONS]);
  assert.ok(entries.every(x=>/^[a-f0-9]{64}$/.test(x.checksum)));

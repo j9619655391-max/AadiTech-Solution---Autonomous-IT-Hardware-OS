@@ -666,6 +666,12 @@ jobs:
             fi
           done
           node --import tsx scripts/browser-smoke.mjs
+      - name: Phase 1GF install additive provenance constraints after legacy adversarial fixtures
+        run: bun run db:migrate:gf-provenance
+      - name: Phase 1GF verify checksum and installed constraints on rerun
+        run: bun run db:migrate:gf-provenance
+      - name: Phase 1GF restricted principal provenance and quote binding races
+        run: bun run test:gf-provenance-mysql
       - name: Read-only disposable staging readiness preflight
         env:
           STAGING_PREFLIGHT: '1'

@@ -6,6 +6,7 @@ import {checkPreflightTarget,runStagingPreflight} from './lib/stagingPreflight';
 import {verifyEwTriggerBodies,type EwInstalledTrigger} from './migrate-ew-role-cycle';
 import {assessRuntimeGrantEnvelope,inactiveRuntimeRoles,runtimePrivilegePreflightTarget,verifiedRuntimeBaseTableTargets,verifiedRuntimeDefinerOwnerGuard} from './phase1fb-runtime-db-privileges';
 import {ownerGuardMode} from '../server/crm/repository';
+import {checkInstalledGfIntegrity} from './migrate-gf-provenance';
 
 // Phase 1EZ: read installed enforcement metadata without running migrations,
 // repairing triggers, opening reviewer scopes or elevating release status.
@@ -159,7 +160,10 @@ async function main(){
    }catch{/* Missing, identical, unauthorized, active-role or SQL error -> HOLD. */}
    finally{if(authCandidate)await authCandidate.end();}
   }
+  let provenanceIntegrity:'PASS'|'HOLD'='HOLD';
+  try{await checkInstalledGfIntegrity(connection);provenanceIntegrity='PASS';}catch{/* unverified metadata is HOLD */}
   const problems=[...result.problems];
+  if(provenanceIntegrity!=='PASS')problems.push('1GF installed provenance constraints unverified');
   if(target==='staging'&&authPrincipalBoundary!=='PASS')
    problems.push('1FO authenticated dual-principal and runtime protected-table denial unverified');
   if(target==='staging')problems.push('1FL auth/runtime credential and end-to-end service separation not independently verified');
@@ -168,9 +172,9 @@ async function main(){
   if(target==='staging'&&runtimeDbPrivileges!=='PASS')
    problems.push('1FC staging runtime DB grant envelope unverified');
   const inspected={...result,
-   ready:result.ready&&triggerIntegrity==='PASS'&&
+   ready:result.ready&&triggerIntegrity==='PASS'&&provenanceIntegrity==='PASS'&&
     (target==='ci'||runtimeDbPrivileges==='PASS')&&target==='ci',
-   triggerIntegrity,runtimeDbPrivileges,authCredentialSeparation,
+   triggerIntegrity,provenanceIntegrity,runtimeDbPrivileges,authCredentialSeparation,
    authPrincipalBoundary,authPrincipalFingerprints,
    authFunctionalSeparationVerified:false,
    independentDbaApprovalVerified:false,
