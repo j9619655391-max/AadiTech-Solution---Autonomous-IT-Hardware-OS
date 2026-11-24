@@ -412,7 +412,7 @@ export default function App() {
           Preview modules: many business reports, orders and inventory still use browser or demo data. The troubleshooting tab uses authenticated read-only guidance, not device inspection or real ticket records. Do not treat preview figures as verified operational data.
           Do not treat other dashboard figures or claimed automation as verified live business operations.
         </div>}
-        {planningTabs[activeTab] && <InternalPlanningWorkspace key={activeTab} modules={planningTabs[activeTab]} />}
+        {planningTabs[activeTab] && <div key={activeTab}><InternalPlanningWorkspace modules={planningTabs[activeTab]} /></div>}
         {activeTab === 'dashboard' && (
           <ExecutiveDashboard
             leads={leads}

@@ -1280,3 +1280,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GU exact Draft PR 45497085666 SUCCESS 8/8; 120 module and three boundary cases and GT restore passed. No separate push receipt.
 - [x] [GV runbook](../phase-1/PHASE_1GV_AUTHENTICATED_PLANNING_RECORDS_AND_FRONTEND_BATCH_HARD_HOLD.md): shared frontend across six sections/12 modules, authenticated client, CI-only immutable MFA/owner-scoped planning records, 120 HTTP cases + seven shared HTTP + three unit tests. [Task matrix](PHASE_1GV_BATCH_TASK_MATRIX.json). Exact-head CI pending.
 - [ ] Final business forms, durable authorized migration and retention, independent tenancy/grants, workflow execution, portable business recovery, external acceptance remain OPEN.
+
+
+## Phase 1GW — Structured planning forms (HARD HOLD)
+
+- [x] 1GV exact PR 45498444531 FAILED 7/8 (TS2322 workspace key); 120 named and seven shared HTTP cases passed MySQL. Baseline unit tests not executed.
+- [x] [GW runbook](../phase-1/PHASE_1GW_STRUCTURED_PLANNING_FORMS_BATCH_HARD_HOLD.md): 12 structured forms, native wrapper key correction, 60 named and three shared unit cases. [Task matrix](PHASE_1GW_BATCH_TASK_MATRIX.json). Exact-head CI pending.
+- [ ] Browser E2E, full input persistence, versioned review workflows, approved migration and independent DBA/tenant acceptance, full recovery remain OPEN.
