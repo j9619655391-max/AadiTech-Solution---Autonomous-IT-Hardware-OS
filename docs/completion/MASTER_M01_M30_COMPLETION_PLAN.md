@@ -1189,3 +1189,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GH exact Draft PR run 45452881328 SUCCESS 8/8; 0051 apply, rerun, races, post-constraint restricted HTTP and preflight all passed in disposable CI. Push CI not independently observed.
 - [x] [1GI runbook](../phase-1/PHASE_1GI_AUTH_NAMESPACE_AND_SESSION_BINDING_CANDIDATE_HARD_HOLD.md): deny runtime auth/step-up/rate and reviewer-scope namespace access; isolated session-checked binding SQL candidate and restricted-principal regression source. Candidate deliberately not admitted to staging or app runtime; BV/BW custody updated.
 - [ ] Exact-head dual CI, independently request-bound one-use intent, first CRM CREATE authority, live DBA/restore and external acceptance remain OPEN. No production release.
+
+
+## Phase 1GJ — Issuer-bound one-use quotation intent candidate (HARD HOLD)
+
+- 1GI exact Draft PR 45455592992 FAILED (7/8; session-ID collation conflict); 0051 restricted race test passed. Historical result preserved.
+- [x] [1GJ runbook](../phase-1/PHASE_1GJ_ISSUER_BOUND_QUOTE_INTENT_CANDIDATE_HARD_HOLD.md): explicit local collation and binary session identity correction; CI-only distinct issuer/runtime principals, exact request/session/quote-bound one-use intent and transaction rollback/race test source, custody inventory updated. No app or staging adoption.
+- [ ] Exact-head dual CI, trusted issuer/cryptographic intent, caller transaction/lock order verification, first CRM CREATE issuance, independent DBA recovery and all external acceptance remain OPEN.

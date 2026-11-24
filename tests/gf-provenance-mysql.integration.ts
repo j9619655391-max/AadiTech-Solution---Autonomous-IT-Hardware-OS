@@ -152,3 +152,92 @@ test('1GI isolated session-checked binding candidate denies direct UPDATE, wrong
   await admin.end();
  }
 });
+
+test('1GJ separate issuer exact-intent candidate rejects substitution and atomically consumes once',async()=>{
+ gfMigrationTarget(process.env);
+ const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
+ const suffix=randomBytes(7).toString('hex'),rt='ci_gj_rt_'+suffix,iss='ci_gj_iss_'+suffix;
+ const rtAccount="'"+rt+"'@'%'",issAccount="'"+iss+"'@'%'";
+ const rtPassword=randomBytes(32).toString('base64url'),issPassword=randomBytes(32).toString('base64url');
+ const actor=randomUUID(),customer=randomUUID(),quote=randomUUID(),alternate=randomUUID(),key=randomUUID();
+ const session=hashToken(randomBytes(32).toString('base64url')),intent=hashToken(randomBytes(32).toString('base64url')),hash='e'.repeat(64);
+ let runtime:mysql.Pool|undefined,issuer:mysql.Pool|undefined;
+ let rtCreated=false,issCreated=false,giCreated=false,gjCreated=false,tableCreated=false;
+ try{
+  await checkInstalledGfIntegrity(admin);
+  const [old]=await admin.query<mysql.RowDataPacket[]>(
+   "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME IN ('aaditech_gi_bind_quote_candidate','aaditech_gj_bind_intent_candidate')");
+  assert.equal(old.length,0);
+  const [tables]=await admin.query<mysql.RowDataPacket[]>(
+   "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='auth_gj_quote_intents_candidate'");
+  assert.equal(tables.length,0);
+  await admin.query(readFileSync('database/authority/phase1gi_session_quote_bind_candidate.sql','utf8'));giCreated=true;
+  const statements=readFileSync('database/authority/phase1gj_quote_intent_candidate.sql','utf8').split(/^-- statement-break$/m);
+  assert.equal(statements.length,2);
+  await admin.query(statements[0]);tableCreated=true;
+  await admin.query(statements[1]);gjCreated=true;
+  await admin.execute("INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,'CI-INVALID-HASH','OWNER')",[actor,'gj-'+actor+'@example.invalid','GJ synthetic owner']);
+  await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[session,actor,randomBytes(32).toString('base64url')]);
+  await admin.execute("INSERT INTO crm_customers(id,name,contactPerson,email,phone,city,state) VALUES (?,'GJ test','CI','gj@example.invalid','0000000000','Mumbai','Maharashtra')",[customer]);
+  for(const id of [quote,alternate])await admin.execute('INSERT INTO sales_quote_drafts(id,customer_id,created_by,subtotal,tax_estimate,total_estimate) VALUES (?,?,?,100,18,118)',[id,customer,actor]);
+  await admin.query('CREATE USER '+rtAccount+' IDENTIFIED BY ?',[rtPassword]);rtCreated=true;
+  await admin.query('CREATE USER '+issAccount+' IDENTIFIED BY ?',[issPassword]);issCreated=true;
+  await admin.query('GRANT SELECT, INSERT ON aaditech_ci.sales_quote_create_requests TO '+rtAccount);
+  await admin.query('GRANT EXECUTE ON PROCEDURE aaditech_ci.aaditech_gj_bind_intent_candidate TO '+rtAccount);
+  await admin.query('GRANT INSERT ON aaditech_ci.auth_gj_quote_intents_candidate TO '+issAccount);
+  runtime=mysql.createPool({...cfg,user:rt,password:rtPassword,connectionLimit:3});
+  issuer=mysql.createPool({...cfg,user:iss,password:issPassword,connectionLimit:1});
+  const sqlDenied=(e:any)=>['ER_TABLEACCESS_DENIED_ERROR','ER_COLUMNACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR','ER_PROCACCESS_DENIED_ERROR'].includes(e?.code);
+  const intentDenied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlState==='45000'&&e?.sqlMessage==='GJ_INTENT_DENIED';
+  const issueSql='INSERT INTO auth_gj_quote_intents_candidate(intent_hash,actor_id,session_hash,request_key,request_hash,quote_id,expires_at) VALUES (?,?,?,?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL ? MINUTE))';
+  await assert.rejects(runtime.execute(issueSql,[intent,actor,session,key,hash,quote,2]),sqlDenied);
+  await assert.rejects(runtime.query('SELECT intent_hash FROM auth_gj_quote_intents_candidate LIMIT 0'),sqlDenied);
+  await assert.rejects(runtime.query('UPDATE auth_gj_quote_intents_candidate SET consumed_at=NULL WHERE 1=0'),sqlDenied);
+  await assert.rejects(issuer.query('UPDATE sales_quote_create_requests SET quote_id=NULL WHERE 1=0'),sqlDenied);
+  await assert.rejects(issuer.query('UPDATE auth_gj_quote_intents_candidate SET consumed_at=NULL WHERE 1=0'),sqlDenied);
+  await assert.rejects(runtime.query('CALL aaditech_gi_bind_quote_candidate(?,?,?,?,?)',[actor,session,key,hash,quote]),sqlDenied);
+  await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,key,hash]);
+  await issuer.execute(issueSql,[intent,actor,session,key,hash,quote,2]);
+  const expired=hashToken(randomUUID()),overlong=hashToken(randomUUID());
+  await issuer.execute(issueSql,[expired,actor,session,key,hash,quote,-1]);
+  await issuer.execute(issueSql,[overlong,actor,session,key,hash,quote,10]);
+  const call=(c:Pick<mysql.PoolConnection,'query'>,values:string[]= [actor,session,key,hash,quote,intent])=>c.query('CALL aaditech_gj_bind_intent_candidate(?,?,?,?,?,?)',values);
+  const conn=await runtime.getConnection();
+  const observe=async()=>{
+   const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM auth_gj_quote_intents_candidate WHERE intent_hash=?',[intent]);
+   const [requests]=await admin.query<mysql.RowDataPacket[]>('SELECT quote_id FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,key]);
+   return {consumed:rows[0].consumed_at,bound:requests[0].quote_id};
+  };
+  try{
+   for(const values of [[actor,session,key,hash,alternate,intent],[actor,session,key,'f'.repeat(64),quote,intent],
+    [actor,session,randomUUID(),hash,quote,intent],[actor,'0'.repeat(64),key,hash,quote,intent],
+    [randomUUID(),session,key,hash,quote,intent],[actor,session,key,hash,quote,expired],
+    [actor,session,key,hash,quote,overlong],[actor,session,key,hash,quote,'0'.repeat(64)]]){
+    await conn.beginTransaction();
+    try{await assert.rejects(call(conn,values),intentDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
+    assert.deepEqual(await observe(),{consumed:null,bound:null});
+   }
+   await conn.beginTransaction();
+   try{await call(conn);}finally{await conn.rollback();}
+   assert.deepEqual(await observe(),{consumed:null,bound:null});
+   // Separate connections race for one issuer intent; only one commit wins.
+   const race=async()=>{
+    const c=await runtime!.getConnection();
+    try{await c.beginTransaction();await call(c);await c.commit();}
+    catch(e){await c.rollback();throw e;}finally{c.release();}
+   };
+   const outcomes=await Promise.allSettled([race(),race()]);
+   assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+   assert.ok(intentDenied((outcomes.find(x=>x.status==='rejected') as PromiseRejectedResult).reason));
+   const after=await observe();assert.equal(after.bound,quote);assert.ok(after.consumed);
+  }finally{conn.release();}
+ }finally{
+  if(runtime)await runtime.end();if(issuer)await issuer.end();
+  if(rtCreated)await admin.query('DROP USER '+rtAccount);
+  if(issCreated)await admin.query('DROP USER '+issAccount);
+  if(gjCreated)await admin.query('DROP PROCEDURE aaditech_gj_bind_intent_candidate');
+  if(giCreated)await admin.query('DROP PROCEDURE aaditech_gi_bind_quote_candidate');
+  if(tableCreated)await admin.query('DROP TABLE auth_gj_quote_intents_candidate');
+  await admin.end();
+ }
+});

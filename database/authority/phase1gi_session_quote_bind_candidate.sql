@@ -13,7 +13,7 @@ MODIFIES SQL DATA
 BEGIN
  DECLARE v_role VARCHAR(20) DEFAULT NULL;
  DECLARE v_status VARCHAR(20) DEFAULT NULL;
- DECLARE v_session CHAR(36) DEFAULT NULL;
+ DECLARE v_session CHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL;
  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_session=NULL;
  SELECT role,status INTO v_role,v_status FROM auth_users WHERE id=p_actor FOR UPDATE;
  IF v_role IS NULL OR v_role<>'OWNER' OR v_status<>'ACTIVE' THEN
@@ -25,7 +25,7 @@ BEGIN
   WHERE token_hash=p_session_hash AND BINARY token_hash=BINARY p_session_hash
    AND user_id=p_actor AND expires_at>UTC_TIMESTAMP(3)
    AND mfa_verified_at IS NOT NULL FOR UPDATE;
- IF v_session IS NULL OR v_session<>p_actor THEN
+ IF v_session IS NULL OR BINARY v_session<>BINARY p_actor THEN
   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GI_BIND_AUTHORITY_DENIED';
  END IF;
  UPDATE sales_quote_create_requests
