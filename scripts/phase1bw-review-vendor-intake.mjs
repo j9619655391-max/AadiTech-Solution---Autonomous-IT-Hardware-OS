@@ -146,6 +146,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'scripts/lib/gqAuthorityReconciliation.ts',
  'scripts/lib/grAuthorityRecoveryManifest.ts',
  'scripts/lib/gsAuthoritySchemaEvidence.ts',
+ 'scripts/lib/gtEncryptedAuthorityRestore.ts',
  'tests/gr-authority-recovery-manifest.test.ts',
  'tests/gm-signed-intent-candidate.test.ts',
  'tests/procurement-mysql.integration.ts',

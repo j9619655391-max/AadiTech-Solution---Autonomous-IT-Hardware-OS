@@ -1,3 +1,4 @@
+import {gtSealBackup,gtOpenBackup} from '../scripts/lib/gtEncryptedAuthorityRestore';
 import {gsRecoveryBytes,gsVerifySchemaBinding} from '../scripts/lib/gsAuthoritySchemaEvidence';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,4 +32,19 @@ test('1GS schema binding rejects drift, signer substitution and manifest substit
  assert.throws(()=>gsVerifySchemaBinding(manifest,schema,schema,signature,{...pin,spkiSha256:'0'.repeat(64)}),/GS_SCHEMA_HOLD/);
  const sparse=Array(7);
  assert.throws(()=>grManifestBytes({...manifest,tables:sparse}),/GR_RECOVERY_HOLD/);
+});
+
+test('1GT encrypted artifact binds manifest and schema, rejects tampering, truncation and wrong key',()=>{
+ const tables=GR_TABLES.map(table=>({table,rowCount:1,sha256:createHash('sha256').update(table).digest('hex')}));
+ const manifest=grMakeManifest(tables,{sequence:1,previousSha256:'0'.repeat(64),sourceCommit:'a'.repeat(40),observedAtMs:1700000000000});
+ const schema='b'.repeat(64),key=Buffer.alloc(32,7),plain=Buffer.from('synthetic backup rows');
+ const artifact=gtSealBackup(plain,key,manifest,schema);
+ assert.deepEqual(gtOpenBackup(artifact,key,manifest,schema),plain);
+ assert.notDeepEqual(gtSealBackup(plain,key,manifest,schema),artifact);
+ const corrupted=Buffer.from(artifact);corrupted[corrupted.length-1]^=1;
+ for(const bad of [corrupted,artifact.subarray(0,artifact.length-1),Buffer.alloc(1)])
+  assert.throws(()=>gtOpenBackup(bad,key,manifest,schema),/GT_RESTORE_HOLD/);
+ assert.throws(()=>gtOpenBackup(artifact,Buffer.alloc(32,8),manifest,schema),/GT_RESTORE_HOLD/);
+ assert.throws(()=>gtOpenBackup(artifact,key,{...manifest,sequence:2},schema),/GT_RESTORE_HOLD/);
+ assert.throws(()=>gtOpenBackup(artifact,key,manifest,'c'.repeat(64)),/GT_RESTORE_HOLD/);
 });

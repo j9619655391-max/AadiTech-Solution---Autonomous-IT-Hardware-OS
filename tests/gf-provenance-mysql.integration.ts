@@ -7,6 +7,7 @@ import {assessRuntimeGrantEnvelope} from '../scripts/phase1fb-runtime-db-privile
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {gfMigrationTarget,checkInstalledGfIntegrity} from '../scripts/migrate-gf-provenance';
+import {gtRehearseEncryptedAuthorityRestore} from '../scripts/lib/gtEncryptedAuthorityRestore';
 import {gsCaptureSchemaEvidence,gsRecoveryBytes,gsVerifySchemaBinding} from '../scripts/lib/gsAuthoritySchemaEvidence';
 import {gsRehearseLogicalRestore,grCaptureAuthorityDigests,grCaptureConsistentAuthority,grMakeManifest,grManifestBytes,grVerifyManifest} from '../scripts/lib/grAuthorityRecoveryManifest';
 import {gqInspectAuthoritySnapshot,gqReconcileAuthority} from '../scripts/lib/gqAuthorityReconciliation';
@@ -437,7 +438,7 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
  }
 });
 
-test('1GN–1GS combined authority, transaction recovery, logical restore and schema binding',async()=>{
+test('1GN–1GT combined authority, transaction recovery, encrypted isolated schema restore',async()=>{
  gfMigrationTarget(process.env);
  const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
  const suffix=randomBytes(7).toString('hex'),iss='ci_gn_iss_'+suffix,rt='ci_gn_rt_'+suffix;
@@ -718,6 +719,8 @@ test('1GN–1GS combined authority, transaction recovery, logical restore and sc
   assert.equal(grVerifyManifest(manifest,signature,expected,restore.restored).status,'MATCH');
   assert.throws(()=>grVerifyManifest(manifest,signature,expected,restore.damaged),/GR_RECOVERY_HOLD/);
   assert.deepEqual(restore.original,snapshot);
+  const encrypted=await gtRehearseEncryptedAuthorityRestore(admin,manifest,signature,expected,schema.sha256,schemaSig);
+  assert.equal(encrypted.status,'MATCH');assert.equal(encrypted.restoredTables,7);assert.equal(encrypted.restoredTriggers,22);assert.equal(encrypted.restoredRoutines,5);assert.ok(encrypted.artifactBytes>0);assert.match(encrypted.artifactSha256,/^[0-9a-f]{64}$/);
   assert.equal((await gsCaptureSchemaEvidence(admin)).sha256,schema.sha256);
   assert.equal(grVerifyManifest(manifest,signature,expected,await grCaptureConsistentAuthority(admin)).status,'MATCH');
   // Simulate a partial restored registry row inside a reversible transaction.

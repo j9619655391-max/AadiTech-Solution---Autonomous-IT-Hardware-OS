@@ -4,7 +4,7 @@ import type {Pool,PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {gfMigrationTarget} from '../migrate-gf-provenance';
 import {gqInspectAuthoritySnapshot} from './gqAuthorityReconciliation';
 const audience='aaditech:disposable-ci:authority-recovery:v1';
-const specs=[
+export const GR_SPECS=[
  ['auth_gk_customer_intents_candidate','intent_hash','intent_hash,actor_id,session_hash,customer_id,audit_id,name,gstin,contactPerson,email,phone,city,state,expires_at,consumed_at,created_at'],
  ['auth_gl_lead_intents_candidate','intent_hash','intent_hash,actor_id,session_hash,lead_id,audit_id,name,company,email,phone,source,status,score,scoreReason,intentScore,requirement,estimatedBudget,location,gstin,expires_at,consumed_at,created_at'],
  ['auth_gl_product_intents_candidate','intent_hash','intent_hash,actor_id,session_hash,product_id,audit_id,sku,brand,model,category,specs,unitCost,freightCost,riskBuffer,sellingPrice,minPrice,gstRate,hsn,warrantyMonths,leadTimeDays,expires_at,consumed_at,created_at'],
@@ -13,7 +13,7 @@ const specs=[
  ['auth_go_issuer_keys_candidate','key_id','key_id,spki_sha256,scope_mask,not_before,not_after,revoked_at'],
  ['auth_go_intent_approvals_candidate','intent_hash','intent_hash,key_id,spki_sha256,evidence_sha256,expires_at,approved_at']
 ] as const;
-export const GR_TABLES=Object.freeze(specs.map(x=>x[0]));
+export const GR_TABLES=Object.freeze(GR_SPECS.map(x=>x[0]));
 export type GrTableDigest={table:string;rowCount:number;sha256:string};
 export type GrManifest={version:1;audience:typeof audience;sequence:number;previousSha256:string;sourceCommit:string;observedAtMs:number;tables:GrTableDigest[]};
 const hex=/^[0-9a-f]{64}$/;
@@ -31,10 +31,10 @@ export function grManifestBytes(value:unknown):Buffer{
  if(m.version!==1||m.audience!==audience||typeof m.sequence!=='number'||!Number.isSafeInteger(m.sequence)||m.sequence<1||
  !digest(m.previousSha256)||typeof m.sourceCommit!=='string'||!/^[0-9a-f]{40}$/.test(m.sourceCommit)||
  typeof m.observedAtMs!=='number'||!Number.isSafeInteger(m.observedAtMs)||m.observedAtMs<=0||
- !Array.isArray(m.tables)||m.tables.length!==specs.length)fail();
+ !Array.isArray(m.tables)||m.tables.length!==GR_SPECS.length)fail();
  const tables=Array.from(m.tables as unknown[],(value,i)=>{
   const t=obj(value,['table','rowCount','sha256']);
-  if(t.table!==specs[i][0]||typeof t.rowCount!=='number'||!Number.isSafeInteger(t.rowCount)||t.rowCount<0||t.rowCount>maxRows||!digest(t.sha256))fail();
+  if(t.table!==GR_SPECS[i][0]||typeof t.rowCount!=='number'||!Number.isSafeInteger(t.rowCount)||t.rowCount<0||t.rowCount>maxRows||!digest(t.sha256))fail();
   return [t.table,t.rowCount,t.sha256];
  });
  return Buffer.from('AADITECH-GR-RECOVERY-V1\n'+JSON.stringify([m.version,m.audience,m.sequence,m.previousSha256,m.sourceCommit,m.observedAtMs,tables]),'utf8');
@@ -63,7 +63,7 @@ export function grVerifyManifest(value:unknown,signature:unknown,expected:{seque
 export async function grCaptureAuthorityDigests(c:Pick<PoolConnection,'query'>,restored=false):Promise<GrTableDigest[]>{
  gfMigrationTarget(process.env);
  const output:GrTableDigest[]=[];
- for(const [table,pk,columns] of specs){
+ for(const [table,pk,columns] of GR_SPECS){
   const fields=columns.split(',');
   const [rows]=await c.query<RowDataPacket[]>('SELECT '+fields.map(k=>'CAST('+k+' AS CHAR CHARACTER SET utf8mb4) AS '+k).join(',')+' FROM '+(restored?'gs_restore_'+table:table)+' ORDER BY BINARY '+pk+' LIMIT '+(maxRows+1));
   if(rows.length>maxRows)fail();
@@ -107,7 +107,7 @@ export async function gsRehearseLogicalRestore(pool:Pick<Pool,'getConnection'>){
   const original=await grCaptureAuthorityDigests(source);
   restore=await pool.getConnection();
   let totalBytes=0;
-  for(const [table,pk,columns] of specs){
+  for(const [table,pk,columns] of GR_SPECS){
    const dest='gs_restore_'+table,fields=columns.split(',');
    const [rows]=await source.query<RowDataPacket[]>('SELECT '+fields.map(k=>'CAST('+k+' AS CHAR CHARACTER SET utf8mb4) AS '+k).join(',')+' FROM '+table+' ORDER BY BINARY '+pk+' LIMIT '+(maxRows+1));
    if(rows.length>maxRows)fail();

@@ -1259,3 +1259,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GR exact Draft PR 45485896211 FAILED 7/8, baseline TS2339/TS2769; MySQL forced-deadlock/disconnect and recovery-manifest subtest passed; provenanceIntegrity PASS. No separate push receipt.
 - [x] [1GS runbook](../phase-1/PHASE_1GS_LOGICAL_RESTORE_AND_SCHEMA_EVIDENCE_BATCH_HARD_HOLD.md): TypeScript narrowing corrections, dense manifest arrays, seven-table temporary logical export/import and damage detection, schema evidence and Ed25519 binding with regressions. BV/BW custody updated.
 - [ ] Exact-head CI, full schema+business restore, actual backup storage, independent signer/custody, quote content and CRM audit payload reconciliation, app/staging integration and independent acceptance remain OPEN.
+
+
+## Phase 1GT — Encrypted authority schema restore batch (HARD HOLD)
+
+- [x] 1GS exact Draft PR 45488593104 SUCCESS 8/8; GR/GS unit tests and GN–GS MySQL passed. No separate push receipt observed.
+- [x] [1GT runbook](../phase-1/PHASE_1GT_ENCRYPTED_AUTHORITY_SCHEMA_RESTORE_BATCH_HARD_HOLD.md): AES-GCM encrypted temporary artifact and tamper tests, seven-table disposable schema restoration with FK/check/trigger/routine evidence, post-restore guard regression, V2 schema digest. BV/BW custody updated.
+- [ ] Exact-head CI, portable full backup and business schema restoration, independent signer and custody, quote and audit content, app/staging integration and independent acceptance remain OPEN.
