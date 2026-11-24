@@ -63,7 +63,10 @@ BEGIN
  AND expires_at>UTC_TIMESTAMP(3) AND created_at<=UTC_TIMESTAMP(3)
  AND expires_at<=DATE_ADD(created_at,INTERVAL 5 MINUTE)
  AND CHAR_LENGTH(TRIM(name))>0 AND CHAR_LENGTH(TRIM(company))>0
- AND email REGEXP '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+
+ AND email REGEXP '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
+ AND CHAR_LENGTH(TRIM(phone))>0 AND CHAR_LENGTH(TRIM(requirement)) BETWEEN 1 AND 10000
+ AND source<>'' AND status<>'' AND score<>'' AND intentScore<=100 AND estimatedBudget>=0
+ AND (gstin IS NULL OR REGEXP_LIKE(gstin,'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$','c')) FOR UPDATE;
  IF v_found<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
  INSERT INTO crm_leads(id,name,company,email,phone,source,status,score,scoreReason,intentScore,requirement,estimatedBudget,location,gstin)
  SELECT lead_id,name,company,email,phone,source,status,score,scoreReason,intentScore,requirement,estimatedBudget,location,gstin
@@ -73,51 +76,6 @@ BEGIN
  INSERT INTO crm_audit_events(id,actor_user_id,entity_type,entity_id,operation,before_data,after_data)
  SELECT i.audit_id,i.actor_id,'leads',c.id,'CREATE',NULL,
  JSON_OBJECT('id',c.id,'name',c.name,'company',c.company,'email',c.email,'phone',c.phone,'source',c.source,'status',c.status,'score',c.score,'scoreReason',c.scoreReason,'intentScore',c.intentScore,'requirement',c.requirement,'estimatedBudget',c.estimatedBudget,'location',c.location,'gstin',c.gstin,'version',c.version,'created_at',c.created_at,'updated_at',c.updated_at)
- FROM auth_gl_lead_intents_candidate i JOIN crm_leads c ON c.id=i.lead_id
- WHERE i.intent_hash=p_intent_hash;
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- UPDATE auth_gl_lead_intents_candidate SET consumed_at=UTC_TIMESTAMP(3)
- WHERE intent_hash=p_intent_hash AND consumed_at IS NULL AND expires_at>UTC_TIMESTAMP(3);
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- RELEASE SAVEPOINT gl_lead_candidate;
- END;
-END
-
- AND CHAR_LENGTH(TRIM(phone))>0 AND CHAR_LENGTH(TRIM(requirement)) BETWEEN 1 AND 10000
- AND source<>'' AND status<>'' AND score<>'' AND intentScore<=100 AND estimatedBudget>=0
- AND (gstin IS NULL OR REGEXP_LIKE(gstin,'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]
- IF v_found<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- INSERT INTO crm_leads(id,name,gstin,contactPerson,email,phone,city,state)
- SELECT lead_id,name,gstin,contactPerson,email,phone,city,state
- FROM auth_gl_lead_intents_candidate WHERE intent_hash=p_intent_hash;
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- -- Audit is derived from the actual newly inserted row; no historical-row claim.
- INSERT INTO crm_audit_events(id,actor_user_id,entity_type,entity_id,operation,before_data,after_data)
- SELECT i.audit_id,i.actor_id,'leads',c.id,'CREATE',NULL,
- JSON_OBJECT('id',c.id,'name',c.name,'gstin',c.gstin,'contactPerson',c.contactPerson,
- 'email',c.email,'phone',c.phone,'city',c.city,'state',c.state,'version',c.version,
- 'created_at',c.created_at,'updated_at',c.updated_at)
- FROM auth_gl_lead_intents_candidate i JOIN crm_leads c ON c.id=i.lead_id
- WHERE i.intent_hash=p_intent_hash;
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- UPDATE auth_gl_lead_intents_candidate SET consumed_at=UTC_TIMESTAMP(3)
- WHERE intent_hash=p_intent_hash AND consumed_at IS NULL AND expires_at>UTC_TIMESTAMP(3);
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- RELEASE SAVEPOINT gl_lead_candidate;
- END;
-END
-,'c')) FOR UPDATE;
- IF v_found<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- INSERT INTO crm_leads(id,name,gstin,contactPerson,email,phone,city,state)
- SELECT lead_id,name,gstin,contactPerson,email,phone,city,state
- FROM auth_gl_lead_intents_candidate WHERE intent_hash=p_intent_hash;
- IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
- -- Audit is derived from the actual newly inserted row; no historical-row claim.
- INSERT INTO crm_audit_events(id,actor_user_id,entity_type,entity_id,operation,before_data,after_data)
- SELECT i.audit_id,i.actor_id,'leads',c.id,'CREATE',NULL,
- JSON_OBJECT('id',c.id,'name',c.name,'gstin',c.gstin,'contactPerson',c.contactPerson,
- 'email',c.email,'phone',c.phone,'city',c.city,'state',c.state,'version',c.version,
- 'created_at',c.created_at,'updated_at',c.updated_at)
  FROM auth_gl_lead_intents_candidate i JOIN crm_leads c ON c.id=i.lead_id
  WHERE i.intent_hash=p_intent_hash;
  IF ROW_COUNT()<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GL_LEAD_INTENT_DENIED'; END IF;
