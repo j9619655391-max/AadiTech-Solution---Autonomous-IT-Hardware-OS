@@ -244,3 +244,30 @@ test('1GC real MySQL rejects M16 audit rewriting and ticket deletion grants',asy
   if(created)await admin.query('DROP USER '+account);
  }
 });
+
+test('1GD disposable MySQL observes and rejects all twelve CRM/quote mutation privilege widenings',async()=>{
+ const user='ci_gd_'+randomBytes(8).toString('hex');
+ const account="'"+user+"'@'%'",password=randomBytes(32).toString('base64url');
+ const appendOnly=['crm_audit_events','sales_quote_drafts','sales_quote_draft_items','sales_quote_draft_revisions'];
+ const noDelete=['crm_customers','crm_products','crm_leads','sales_quote_create_requests'];
+ let candidate:mysql.Pool|undefined,created=false;
+ try{
+  await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);created=true;
+  for(const table of appendOnly)await admin.query('GRANT SELECT, INSERT ON aaditech_ci.'+table+' TO '+account);
+  for(const table of noDelete)await admin.query('GRANT SELECT, INSERT, UPDATE ON aaditech_ci.'+table+' TO '+account);
+  candidate=mysql.createPool({...getDatabaseConfig(),user,password,connectionLimit:1,waitForConnections:true});
+  assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,8);
+  for(const table of [...appendOnly,...noDelete]){
+   for(const privilege of appendOnly.includes(table)?['UPDATE','DELETE']:['DELETE']){
+    await admin.query('GRANT '+privilege+' ON aaditech_ci.'+table+' TO '+account);
+    await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+     /1FC runtime database grant envelope unverified/);
+    await admin.query('REVOKE '+privilege+' ON aaditech_ci.'+table+' FROM '+account);
+    assert.equal((await checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci')).dataGrantCount,8);
+   }
+  }
+ }finally{
+  if(candidate)await candidate.end();
+  if(created)await admin.query('DROP USER '+account);
+ }
+});

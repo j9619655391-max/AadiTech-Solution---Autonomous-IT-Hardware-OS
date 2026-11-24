@@ -27,6 +27,14 @@ const DML=new Set(['SELECT','INSERT','UPDATE','DELETE']);
 const FIELD_SERVICE_APPEND_ONLY_TABLES=new Set([
  'field_service_plans_internal','field_service_plan_audit_internal'
 ]);
+// 1GD: CRM uses versioned soft deletion; quote evidence is append-only.
+const CRM_QUOTE_APPEND_ONLY_TABLES=new Set([
+ 'crm_audit_events','sales_quote_drafts','sales_quote_draft_items',
+ 'sales_quote_draft_revisions'
+]);
+const CRM_QUOTE_NO_DELETE_TABLES=new Set([
+ 'crm_customers','crm_products','crm_leads','sales_quote_create_requests'
+]);
 // Phase 1FE: runtime grants are not allowed to bypass reviewer/identity
 // quarantine by writing authority or authentication state tables directly.
 // An approved isolated authority writer must use separate credentials and
@@ -109,6 +117,11 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
       privileges.some(priv=>priv!=='SELECT'&&priv!=='INSERT'))||
      (tableName==='service_tickets_internal'&&privileges.includes('DELETE'))){
    reasons.push('Runtime service ticket history mutation forbidden');continue;
+  }
+  if((CRM_QUOTE_APPEND_ONLY_TABLES.has(tableName)&&
+      privileges.some(priv=>priv!=='SELECT'&&priv!=='INSERT'))||
+     (CRM_QUOTE_NO_DELETE_TABLES.has(tableName)&&privileges.includes('DELETE'))){
+   reasons.push('Runtime CRM/quote provenance mutation forbidden');continue;
   }
   dataGrantCount++;
   dataGrantTables.add(parts[1].toLowerCase());

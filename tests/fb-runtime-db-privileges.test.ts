@@ -190,3 +190,22 @@ test('1GC M16 audit is append-only and ticket deletion is forbidden',()=>{
   assert.ok(result.reasons.includes('Runtime service ticket history mutation forbidden'));
  }
 });
+
+test('1GD CRM and quote provenance grants match the bounded mutation contract',()=>{
+ const appendOnly=['crm_audit_events','sales_quote_drafts','sales_quote_draft_items','sales_quote_draft_revisions'];
+ const noDelete=['crm_customers','crm_products','crm_leads','sales_quote_create_requests'];
+ for(const table of [...appendOnly,...noDelete]){
+  for(const name of [table,table.toUpperCase()]){
+   const assess=(privileges:string)=>assessRuntimeGrantEnvelope([usage,scoped,
+    'GRANT '+privileges+' ON '+tick+schema+tick+'.'+tick+name+tick+' TO '+account],schema);
+   for(const p of ['SELECT','INSERT','SELECT, INSERT'])
+    assert.equal(assess(p).allowed,true,table+' '+p);
+   for(const p of ['DELETE','SELECT, INSERT, DELETE',...(appendOnly.includes(table)?['UPDATE','SELECT, INSERT, UPDATE']:[])]){
+    const result=assess(p);
+    assert.equal(result.allowed,false,table+' '+p);
+    assert.ok(result.reasons.includes('Runtime CRM/quote provenance mutation forbidden'));
+   }
+   if(noDelete.includes(table))assert.equal(assess('SELECT, INSERT, UPDATE').allowed,true);
+  }
+ }
+});

@@ -1149,3 +1149,9 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 
 - [x] [1GC runbook](../phase-1/PHASE_1GC_M16_TICKET_HISTORY_PRIVILEGE_ENVELOPE_HARD_HOLD.md): source rejects UPDATE/DELETE on the M16 audit table and DELETE on the ticket table; existing held ticket status transitions remain permitted. Unit and disposable MySQL grant-widening regression source added.
 - [ ] Exact-head dual CI and independent DBA-approved installed privileges, real customer/service authority and all external acceptance remain pending. No production release.
+
+
+## Phase 1GD — CRM/quote provenance privilege envelope (24 November 2026, HARD HOLD)
+
+- [x] [1GD runbook](../phase-1/PHASE_1GD_CRM_QUOTE_PROVENANCE_PRIVILEGE_ENVELOPE_HARD_HOLD.md): narrow runtime grants across eight CRM/quotation tables, retain same-transaction exclusive OWNER guard with immutable quote parent FOR SHARE, remove unnecessary CRM customer DELETE fixture grant. Unit, twelve actual disposable MySQL grant-widening and restricted HTTP create/replay/revision race/soft-delete regression source added.
+- [ ] Exact-head dual CI and independent DBA-authenticated installed grants, legal tenancy, external provider and all business/staging acceptance remain OPEN. No production release.

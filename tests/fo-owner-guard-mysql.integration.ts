@@ -52,7 +52,7 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
   await admin.query('CREATE USER '+account+' IDENTIFIED BY ?',[password]);
   createdUser=true;
   const grants=[
-   ['SELECT, INSERT, UPDATE, DELETE','crm_customers'],
+   ['SELECT, INSERT, UPDATE','crm_customers'],
    ['SELECT, INSERT','crm_audit_events'],
    ['SELECT, INSERT, UPDATE','crm_products'],
    ['SELECT, INSERT, UPDATE','crm_leads'],
@@ -134,11 +134,51 @@ test('1FO restricted runtime HTTP CRM/quote/service-desk uses exact DEFINER guar
    sellingPrice:'200.00',minPrice:'150.00',gstRate:'18.00',hsn:'8471'
   });
   assert.equal(product.status,201,JSON.stringify(product.data));
-  const quote=await invoke(base,'/api/quotes/drafts','POST',{
-   customerId,items:[{productId:String(product.data.id),quantity:1}]
-  },{'idempotency-key':randomUUID()});
+  const draftInput={customerId,items:[{productId:String(product.data.id),quantity:1}]};
+  const requestKey=randomUUID();
+  const quote=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
   assert.equal(quote.status,201,JSON.stringify(quote.data));
   assert.equal(quote.data.replayed,false);
+  const replay=await invoke(base,'/api/quotes/drafts','POST',draftInput,{'idempotency-key':requestKey});
+  assert.equal(replay.status,200,JSON.stringify(replay.data));
+  assert.equal(replay.data.id,quote.data.id);
+  assert.equal(replay.data.replayed,true);
+  const revisionPath='/api/quotes/drafts/'+quote.data.id+'/revisions';
+  const revisionInput={expectedRevision:0,reason:'1GD restricted concurrent internal revision',
+   items:[{productId:String(product.data.id),quantity:2}]};
+  const revisions=await Promise.all([invoke(base,revisionPath,'POST',revisionInput),
+   invoke(base,revisionPath,'POST',revisionInput)]);
+  assert.deepEqual(revisions.map(r=>r.status).sort((a,b)=>a-b),[201,409],JSON.stringify(revisions));
+  const [revisionRows]=await admin.query<any[]>(
+   'SELECT COUNT(*) AS n FROM sales_quote_draft_revisions WHERE quote_id=?',[quote.data.id]);
+  assert.equal(Number(revisionRows[0].n),1);
+  // Direct SQL privileges must actually deny the destructive statements.
+  for(const table of ['crm_audit_events','sales_quote_drafts','sales_quote_draft_items','sales_quote_draft_revisions']){
+   await assert.rejects(runtime.query('UPDATE '+table+' SET id=id WHERE 1=0'),
+    (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_COLUMNACCESS_DENIED_ERROR');
+  }
+  for(const table of ['crm_customers','crm_products','crm_leads','crm_audit_events',
+   'sales_quote_drafts','sales_quote_draft_items','sales_quote_draft_revisions','sales_quote_create_requests']){
+   await assert.rejects(runtime.query('DELETE FROM '+table+' WHERE 1=0'),
+    (e:any)=>e?.code==='ER_TABLEACCESS_DENIED_ERROR'||e?.code==='ER_DBACCESS_DENIED_ERROR');
+  }
+  const spare=await invoke(base,'/api/crm/customers','POST',{
+   name:'1GD isolated soft delete fixture',contactPerson:'CI contact',
+   email:'gd-'+randomUUID()+'@example.invalid',phone:'0000000000',city:'Mumbai',state:'Maharashtra'
+  });
+  assert.equal(spare.status,201,JSON.stringify(spare.data));
+  const sparePath='/api/crm/customers/'+spare.data.id;
+  const patch=await invoke(base,sparePath,'PATCH',{expectedVersion:1,city:'Pune'});
+  assert.equal(patch.status,200,JSON.stringify(patch.data));
+  const deleted=await invoke(base,sparePath,'DELETE',undefined,{'if-match':'2'});
+  assert.equal(deleted.status,204,JSON.stringify(deleted.data));
+  const [softDeleted]=await admin.query<any[]>(
+   'SELECT version,deleted_at FROM crm_customers WHERE id=?',[spare.data.id]);
+  assert.equal(Number(softDeleted[0].version),3);
+  assert.ok(softDeleted[0].deleted_at);
+  const [auditRows]=await admin.query<any[]>(
+   "SELECT COUNT(*) AS n FROM crm_audit_events WHERE entity_id=? AND entity_type='customers'",[spare.data.id]);
+  assert.equal(Number(auditRows[0].n),3);
   const ticket=await invoke(base,'/api/service-desk/internal-tickets','POST',{
    customerId,guideId:'wifi-no-internet',subject:'CI offline network internal note',
    description:'CI-only internal troubleshooting simulation',priority:'NORMAL',

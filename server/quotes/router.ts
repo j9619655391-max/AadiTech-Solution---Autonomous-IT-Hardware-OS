@@ -189,9 +189,12 @@ router.post('/:id/revisions',async(req,res)=>{
     // Phase 1FK: keep owner role/status locked through revision commit.
     // This also guards a role demotion after successful HTTP middleware.
     await lockActiveCrmOwner(conn,res.locals.auth.userId);
-    // This parent row serializes revision creation for this draft.
+    // 1GD: the exclusive active-OWNER lock above serializes every revision
+    // for this creator before any consistent reads. The immutable parent
+    // needs only a shared row lock to prevent concurrent parent changes.
+    // MySQL >=8.0.22 permits FOR SHARE with SELECT, unlike FOR UPDATE.
     const [owned]=await conn.query<RowDataPacket[]>(
-      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? FOR UPDATE',
+      'SELECT id FROM sales_quote_drafts WHERE id=? AND created_by=? FOR SHARE',
       [req.params.id,res.locals.auth.userId]);
     if(!owned.length){await conn.rollback();res.status(404).json({error:'Draft not found'});return;}
     const [current]=await conn.query<RowDataPacket[]>(
