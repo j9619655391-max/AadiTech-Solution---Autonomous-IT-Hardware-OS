@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK,parseInternalTicketListCursor,boundedInternalTicketList
+ validateTicketCreate,validateTicketTransition,ServiceTicketInputError,isInternalTicketStatus,boundedInternalTicketHistory,parseInternalTicketHistoryCursor,verifyInternalTicketAuditWindow,rejectCredentialLikeTicketText,maskCredentialLikeTicketText,INTERNAL_TICKET_MASK,parseInternalTicketListCursor,boundedInternalTicketList,verifyInternalTicketAuditForAppend,assertAppendableInternalAuditVersion,InternalAuditAppendLimitError,MAX_INTERNAL_AUDIT_APPEND_EVENTS
 } from '../server/serviceDesk/validation';
 import {computeInternalAuditFingerprint,MAX_INTERNAL_AUDIT_FINGERPRINT_EVENTS,InternalAuditFingerprintLimitError} from '../server/serviceDesk/fingerprint';
 import {verifyServiceDeskCustomerPage,customerSelectionForPage,SERVICE_DESK_CUSTOMER_PAGE_SIZE} from '../src/services/serviceDeskCustomerPaging';
@@ -465,22 +465,58 @@ test('1FW M16 uses owner-scoped existing CRM pagination with bounded UI and stal
  assert.match(helper,/customerIdPattern/);
 });
 
-test('1FX status mutation verifies recent audit anchor, actor and sentinel before any DML',()=>{
+test('1FY owner and ticket locks precede full bounded audit verification and both writes',()=>{
  const route=readFileSync('server/serviceDesk/router.ts','utf8');
  const patch=route.slice(route.indexOf("router.patch('/:id/status'"));
- const ownerLock=patch.indexOf('await lockActiveCrmOwner(');
- const ticketLock=patch.indexOf('WHERE t.id=? AND t.owner_user_id=? FOR UPDATE');
- const auditLock=patch.indexOf('ORDER BY a.version_after DESC LIMIT 101 FOR SHARE');
- const integrity=patch.indexOf('verifyInternalTicketAuditWindow(lockedAudit,');
- const actor=patch.indexOf('lockedAudit.some(event=>event.actorUserId!==res.locals.auth.userId)');
- const mutation=patch.indexOf('UPDATE service_tickets_internal SET status=?');
- const append=patch.indexOf('INSERT INTO service_ticket_audit_internal');
- const commit=patch.indexOf('await conn.commit()');
- const ordered=[ownerLock,ticketLock,auditLock,integrity,actor,mutation,append,commit];
- assert.ok(ordered.every((n,i)=>n>=0&&(i===0||n>ordered[i-1])),
-  'Owner/ticket/audit locks and integrity checks must precede both writes');
- assert.match(patch,/WHERE a\.ticket_id=\?\s+ORDER BY a\.version_after DESC LIMIT 101 FOR SHARE/);
- assert.match(patch,/currentVersion:old\.version,currentStatus:old\.status/);
- assert.match(patch,/catch\(e\)\{await conn\.rollback\(\);fail\(res,e\);\}/);
+ const ordered=[
+  'await lockActiveCrmOwner(',
+  'WHERE t.id=? AND t.owner_user_id=? FOR UPDATE',
+  'assertAppendableInternalAuditVersion(old.version)',
+  'ORDER BY a.version_after DESC LIMIT '+ '$' + '{MAX_INTERNAL_AUDIT_APPEND_EVENTS} FOR SHARE',
+  'verifyInternalTicketAuditForAppend(lockedAudit,',
+  'UPDATE service_tickets_internal SET status=?',
+  'INSERT INTO service_ticket_audit_internal',
+  'await conn.commit()'
+ ].map(value=>patch.indexOf(value));
+ assert.ok(ordered.every((n,i)=>n>=0&&(i===0||n>ordered[i-1])));
+ assert.match(patch,/WHERE a\.ticket_id=\?\s+ORDER BY a\.version_after DESC LIMIT/);
+ assert.match(patch,/currentVersion:old\.version,currentStatus:old\.status,ownerUserId:res\.locals\.auth\.userId/);
+ assert.match(patch,/catch\(e\)\{\s*await conn\.rollback\(\);/);
+ assert.match(patch,/e instanceof InternalAuditAppendLimitError/);
  assert.match(patch,/externalDispatchEnabled:false/);
+});
+
+test('1FY verifies genesis through latest event, exact count and every historical actor',()=>{
+ const make=(n:number)=>Array.from({length:n},(_,i)=>{
+  const versionAfter=n-i;
+  return {
+   versionAfter,actorUserId:customerId,
+   operation:versionAfter===1?'CREATE' as const:'STATUS_CHANGE' as const,
+   fromStatus:versionAfter===1?null:versionAfter===2?'OPEN_INTERNAL' as const:
+    versionAfter%2===0?'WAITING_INTERNAL' as const:'TRIAGED_INTERNAL' as const,
+   toStatus:versionAfter===1?'OPEN_INTERNAL' as const:
+    versionAfter%2===0?'TRIAGED_INTERNAL' as const:'WAITING_INTERNAL' as const
+  };
+ });
+ for(const n of [1,99,100,101,102,103,201,999]){
+  const rows=make(n),context={currentVersion:n,currentStatus:rows[0].toStatus,ownerUserId:customerId};
+  assert.doesNotThrow(()=>verifyInternalTicketAuditForAppend(rows,context));
+ }
+ const rows=make(203),context={currentVersion:203,currentStatus:rows[0].toStatus,ownerUserId:customerId};
+ for(const offset of [0,100,101,200,202]){
+  const changed=rows.map((event,i)=>i===offset?{...event,actorUserId:'different-owner'}:event);
+  assert.throws(()=>verifyInternalTicketAuditForAppend(changed,context),/actor ownership/);
+ }
+ const genesis=rows.map((event,i)=>i===202?{...event,toStatus:'TRIAGED_INTERNAL' as const}:event);
+ assert.throws(()=>verifyInternalTicketAuditForAppend(genesis,context),/audit/);
+ const gap=rows.map((event,i)=>i===150?{...event,versionAfter:event.versionAfter+1}:event);
+ assert.throws(()=>verifyInternalTicketAuditForAppend(gap,context),/audit/);
+ assert.throws(()=>verifyInternalTicketAuditForAppend(rows.slice(0,-1),context),/count/);
+ assert.throws(()=>verifyInternalTicketAuditForAppend([...rows,rows[202]],context),/count/);
+ assert.equal(MAX_INTERNAL_AUDIT_APPEND_EVENTS,1000);
+ assert.doesNotThrow(()=>assertAppendableInternalAuditVersion(999));
+ for(const n of [1000,1001,2147483647])
+  assert.throws(()=>assertAppendableInternalAuditVersion(n),InternalAuditAppendLimitError);
+ for(const n of [0,NaN,-1,1.5])
+  assert.throws(()=>assertAppendableInternalAuditVersion(n),/invalid audit version/);
 });
