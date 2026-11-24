@@ -134,6 +134,7 @@ export const GOVERNED_INPUTS=Object.freeze([
  'database/authority/phase1gk_customer_create_intent_candidate.sql',
  'database/authority/phase1gn_global_intent_nonce_candidate.sql',
  'database/authority/phase1go_consumption_approval_candidate.sql',
+ 'database/authority/phase1gp_immutable_authority_candidate.sql',
  'database/authority/phase1gl_product_create_intent_candidate.sql',
  'database/authority/phase1gl_lead_create_intent_candidate.sql',
  'tests/fo-definer-owner-guard.test.ts',

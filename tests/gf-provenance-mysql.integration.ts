@@ -434,7 +434,7 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
  }
 });
 
-test('1GN global nonce registry rejects cross-operation reuse even for raw issuers and rolls back failed issuance',async()=>{
+test('1GN–1GP combined nonce, approval, immutable authority, quote consumption and revoke-first recovery',async()=>{
  gfMigrationTarget(process.env);
  const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
  const suffix=randomBytes(7).toString('hex'),iss='ci_gn_iss_'+suffix,rt='ci_gn_rt_'+suffix;
@@ -530,6 +530,8 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
   const goSql=readFileSync('database/authority/phase1go_consumption_approval_candidate.sql','utf8').split(/^-- statement-break$/m);assert.equal(goSql.length,7);
   await admin.query(goSql[0]);createdTables.push(keyTable);await admin.query(goSql[1]);createdTables.push(approvalTable);
   for(const statement of goSql.slice(2))await admin.query(statement);
+  const gpSql=readFileSync('database/authority/phase1gp_immutable_authority_candidate.sql','utf8').split(/^-- statement-break$/m);assert.equal(gpSql.length,14);
+  for(const statement of gpSql)await admin.query(statement);
   await admin.query('CREATE USER '+apAccount+' IDENTIFIED BY ?',[apPassword]);apCreated=true;
   for(const table of tables)await admin.query('GRANT SELECT ON aaditech_ci.'+table+' TO '+apAccount);
   await admin.query('GRANT INSERT (intent_hash,key_id,spki_sha256,evidence_sha256,expires_at) ON aaditech_ci.'+approvalTable+' TO '+apAccount);
@@ -552,18 +554,23 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
    notBeforeMs:now-1000,notAfterMs:now+300000,revoked:false,operations:ops};
   await admin.execute('INSERT INTO '+keyTable+'(key_id,spki_sha256,scope_mask,not_before,not_after) VALUES (?,?,15,DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 2 SECOND),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE))',[pin.keyId,pin.spkiSha256]);
   const goDenied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GO_CONSUMPTION_DENIED';
-  for(let i=0;i<4;i++){
+  const immutable=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GP_AUTHORITY_IMMUTABLE';
+  // Use six independent authorizations: four successes, then session/key revoke-first.
+  for(let attempt=0;attempt<6;attempt++){
+   const i=Math.min(attempt,3);
+   const token=attempt===4?hashToken(randomUUID()):session;
+   if(attempt===4)await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[token,actor,randomBytes(32).toString('base64url')]);
    const id=randomUUID(),audit=i===3?null:randomUUID(),n=hashToken(randomUUID());
    const p=[...payloads[i]];if(i===2)p[0]='GO-'+randomUUID();if(i===3)p[0]=randomUUID();
    const payload=i===3?{requestKey:p[0],requestHash:p[1]}:Object.fromEntries(fields[i].map((k,j)=>[k,p[j]]));
-   const e:GmEnvelope={version:1,audience:GM_AUDIENCE,keyId:pin.keyId,operation:ops[i],actorId:actor,sessionHash:session,intentHash:n,entityId:id,auditId:audit,issuedAtMs:now,expiresAtMs:now+120000,payload};
+   const e:GmEnvelope={version:1,audience:GM_AUDIENCE,keyId:pin.keyId,operation:ops[i],actorId:actor,sessionHash:token,intentHash:n,entityId:id,auditId:audit,issuedAtMs:now,expiresAtMs:now+120000,payload};
    const sig=sign(null,gmCanonicalIntent(e).bytes,privateKey).toString('base64url');
    if(i===3){
     await admin.execute('INSERT INTO sales_quote_drafts(id,customer_id,created_by,subtotal,tax_estimate,total_estimate) VALUES (?,?,?,100,18,118)',[id,quoteCustomer,actor]);
     await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,p[0],p[1]]);
    }
    await gmIssueVerifiedIntent(issuer,e,sig,[pin]);
-   const call=(c:Pick<mysql.PoolConnection,'query'>)=>c.query('CALL '+routines[i]+'('+Array(i===3?6:3).fill('?').join(',')+')',i===3?[actor,session,p[0],p[1],id,n]:[actor,session,n]);
+   const call=(c:Pick<mysql.PoolConnection,'query'>)=>c.query('CALL '+routines[i]+'('+Array(i===3?6:3).fill('?').join(',')+')',i===3?[actor,token,p[0],p[1],id,n]:[actor,token,n]);
    const observe=async()=>{
     const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+registry+' WHERE intent_hash=?',[n]);
     const [intent]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+tables[i]+' WHERE intent_hash=?',[n]);
@@ -581,23 +588,55 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
     await assert.rejects(gmApproveIssuedIntent(approver,different,otherSig,[pin]),/GM_INTENT_REJECTED/);
     assert.equal((await gmApproveIssuedIntent(approver,e,sig,[pin])).approved,true);
     await assert.rejects(gmApproveIssuedIntent(approver,e,sig,[pin]),/GM_INTENT_REJECTED/);
-    // Revoke before consuming the last operation; earlier three prove commit/rollback.
-    if(i===3){
-     await admin.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[pin.keyId]);
-     await conn.beginTransaction();try{await assert.rejects(call(conn),goDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
+    // Even a privileged DML account cannot mutate the receipt, payload or nonce.
+    await assert.rejects(admin.execute('UPDATE '+approvalTable+' SET evidence_sha256=? WHERE intent_hash=?',['f'.repeat(64),n]),immutable);
+    await assert.rejects(admin.execute('DELETE FROM '+approvalTable+' WHERE intent_hash=?',[n]),immutable);
+    await assert.rejects(admin.execute('UPDATE '+tables[i]+' SET '+fields[i][0]+'=?,consumed_at=UTC_TIMESTAMP(3) WHERE intent_hash=?',[i===3?randomUUID():'changed',n]),immutable);
+    await assert.rejects(admin.execute('DELETE FROM '+tables[i]+' WHERE intent_hash=?',[n]),immutable);
+    await assert.rejects(admin.execute('UPDATE '+registry+' SET entity_id=?,consumed_at=UTC_TIMESTAMP(3) WHERE intent_hash=?',[randomUUID(),n]),immutable);
+    await assert.rejects(admin.execute('DELETE FROM '+registry+' WHERE intent_hash=?',[n]),immutable);
+    await assert.rejects(admin.execute('UPDATE '+keyTable+' SET scope_mask=1 WHERE key_id=?',[pin.keyId]),immutable);
+    if(attempt>=4){
+     // Hold the revocation write uncommitted. The consumer must not bypass the
+     // row lock using a stale read. A one-second bounded timeout is explicit.
+     const rev=await admin.getConnection();
+     try{
+      await rev.beginTransaction();
+      if(attempt===4)await rev.execute('DELETE FROM auth_sessions WHERE token_hash=?',[token]);
+      else await rev.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[pin.keyId]);
+      await conn.query('SET SESSION innodb_lock_wait_timeout=1');
+      await conn.beginTransaction();
+      try{await assert.rejects(call(conn),(e:any)=>e?.code==='ER_LOCK_WAIT_TIMEOUT');}
+      finally{await conn.rollback();await conn.query('SET SESSION innodb_lock_wait_timeout=50');}
+      assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+      await rev.commit();
+     }catch(e){await rev.rollback();throw e;}finally{rev.release();}
+     await conn.beginTransaction();
+     try{
+      await assert.rejects(call(conn),attempt===4?(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GI_BIND_AUTHORITY_DENIED':goDenied);
+      await conn.commit();
+     }catch(e){await conn.rollback();throw e;}
      assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+     if(attempt===5)await assert.rejects(admin.execute('UPDATE '+keyTable+' SET revoked_at=NULL WHERE key_id=?',[pin.keyId]),immutable);
     }else{
      await conn.beginTransaction();try{await call(conn);}finally{await conn.rollback();}
      assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
      await conn.beginTransaction();try{await call(conn);await conn.commit();}catch(e){await conn.rollback();throw e;}
-     const after=await observe();assert.ok(after.registry);assert.ok(after.intent);assert.equal(after.bound,id);
+     const after=await observe();assert.ok(after.registry);assert.ok(after.intent);assert.equal(after.bound,id);assert.deepEqual(after.registry,after.intent);
+     await assert.rejects(admin.execute('UPDATE '+tables[i]+' SET consumed_at=NULL WHERE intent_hash=?',[n]),immutable);
      await conn.beginTransaction();try{await assert.rejects(call(conn),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION');}finally{await conn.rollback();}
     }
    }finally{conn.release();}
   }
-  // Three consumed and one revoked, registry and per-module rows agree.
+  // Four successful operations, two revoke-first denials; compare every reservation
+  // to its unique module row, including exact consumption timestamps.
   const [used]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry+' WHERE consumed_at IS NOT NULL');
-  assert.equal(Number(used[0].n),3);
+  assert.equal(Number(used[0].n),4);
+  for(let i=0;i<4;i++){
+   const [drift]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry+' g LEFT JOIN '+tables[i]+' t ON t.intent_hash=g.intent_hash WHERE g.operation=? AND (t.intent_hash IS NULL OR NOT (g.consumed_at <=> t.consumed_at) OR BINARY g.actor_id<>BINARY t.actor_id OR BINARY g.entity_id<>BINARY t.'+ids[i]+')',[ops[i]]);
+   assert.equal(Number(drift[0].n),0);
+  }
+  await assert.rejects(admin.execute('DELETE FROM '+keyTable+' WHERE key_id=?',[pin.keyId]),immutable);
 
  }finally{
   if(runtime)await runtime.end();if(issuer)await issuer.end();if(approver)await approver.end();
