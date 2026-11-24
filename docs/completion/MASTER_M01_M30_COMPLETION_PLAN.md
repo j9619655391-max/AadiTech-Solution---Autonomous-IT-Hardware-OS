@@ -1224,3 +1224,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GM exact Draft PR 45462587791 SUCCESS 8/8 including signature unit and all four signed issuance MySQL tests. No independently observed push CI.
 - [x] [1GN runbook](../phase-1/PHASE_1GN_GLOBAL_NONCE_AND_KEY_CONTINUITY_BATCH_HARD_HOLD.md): four-table shared nonce registry candidate, transactional triggers, restricted-principal cross-table race/rollback and malformed nonce tests, pinned key snapshot rollover/revocation continuity checks. BV/BW custody updated.
 - [ ] Exact-head CI, combined issuance/consumption and nonce restore, independently authenticated issuer and lifecycle, non-bypassable signature boundary, revocation/deadlock and app/staging integration, independent external acceptance remain OPEN.
+
+
+## Phase 1GO — Consumption approval and revocation batch (HARD HOLD)
+
+- [x] 1GN exact Draft PR 45463561713 SUCCESS 8/8, shared nonce MySQL and rollover unit tests passed. No separate push CI observed.
+- [x] [1GO runbook](../phase-1/PHASE_1GO_CONSUMPTION_APPROVAL_AND_REVOCATION_BATCH_HARD_HOLD.md): isolated combined registry/consumers, approval receipt adapter and SQL key/scope/revocation gate, atomic global consumption and four-operation adversarial test source; custody updated.
+- [ ] Exact-head CI, independently authenticated issuer and non-bypassable approval boundary, successful integrated quote consumption, revocation races, restore/reconciliation, app/staging integration and external acceptance remain OPEN.

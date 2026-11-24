@@ -146,3 +146,34 @@ export function gmValidatePinTransition(previous:readonly GmPinnedKey[],next:rea
  // No backdated new key. The independent authority must establish the clock.
  for(const current of next)if(!previous.some(p=>p.keyId===current.keyId)&&current.notBeforeMs<nowMs)fail();
 }
+
+
+// 1GO separate approval adapter. The approval account may SELECT issued
+// intent rows and INSERT receipt columns only. No key or issuer write access.
+// Match signed payload against the actual immutable issued row before approval.
+// SQL checks key status at consumption; it does NOT verify Ed25519 itself.
+export async function gmApproveIssuedIntent(db:Pick<Pool,'execute'>,value:unknown,signature:unknown,pins:readonly GmPinnedKey[]){
+ gfMigrationTarget(process.env);
+ const e=gmVerifyIntent(value,signature,pins,Date.now());
+ const pin=pins.find(p=>p.keyId===e.keyId);
+ if(!pin)fail();
+ const fields=e.operation==='quote-binding'?['request_key','request_hash']:Object.keys(definitions[e.operation]);
+ const t=e.operation==='quote-binding'?{table:'auth_gj_quote_intents_candidate',id:'quote_id'}:target[e.operation];
+ const expected:Record<string,unknown>={actor_id:e.actorId,session_hash:e.sessionHash,[t.id]:e.entityId};
+ if(e.operation==='quote-binding'){expected.request_key=e.payload.requestKey;expected.request_hash=e.payload.requestHash;}
+ else{expected.audit_id=e.auditId;for(const k of fields)expected[k]=e.payload[k];}
+ const columns=Object.keys(expected);
+ // Exact binary string comparison in JS on the selected stored values;
+ // mysql2 DECIMAL must remain strings (default). All identifiers fixed above.
+ const [rows]=await db.execute<import('mysql2/promise').RowDataPacket[]>(
+  'SELECT '+columns.join(',')+", DATE_FORMAT(expires_at,'%Y-%m-%d %H:%i:%s.%f') AS expiry FROM "+t.table+
+  ' WHERE intent_hash=? AND consumed_at IS NULL AND expires_at>UTC_TIMESTAMP(3)',[e.intentHash]);
+ if(rows.length!==1||rows[0].expiry!==utcSql(e.expiresAtMs)+'000'||columns.some(k=>rows[0][k]!==expected[k]))fail();
+ const evidence=createHash('sha256').update(gmCanonicalIntent(e).bytes).update(Buffer.from(signature as string,'base64url')).digest('hex');
+ try{
+  const [result]=await db.execute<ResultSetHeader>('INSERT INTO auth_go_intent_approvals_candidate(intent_hash,key_id,spki_sha256,evidence_sha256,expires_at) VALUES (?,?,?,?,?)',
+   [e.intentHash,e.keyId,pin.spkiSha256,evidence,utcSql(e.expiresAtMs)]);
+  if(result.affectedRows!==1)fail();
+ }catch{return fail();}
+ return {approved:true as const,operation:e.operation};
+}

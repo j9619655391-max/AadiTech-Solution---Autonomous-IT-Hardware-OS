@@ -7,7 +7,7 @@ import {assessRuntimeGrantEnvelope} from '../scripts/phase1fb-runtime-db-privile
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {gfMigrationTarget,checkInstalledGfIntegrity} from '../scripts/migrate-gf-provenance';
-import {GM_AUDIENCE,gmCanonicalIntent,gmIssueVerifiedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
+import {GM_AUDIENCE,gmCanonicalIntent,gmIssueVerifiedIntent,gmApproveIssuedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
 
 // Synthetic private keys never leave this test process. Real issuer custody is not established.
 async function issueSignedGm(issuer:mysql.Pool,values:Pick<GmEnvelope,'operation'|'actorId'|'sessionHash'|'intentHash'|'entityId'|'auditId'|'payload'>){
@@ -462,7 +462,8 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
   ['GN-'+randomUUID(),'CI','GN product','SERVER','Synthetic specs','100.00','0.00','0.00','200.00','150.00','18.00','8471',12,0],
   [randomUUID(),'a'.repeat(64)]
  ];
- const createdTables:string[]=[];let issuer:mysql.Pool|undefined,runtime:mysql.Pool|undefined,issCreated=false,rtCreated=false;
+ const createdTables:string[]=[],createdRoutines:string[]=[];let issuer:mysql.Pool|undefined,runtime:mysql.Pool|undefined,approver:mysql.Pool|undefined,issCreated=false,rtCreated=false,apCreated=false;
+ const ap='ci_go_ap_'+suffix,apAccount="'"+ap+"'@'%'",apPassword=randomBytes(32).toString('base64url');
  const cols=(i:number)=>['intent_hash','actor_id','session_hash',ids[i],...(i===3?[]:['audit_id']),...fields[i],'expires_at'];
  const statement=(i:number)=>'INSERT INTO '+tables[i]+'('+cols(i).join(',')+') VALUES ('+Array(cols(i).length-1).fill('?').join(',')+',DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 2 MINUTE))';
  const args=(i:number,n:string)=>
@@ -485,7 +486,7 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
   for(let i=0;i<tables.length;i++)await admin.query('GRANT INSERT ('+cols(i).join(',')+') ON aaditech_ci.'+tables[i]+' TO '+issAccount);
   await admin.query('GRANT SELECT ON aaditech_ci.crm_customers TO '+rtAccount);
   issuer=mysql.createPool({...cfg,user:iss,password:issPassword,connectionLimit:3});
-  runtime=mysql.createPool({...cfg,user:rt,password:rtPassword,connectionLimit:1});
+  runtime=mysql.createPool({...cfg,user:rt,password:rtPassword,connectionLimit:2});
   for(const db of [issuer,runtime]){
    await assert.rejects(db.query('SELECT intent_hash FROM '+registry+' LIMIT 0'),denied);
    await assert.rejects(db.query('UPDATE '+registry+' SET operation=operation WHERE 1=0'),denied);
@@ -513,12 +514,98 @@ test('1GN global nonce registry rejects cross-operation reuse even for raw issue
   }
   // Uppercase nonce rejected by trigger before any registry reservation.
   await assert.rejects(issuer.execute(statement(0),args(0,'A'.repeat(64))),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GN_NONCE_INVALID');
+  // 1GO: install actual consumers plus approval/key gate alongside all GN triggers.
+  const routines=['aaditech_gk_create_customer_candidate','aaditech_gl_create_lead_candidate','aaditech_gl_create_product_candidate','aaditech_gj_bind_intent_candidate'];
+  const inner='aaditech_gi_bind_quote_candidate';
+  const [existingRoutines]=await admin.query<mysql.RowDataPacket[]>(
+   "SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME IN (?,?,?,?,?)",[...routines,inner]);
+  assert.equal(existingRoutines.length,0);
+  await admin.query(readFileSync('database/authority/phase1gi_session_quote_bind_candidate.sql','utf8'));createdRoutines.push(inner);
+  for(let i=0;i<sources.length;i++){
+   await admin.query(readFileSync(sources[i],'utf8').split(/^-- statement-break$/m)[1]);createdRoutines.push(routines[i]);
+   await admin.query('GRANT EXECUTE ON PROCEDURE aaditech_ci.'+routines[i]+' TO '+rtAccount);
+  }
+  const keyTable='auth_go_issuer_keys_candidate',approvalTable='auth_go_intent_approvals_candidate';
+  const [goExisting]=await admin.query<mysql.RowDataPacket[]>('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?,?)',[keyTable,approvalTable]);assert.equal(goExisting.length,0);
+  const goSql=readFileSync('database/authority/phase1go_consumption_approval_candidate.sql','utf8').split(/^-- statement-break$/m);assert.equal(goSql.length,7);
+  await admin.query(goSql[0]);createdTables.push(keyTable);await admin.query(goSql[1]);createdTables.push(approvalTable);
+  for(const statement of goSql.slice(2))await admin.query(statement);
+  await admin.query('CREATE USER '+apAccount+' IDENTIFIED BY ?',[apPassword]);apCreated=true;
+  for(const table of tables)await admin.query('GRANT SELECT ON aaditech_ci.'+table+' TO '+apAccount);
+  await admin.query('GRANT INSERT (intent_hash,key_id,spki_sha256,evidence_sha256,expires_at) ON aaditech_ci.'+approvalTable+' TO '+apAccount);
+  approver=mysql.createPool({...cfg,user:ap,password:apPassword,connectionLimit:1});
+  await admin.query('GRANT SELECT, INSERT ON aaditech_ci.sales_quote_create_requests TO '+rtAccount);
+  for(const db of [issuer,runtime]){
+   await assert.rejects(db.query('INSERT INTO '+approvalTable+'(intent_hash,key_id,spki_sha256,evidence_sha256,expires_at) VALUES (?,?,?,?,UTC_TIMESTAMP(3))',[nonce,'fake','a'.repeat(64),'b'.repeat(64)]),denied);
+  }
+  await assert.rejects(approver.execute(statement(0),args(0,hashToken(randomUUID()))),denied);
+  await assert.rejects(approver.query('UPDATE '+keyTable+' SET revoked_at=NULL WHERE 1=0'),denied);
+  await assert.rejects(approver.query('UPDATE '+approvalTable+' SET expires_at=UTC_TIMESTAMP(3) WHERE 1=0'),denied);
+  await admin.execute("INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,'CI-INVALID-HASH','OWNER')",[actor,'go-'+actor+'@example.invalid','GO synthetic owner']);
+  await admin.execute('INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at,mfa_verified_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR),UTC_TIMESTAMP(3))',[session,actor,randomBytes(32).toString('base64url')]);
+  const quoteCustomer=randomUUID();
+  await admin.execute("INSERT INTO crm_customers(id,name,contactPerson,email,phone,city,state) VALUES (?,'GO quote fixture','CI','go@example.invalid','0000000000','Mumbai','Maharashtra')",[quoteCustomer]);
+  const ops=['customers','leads','products','quote-binding'] as const;
+  const {publicKey,privateKey}=generateKeyPairSync('ed25519'),now=Date.now();
+  const pin:GmPinnedKey={keyId:'go-ci-key',publicKeyPem:publicKey.export({format:'pem',type:'spki'}).toString(),
+   spkiSha256:createHash('sha256').update(publicKey.export({format:'der',type:'spki'})).digest('hex'),
+   notBeforeMs:now-1000,notAfterMs:now+300000,revoked:false,operations:ops};
+  await admin.execute('INSERT INTO '+keyTable+'(key_id,spki_sha256,scope_mask,not_before,not_after) VALUES (?,?,15,DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 2 SECOND),DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 5 MINUTE))',[pin.keyId,pin.spkiSha256]);
+  const goDenied=(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GO_CONSUMPTION_DENIED';
+  for(let i=0;i<4;i++){
+   const id=randomUUID(),audit=i===3?null:randomUUID(),n=hashToken(randomUUID());
+   const p=[...payloads[i]];if(i===2)p[0]='GO-'+randomUUID();if(i===3)p[0]=randomUUID();
+   const payload=i===3?{requestKey:p[0],requestHash:p[1]}:Object.fromEntries(fields[i].map((k,j)=>[k,p[j]]));
+   const e:GmEnvelope={version:1,audience:GM_AUDIENCE,keyId:pin.keyId,operation:ops[i],actorId:actor,sessionHash:session,intentHash:n,entityId:id,auditId:audit,issuedAtMs:now,expiresAtMs:now+120000,payload};
+   const sig=sign(null,gmCanonicalIntent(e).bytes,privateKey).toString('base64url');
+   if(i===3){
+    await admin.execute('INSERT INTO sales_quote_drafts(id,customer_id,created_by,subtotal,tax_estimate,total_estimate) VALUES (?,?,?,100,18,118)',[id,quoteCustomer,actor]);
+    await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,p[0],p[1]]);
+   }
+   await gmIssueVerifiedIntent(issuer,e,sig,[pin]);
+   const call=(c:Pick<mysql.PoolConnection,'query'>)=>c.query('CALL '+routines[i]+'('+Array(i===3?6:3).fill('?').join(',')+')',i===3?[actor,session,p[0],p[1],id,n]:[actor,session,n]);
+   const observe=async()=>{
+    const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+registry+' WHERE intent_hash=?',[n]);
+    const [intent]=await admin.query<mysql.RowDataPacket[]>('SELECT consumed_at FROM '+tables[i]+' WHERE intent_hash=?',[n]);
+    const [result]=i===3?await admin.query<mysql.RowDataPacket[]>('SELECT quote_id AS bound FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,p[0]]):
+     await admin.query<mysql.RowDataPacket[]>('SELECT id AS bound FROM crm_'+ops[i]+' WHERE id=?',[id]);
+    return {registry:rows[0].consumed_at,intent:intent[0].consumed_at,bound:result[0]?.bound??null};
+   };
+   const conn=await runtime.getConnection();
+   try{
+    await conn.beginTransaction();try{await assert.rejects(call(conn),goDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
+    assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+    // A valid signature over different payload cannot approve the already issued row.
+    const different:GmEnvelope={...e,payload:i===3?{...payload,requestHash:'b'.repeat(64)}:{...payload,[fields[i][0]]:'different'}};
+    const otherSig=sign(null,gmCanonicalIntent(different).bytes,privateKey).toString('base64url');
+    await assert.rejects(gmApproveIssuedIntent(approver,different,otherSig,[pin]),/GM_INTENT_REJECTED/);
+    assert.equal((await gmApproveIssuedIntent(approver,e,sig,[pin])).approved,true);
+    await assert.rejects(gmApproveIssuedIntent(approver,e,sig,[pin]),/GM_INTENT_REJECTED/);
+    // Revoke before consuming the last operation; earlier three prove commit/rollback.
+    if(i===3){
+     await admin.execute('UPDATE '+keyTable+' SET revoked_at=UTC_TIMESTAMP(3) WHERE key_id=?',[pin.keyId]);
+     await conn.beginTransaction();try{await assert.rejects(call(conn),goDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
+     assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+    }else{
+     await conn.beginTransaction();try{await call(conn);}finally{await conn.rollback();}
+     assert.deepEqual(await observe(),{registry:null,intent:null,bound:null});
+     await conn.beginTransaction();try{await call(conn);await conn.commit();}catch(e){await conn.rollback();throw e;}
+     const after=await observe();assert.ok(after.registry);assert.ok(after.intent);assert.equal(after.bound,id);
+     await conn.beginTransaction();try{await assert.rejects(call(conn),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION');}finally{await conn.rollback();}
+    }
+   }finally{conn.release();}
+  }
+  // Three consumed and one revoked, registry and per-module rows agree.
+  const [used]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry+' WHERE consumed_at IS NOT NULL');
+  assert.equal(Number(used[0].n),3);
+
  }finally{
-  if(runtime)await runtime.end();if(issuer)await issuer.end();
-  if(rtCreated)await admin.query('DROP USER '+rtAccount);if(issCreated)await admin.query('DROP USER '+issAccount);
-  // Drop source tables (and their attached triggers) before the registry.
-  for(const table of createdTables.filter(x=>x!==registry))await admin.query('DROP TABLE '+table);
-  if(createdTables.includes(registry))await admin.query('DROP TABLE '+registry);
+  if(runtime)await runtime.end();if(issuer)await issuer.end();if(approver)await approver.end();
+  if(rtCreated)await admin.query('DROP USER '+rtAccount);if(issCreated)await admin.query('DROP USER '+issAccount);if(apCreated)await admin.query('DROP USER '+apAccount);
+  for(const routine of createdRoutines.reverse())await admin.query('DROP PROCEDURE '+routine);
+  // Drop source tables (and their triggers), then receipt, key and nonce tables.
+  for(const table of tables.filter(x=>createdTables.includes(x)))await admin.query('DROP TABLE '+table);
+  for(const table of ['auth_go_intent_approvals_candidate','auth_go_issuer_keys_candidate',registry])if(createdTables.includes(table))await admin.query('DROP TABLE '+table);
   await admin.end();
  }
 });
