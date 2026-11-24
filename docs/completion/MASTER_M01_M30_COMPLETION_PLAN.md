@@ -1245,3 +1245,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GP exact Draft PR 45480434240 SUCCESS 8/8 including combined GN–GP MySQL subtest. No separate push receipt observed.
 - [x] [1GQ runbook](../phase-1/PHASE_1GQ_REVOCATION_ORDER_AND_AUTHORITY_RECONCILIATION_BATCH_HARD_HOLD.md): commit-first key/session revocation regression, native deadlock preservation, bidirectional read-only snapshot reconciliation and simulated orphan restore corruption detection; custody updated.
 - [ ] Exact-head CI, actual forced deadlock and full restore, quote content, independent issuer/approval and app/staging integration, independent external acceptance remain OPEN.
+
+
+## Phase 1GR — Deadlock, interruption and recovery manifest batch (HARD HOLD)
+
+- [x] 1GQ exact Draft PR 45482963983 SUCCESS 8/8; combined GN–GQ MySQL subtest passed, no separate push receipt observed.
+- [x] [1GR runbook](../phase-1/PHASE_1GR_DEADLOCK_INTERRUPTION_AND_RECOVERY_MANIFEST_BATCH_HARD_HOLD.md): forced lock-cycle and connection interruption regression, signed seven-table recovery digest manifest and tamper tests, custody updated.
+- [ ] Exact-head CI, actual backup/restore and independently authenticated manifest, complete business/quote content verification, issuer/approval custody, app/staging and external acceptance remain OPEN.

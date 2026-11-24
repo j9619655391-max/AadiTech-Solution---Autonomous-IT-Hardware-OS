@@ -144,6 +144,8 @@ export const GOVERNED_INPUTS=Object.freeze([
  'tests/gf-provenance-mysql.integration.ts',
  'scripts/lib/gmSignedIntentCandidate.ts',
  'scripts/lib/gqAuthorityReconciliation.ts',
+ 'scripts/lib/grAuthorityRecoveryManifest.ts',
+ 'tests/gr-authority-recovery-manifest.test.ts',
  'tests/gm-signed-intent-candidate.test.ts',
  'tests/procurement-mysql.integration.ts',
  'database/migrations/0043_el_reviewer_scope_candidates.sql',
