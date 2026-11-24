@@ -433,3 +433,92 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
   await admin.end();
  }
 });
+
+test('1GN global nonce registry rejects cross-operation reuse even for raw issuers and rolls back failed issuance',async()=>{
+ gfMigrationTarget(process.env);
+ const cfg=getDatabaseConfig(),admin=mysql.createPool({...cfg,connectionLimit:3});
+ const suffix=randomBytes(7).toString('hex'),iss='ci_gn_iss_'+suffix,rt='ci_gn_rt_'+suffix;
+ const issAccount="'"+iss+"'@'%'",rtAccount="'"+rt+"'@'%'";
+ const issPassword=randomBytes(32).toString('base64url'),rtPassword=randomBytes(32).toString('base64url');
+ const actor=randomUUID(),session=hashToken(randomUUID()),nonce=hashToken(randomUUID());
+ const registry='auth_gn_intent_nonces_candidate';
+ const sources=[
+  'database/authority/phase1gk_customer_create_intent_candidate.sql',
+  'database/authority/phase1gl_lead_create_intent_candidate.sql',
+  'database/authority/phase1gl_product_create_intent_candidate.sql',
+  'database/authority/phase1gj_quote_intent_candidate.sql'
+ ];
+ const tables=['auth_gk_customer_intents_candidate','auth_gl_lead_intents_candidate','auth_gl_product_intents_candidate','auth_gj_quote_intents_candidate'];
+ const ids=['customer_id','lead_id','product_id','quote_id'];
+ const fields=[
+  ['name','gstin','contactPerson','email','phone','city','state'],
+  ['name','company','email','phone','source','status','score','scoreReason','intentScore','requirement','estimatedBudget','location','gstin'],
+  ['sku','brand','model','category','specs','unitCost','freightCost','riskBuffer','sellingPrice','minPrice','gstRate','hsn','warrantyMonths','leadTimeDays'],
+  ['request_key','request_hash']
+ ];
+ const payloads:(string|number|null)[][]=[
+  ['GN customer',null,'CI','gn@example.invalid','0000000000','Mumbai','Maharashtra'],
+  ['GN lead','CI','gn@example.invalid','0000000000','WEBSITE','NEW','NURTURE','',10,'Synthetic request','100.00','Mumbai',null],
+  ['GN-'+randomUUID(),'CI','GN product','SERVER','Synthetic specs','100.00','0.00','0.00','200.00','150.00','18.00','8471',12,0],
+  [randomUUID(),'a'.repeat(64)]
+ ];
+ const createdTables:string[]=[];let issuer:mysql.Pool|undefined,runtime:mysql.Pool|undefined,issCreated=false,rtCreated=false;
+ const cols=(i:number)=>['intent_hash','actor_id','session_hash',ids[i],...(i===3?[]:['audit_id']),...fields[i],'expires_at'];
+ const statement=(i:number)=>'INSERT INTO '+tables[i]+'('+cols(i).join(',')+') VALUES ('+Array(cols(i).length-1).fill('?').join(',')+',DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 2 MINUTE))';
+ const args=(i:number,n:string)=>
+  [n,actor,session,randomUUID(),...(i===3?[]:[randomUUID()]),...payloads[i]];
+ const denied=(e:any)=>['ER_TABLEACCESS_DENIED_ERROR','ER_COLUMNACCESS_DENIED_ERROR','ER_DBACCESS_DENIED_ERROR'].includes(e?.code);
+ try{
+  await checkInstalledGfIntegrity(admin);
+  for(let i=0;i<tables.length;i++){
+   const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[tables[i]]);
+   assert.equal(rows.length,0);
+   const source=readFileSync(sources[i],'utf8').split(/^-- statement-break$/m);assert.equal(source.length,2);
+   await admin.query(source[0]);createdTables.push(tables[i]);
+  }
+  const [existing]=await admin.query<mysql.RowDataPacket[]>('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[registry]);assert.equal(existing.length,0);
+  const source=readFileSync('database/authority/phase1gn_global_intent_nonce_candidate.sql','utf8').split(/^-- statement-break$/m);assert.equal(source.length,5);
+  await admin.query(source[0]);createdTables.push(registry);
+  for(const trigger of source.slice(1))await admin.query(trigger);
+  await admin.query('CREATE USER '+issAccount+' IDENTIFIED BY ?',[issPassword]);issCreated=true;
+  await admin.query('CREATE USER '+rtAccount+' IDENTIFIED BY ?',[rtPassword]);rtCreated=true;
+  for(let i=0;i<tables.length;i++)await admin.query('GRANT INSERT ('+cols(i).join(',')+') ON aaditech_ci.'+tables[i]+' TO '+issAccount);
+  await admin.query('GRANT SELECT ON aaditech_ci.crm_customers TO '+rtAccount);
+  issuer=mysql.createPool({...cfg,user:iss,password:issPassword,connectionLimit:3});
+  runtime=mysql.createPool({...cfg,user:rt,password:rtPassword,connectionLimit:1});
+  for(const db of [issuer,runtime]){
+   await assert.rejects(db.query('SELECT intent_hash FROM '+registry+' LIMIT 0'),denied);
+   await assert.rejects(db.query('UPDATE '+registry+' SET operation=operation WHERE 1=0'),denied);
+   await assert.rejects(db.query('DELETE FROM '+registry+' WHERE 1=0'),denied);
+   await assert.rejects(db.query('INSERT INTO '+registry+'(intent_hash,operation,actor_id,entity_id) VALUES (?,\'customers\',?,?)',[nonce,actor,randomUUID()]),denied);
+  }
+  await assert.rejects(runtime.execute(statement(0),args(0,nonce)),denied);
+  // Cross-table concurrent insertion for one nonce: only one statement commits.
+  const outcomes=await Promise.allSettled([issuer.execute(statement(0),args(0,nonce)),issuer.execute(statement(1),args(1,nonce))]);
+  assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+  assert.equal((outcomes.find(x=>x.status==='rejected') as PromiseRejectedResult).reason?.code,'ER_DUP_ENTRY');
+  for(const i of [2,3])await assert.rejects(issuer.execute(statement(i),args(i,nonce)),(e:any)=>e?.code==='ER_DUP_ENTRY');
+  const [reserved]=await admin.query<mysql.RowDataPacket[]>('SELECT operation,actor_id FROM '+registry+' WHERE intent_hash=?',[nonce]);
+  assert.equal(reserved.length,1);assert.equal(reserved[0].actor_id,actor);
+  // Rollback of one issuance must release its nonce for another operation.
+  const retry=hashToken(randomUUID()),conn=await issuer.getConnection();
+  try{await conn.beginTransaction();try{await conn.execute(statement(2),args(2,retry));}finally{await conn.rollback();}}finally{conn.release();}
+  const [absent]=await admin.query<mysql.RowDataPacket[]>('SELECT intent_hash FROM '+registry+' WHERE intent_hash=?',[retry]);assert.equal(absent.length,0);
+  await issuer.execute(statement(3),args(3,retry));
+  await assert.rejects(issuer.execute(statement(0),args(0,retry)),(e:any)=>e?.code==='ER_DUP_ENTRY');
+  const [counts]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+registry);assert.equal(Number(counts[0].n),2);
+  for(const i of [0,1,2,3]){
+   const [rows]=await admin.query<mysql.RowDataPacket[]>('SELECT COUNT(*) AS n FROM '+tables[i]);
+   assert.equal(Number(rows[0].n),i===3?1:i===2?0:reserved[0].operation===(i===0?'customers':'leads')?1:0);
+  }
+  // Uppercase nonce rejected by trigger before any registry reservation.
+  await assert.rejects(issuer.execute(statement(0),args(0,'A'.repeat(64))),(e:any)=>e?.code==='ER_SIGNAL_EXCEPTION'&&e?.sqlMessage==='GN_NONCE_INVALID');
+ }finally{
+  if(runtime)await runtime.end();if(issuer)await issuer.end();
+  if(rtCreated)await admin.query('DROP USER '+rtAccount);if(issCreated)await admin.query('DROP USER '+issAccount);
+  // Drop source tables (and their attached triggers) before the registry.
+  for(const table of createdTables.filter(x=>x!==registry))await admin.query('DROP TABLE '+table);
+  if(createdTables.includes(registry))await admin.query('DROP TABLE '+registry);
+  await admin.end();
+ }
+});

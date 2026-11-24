@@ -1217,3 +1217,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GL exact Draft PR 45461503684 SUCCESS 8/8 including customer/lead/product/quote SQL and live governance; no independent push CI observed.
 - [x] [1GM runbook](../phase-1/PHASE_1GM_SIGNED_INTENT_AND_ISSUER_VALIDATION_BATCH_HARD_HOLD.md): isolated Ed25519 verifier/issuer adapter for four operations, pinned key/expiry/revocation scope, exact canonical payload, SQL issuance and tamper/replay regression source; customer SQL bounded validation. Source custody updated.
 - [ ] Exact-head CI, independent key custody/enrollment, DB-enforced authority or isolated non-bypassable issuer, global nonce ledger, app integration, quote content reconciliation, revocation/recovery and external acceptance remain OPEN.
+
+
+## Phase 1GN — Global nonce and key continuity batch (HARD HOLD)
+
+- [x] 1GM exact Draft PR 45462587791 SUCCESS 8/8 including signature unit and all four signed issuance MySQL tests. No independently observed push CI.
+- [x] [1GN runbook](../phase-1/PHASE_1GN_GLOBAL_NONCE_AND_KEY_CONTINUITY_BATCH_HARD_HOLD.md): four-table shared nonce registry candidate, transactional triggers, restricted-principal cross-table race/rollback and malformed nonce tests, pinned key snapshot rollover/revocation continuity checks. BV/BW custody updated.
+- [ ] Exact-head CI, combined issuance/consumption and nonce restore, independently authenticated issuer and lifecycle, non-bypassable signature boundary, revocation/deadlock and app/staging integration, independent external acceptance remain OPEN.

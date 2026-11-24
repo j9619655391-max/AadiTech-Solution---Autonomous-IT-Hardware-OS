@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash,generateKeyPairSync,randomUUID,sign} from 'node:crypto';
-import {GM_AUDIENCE,gmCanonicalIntent,gmVerifyIntent,gmIssueVerifiedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
+import {GM_AUDIENCE,gmCanonicalIntent,gmVerifyIntent,gmIssueVerifiedIntent,gmValidatePinTransition,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
 const now=1700000000000;
 const pair=generateKeyPairSync('ed25519');
 const pin:GmPinnedKey={keyId:'ci-gm-1',publicKeyPem:pair.publicKey.export({format:'pem',type:'spki'}).toString(),
@@ -54,4 +54,19 @@ test('1GM issuer entry point refuses non-CI and invalid signature before executi
   await assert.rejects(gmIssueVerifiedIntent(db,live,'A'.repeat(86),[livePin]),/GM_INTENT_REJECTED/);
   assert.equal(calls,0);
  }finally{for(const [k,v] of Object.entries(original)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
+});
+
+test('1GN pin rollover preserves historical identity, scope, validity and irreversible revocation',()=>{
+ const nextPair=generateKeyPairSync('ed25519');
+ const next:GmPinnedKey={...pin,keyId:'ci-gm-2',publicKeyPem:nextPair.publicKey.export({format:'pem',type:'spki'}).toString(),
+ spkiSha256:createHash('sha256').update(nextPair.publicKey.export({format:'der',type:'spki'})).digest('hex'),
+ notBeforeMs:now,notAfterMs:now+900000};
+ const revoked={...pin,revoked:true};
+ assert.doesNotThrow(()=>gmValidatePinTransition([pin],[revoked,next],now));
+ assert.throws(()=>gmVerifyIntent(customer,signature(customer),[revoked,next],now),/GM_INTENT_REJECTED/);
+ for(const candidate of [[next],[pin,{...next,notBeforeMs:now-1}],[{...pin,notAfterMs:pin.notAfterMs+1},next],
+  [{...pin,operations:['products'] as const},next],[pin,{...next,spkiSha256:pin.spkiSha256,publicKeyPem:pin.publicKeyPem}],
+  [pin,{...next,keyId:pin.keyId}],[pin,{...next,spkiSha256:'0'.repeat(64)}]])
+  assert.throws(()=>gmValidatePinTransition([pin],candidate,now),/GM_INTENT_REJECTED/);
+ assert.throws(()=>gmValidatePinTransition([revoked],[pin,next],now),/GM_INTENT_REJECTED/);
 });

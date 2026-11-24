@@ -111,3 +111,38 @@ export async function gmIssueVerifiedIntent(db:Pick<Pool,'execute'>,value:unknow
  }catch{return fail();}
  return {operation:e.operation,issued:true as const};
 }
+
+
+// 1GN: compare independently supplied pinned key snapshots before accepting a
+// rollover. This is a continuity check, NOT authentication of either snapshot.
+// Retain all historical key IDs, fingerprints, intervals and operation scopes.
+// A previously revoked key cannot be reactivated; a new ID cannot reuse old SPKI.
+export function gmValidatePinTransition(previous:readonly GmPinnedKey[],next:readonly GmPinnedKey[],nowMs:number):void{
+ if(!validTime(nowMs)||!Array.isArray(previous)||!Array.isArray(next)||!previous.length||
+  previous.length>32||next.length>32||next.length<previous.length)fail();
+ const validateSet=(pins:readonly GmPinnedKey[])=>{
+  const ids=new Set<string>(),fingerprints=new Set<string>();
+  for(const pin of pins){
+   if(!pin||!isText(pin.keyId,keyId)||!isText(pin.spkiSha256,digest)||
+      typeof pin.revoked!=='boolean'||!validTime(pin.notBeforeMs)||!validTime(pin.notAfterMs)||
+      pin.notBeforeMs>=pin.notAfterMs||!Array.isArray(pin.operations)||!pin.operations.length||
+      pin.operations.some(op=>!operations.includes(op))||new Set(pin.operations).size!==pin.operations.length||
+      ids.has(pin.keyId)||fingerprints.has(pin.spkiSha256)||typeof pin.publicKeyPem!=='string'||
+      pin.publicKeyPem.length>4096||!pin.publicKeyPem.startsWith('-----BEGIN PUBLIC KEY-----'))fail();
+   try{
+    const key=createPublicKey(pin.publicKeyPem);
+    if(key.asymmetricKeyType!=='ed25519'||createHash('sha256').update(key.export({format:'der',type:'spki'})).digest('hex')!==pin.spkiSha256)fail();
+   }catch{return fail();}
+   ids.add(pin.keyId);fingerprints.add(pin.spkiSha256);
+  }
+ };
+ validateSet(previous);validateSet(next);
+ for(const old of previous){
+  const current=next.find(p=>p.keyId===old.keyId);
+  if(!current||current.spkiSha256!==old.spkiSha256||current.notBeforeMs!==old.notBeforeMs||
+     current.notAfterMs!==old.notAfterMs||old.revoked&&!current.revoked||
+     JSON.stringify([...current.operations].sort())!==JSON.stringify([...old.operations].sort()))fail();
+ }
+ // No backdated new key. The independent authority must establish the clock.
+ for(const current of next)if(!previous.some(p=>p.keyId===current.keyId)&&current.notBeforeMs<nowMs)fail();
+}
