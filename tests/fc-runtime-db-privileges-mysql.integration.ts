@@ -49,6 +49,15 @@ test('1FC actual MySQL grants: bounded SELECT passes, added TRIGGER privilege fa
    /1FC runtime database grant envelope unverified/,
    'Explicit TOTP material read must fail');
   await admin.query('REVOKE SELECT ON \x60aaditech_ci\x60.\x60auth_totp_credentials\x60 FROM '+literal);
+  // 1GI: real SHOW GRANTS for both step-up authority and durable rate state.
+  for(const table of ['auth_step_up_sessions','auth_login_rate_buckets']){
+   for(const privilege of ['SELECT','INSERT','UPDATE','DELETE']){
+    await admin.query('GRANT '+privilege+' ON aaditech_ci.'+table+' TO '+literal);
+    await assert.rejects(checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),
+     /1FC runtime database grant envelope unverified/);
+    await admin.query('REVOKE '+privilege+' ON aaditech_ci.'+table+' FROM '+literal);
+   }
+  }
   await admin.query('GRANT TRIGGER ON \x60aaditech_ci\x60.* TO '+literal);
   await assert.rejects(
    checkStagingRuntimeDbPrivilegeIntegrity(candidate,'aaditech_ci'),

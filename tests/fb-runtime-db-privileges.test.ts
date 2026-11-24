@@ -209,3 +209,16 @@ test('1GD CRM and quote provenance grants match the bounded mutation contract',(
   }
  }
 });
+
+test('1GI runtime cannot read or mutate step-up, login-rate or future auth namespace state',()=>{
+ for(const name of ['auth_step_up_sessions','auth_login_rate_buckets','AUTH_STEP_UP_SESSIONS','auth_future_proof','app_reviewer_scope_future']){
+  for(const privileges of ['SELECT','INSERT','UPDATE','DELETE','SELECT, INSERT, UPDATE, DELETE']){
+   const result=assessRuntimeGrantEnvelope([usage,scoped,'GRANT '+privileges+' ON '+tick+schema+tick+'.'+tick+name+tick+' TO '+account],schema);
+   assert.equal(result.allowed,false,name+' '+privileges);
+   assert.equal(result.dataGrantCount,1);
+  }
+ }
+ // Experimental binding procedure must not silently enter staging envelope.
+ const candidate='GRANT EXECUTE ON PROCEDURE '+schema+'.aaditech_gi_bind_quote_candidate TO '+account;
+ assert.equal(assessRuntimeGrantEnvelope([usage,scoped,candidate],schema).allowed,false);
+});

@@ -44,6 +44,14 @@ const PROTECTED_AUTHORITY_TABLES=new Set([
  'app_reviewer_scope_events','auth_security_events',
  'auth_totp_credentials','auth_totp_recovery_codes','auth_mfa_challenges'
 ]);
+// 1GI: auth namespaces are reserved for the separate auth principal.
+// Step-up proofs and login rate buckets are authority state too. Future
+// auth_* tables fail closed rather than relying on an incomplete enumeration.
+function protectedAuthorityTable(name:string):boolean{
+ const normalized=name.toLowerCase();
+ return normalized.startsWith('auth_')||normalized.startsWith('app_reviewer_scope_')||
+  PROTECTED_AUTHORITY_TABLES.has(normalized);
+}
 export function assessRuntimeGrantEnvelope(grants:readonly string[],database:string):RuntimeGrantAssessment{
  const reasons:string[]=[];
  if(!/^[a-z0-9_]+$/.test(database)||database.length>64)
@@ -100,11 +108,11 @@ export function assessRuntimeGrantEnvelope(grants:readonly string[],database:str
   // Phase 1FH: an explicit table SELECT still exposes raw password/MFA and
   // reviewer-authority records. A separate credential-limited auth service
   // and redacted views require independent design and live acceptance.
-  if(privileges.includes('SELECT')&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
+  if(privileges.includes('SELECT')&&protectedAuthorityTable(parts[1])){
    reasons.push('Runtime authority/authentication table read forbidden');continue;
   }
   const hasWrite=privileges.some(priv=>priv!=='SELECT');
-  if(hasWrite&&PROTECTED_AUTHORITY_TABLES.has(parts[1].toLowerCase())){
+  if(hasWrite&&protectedAuthorityTable(parts[1])){
    reasons.push('Runtime authority/authentication table mutation forbidden');continue;
   }
   if(FIELD_SERVICE_APPEND_ONLY_TABLES.has(parts[1].toLowerCase())&&

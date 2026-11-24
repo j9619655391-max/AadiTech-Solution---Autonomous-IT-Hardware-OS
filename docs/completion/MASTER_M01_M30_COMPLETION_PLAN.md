@@ -1182,3 +1182,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - 1GG exact PR 45451176514 FAILURE (7/8). Observed MySQL 8.0.46 generated-column representation contains outer parentheses and escaped literal delimiters; column shape matches.
 - [x] [1GH runbook](../phase-1/PHASE_1GH_OBSERVED_MYSQL_METADATA_AND_POST_CONSTRAINT_HTTP_HARD_HOLD.md): strict parser correction with exact observed fixture and negative variants, bounded CI trigger diagnostics, second real restricted HTTP fixture after 0051 with enforced migration-state check. No SQL migration byte changes.
 - [ ] Exact-head dual CI, independently authorized first-event provenance/initial quote binding and historical reconciliation/restore evidence remain OPEN. No production release.
+
+
+## Phase 1GI — Authentication namespace isolation and session-checked binding candidate (HARD HOLD)
+
+- [x] 1GH exact Draft PR run 45452881328 SUCCESS 8/8; 0051 apply, rerun, races, post-constraint restricted HTTP and preflight all passed in disposable CI. Push CI not independently observed.
+- [x] [1GI runbook](../phase-1/PHASE_1GI_AUTH_NAMESPACE_AND_SESSION_BINDING_CANDIDATE_HARD_HOLD.md): deny runtime auth/step-up/rate and reviewer-scope namespace access; isolated session-checked binding SQL candidate and restricted-principal regression source. Candidate deliberately not admitted to staging or app runtime; BV/BW custody updated.
+- [ ] Exact-head dual CI, independently request-bound one-use intent, first CRM CREATE authority, live DBA/restore and external acceptance remain OPEN. No production release.
