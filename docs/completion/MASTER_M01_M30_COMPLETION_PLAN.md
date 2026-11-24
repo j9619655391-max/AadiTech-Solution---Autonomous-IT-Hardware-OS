@@ -1266,3 +1266,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GS exact Draft PR 45488593104 SUCCESS 8/8; GR/GS unit tests and GN–GS MySQL passed. No separate push receipt observed.
 - [x] [1GT runbook](../phase-1/PHASE_1GT_ENCRYPTED_AUTHORITY_SCHEMA_RESTORE_BATCH_HARD_HOLD.md): AES-GCM encrypted temporary artifact and tamper tests, seven-table disposable schema restoration with FK/check/trigger/routine evidence, post-restore guard regression, V2 schema digest. BV/BW custody updated.
 - [ ] Exact-head CI, portable full backup and business schema restoration, independent signer and custody, quote and audit content, app/staging integration and independent acceptance remain OPEN.
+
+
+## Phase 1GU — Twelve-module internal planning batch (HARD HOLD)
+
+- [x] 1GT exact Draft PR 45491355617 FAILED 6/8 (unescaped SQL LOCAL literal caused baseline and MySQL transform failure); corrected source in GU, exact-head verification pending.
+- [x] [GU runbook](../phase-1/PHASE_1GU_TWELVE_MODULE_INTERNAL_PLANNING_BATCH_HARD_HOLD.md): 12 internal planning functions, OWNER/CSRF/no-store endpoint, exact monetary/quantity/date/consent/scope validation, 120 individually named behavior cases and three boundary tests. [Task matrix](PHASE_1GU_BATCH_TASK_MATRIX.json). Not 120 completed operational features. No side effects or external authority.
+- [ ] Latest exact-head CI and authenticated HTTP/frontend adoption, real module workflows, portable full business backup, independent external acceptance remain OPEN.

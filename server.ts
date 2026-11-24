@@ -6,6 +6,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { checkDatabaseConnection, getDatabaseConfig } from "./server/db";
 import authRouter, { requireOwner } from "./server/auth/router";
+import internalPlanningRouter from "./server/internalPlanning/router";
 import troubleshootingRouter from "./server/troubleshooting/router";
 import internalServiceDeskRouter from "./server/serviceDesk/router";
 import internalFieldServiceRouter from "./server/fieldService/router";
@@ -67,6 +68,7 @@ if (devExposure) app.use(devToolHostGate(devExposure));
 app.use(express.json({ limit: "256kb" }));
 // Phase 1A: owner auth foundation; existing business routes migrate in later phases.
 app.use("/api/auth", authRouter);
+app.use("/api/internal-planning",internalPlanningRouter);
 app.use("/api/auth/mfa", mfaRouter);
 // Phase 1FM internal, read-only Windows first-response knowledge base.
 app.use("/api/help/troubleshooting", troubleshootingRouter);

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Pool,PoolConnection,RowDataPacket} from 'mysql2/promise';
 import {gfMigrationTarget} from '../migrate-gf-provenance';
-import {GR_SPECS,grCaptureAuthorityDigests,grManifestBytes,grVerifyManifest,type GrManifest} from './grAuthorityRecoveryManifest';
+import {GR_SPECS,grCaptureAuthorityDigests,grVerifyManifest,type GrManifest} from './grAuthorityRecoveryManifest';
 import {gsCaptureSchemaEvidence,gsRecoveryBytes,gsVerifySchemaBinding} from './gsAuthoritySchemaEvidence';
 import {gqInspectAuthoritySnapshot} from './gqAuthorityReconciliation';
 const magic=Buffer.from('AADITECH-GT-BACKUP-V1\0','utf8'),maxBytes=16*1024*1024;
