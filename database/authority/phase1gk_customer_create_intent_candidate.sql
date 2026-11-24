@@ -55,7 +55,11 @@ BEGIN
  WHERE intent_hash=p_intent_hash AND consumed_at IS NULL
  AND BINARY actor_id=BINARY p_actor AND BINARY session_hash=BINARY p_session_hash
  AND expires_at>UTC_TIMESTAMP(3) AND created_at<=UTC_TIMESTAMP(3)
- AND expires_at<=DATE_ADD(created_at,INTERVAL 5 MINUTE) FOR UPDATE;
+ AND expires_at<=DATE_ADD(created_at,INTERVAL 5 MINUTE)
+ AND CHAR_LENGTH(TRIM(name))>0 AND CHAR_LENGTH(TRIM(contactPerson))>0
+ AND email REGEXP '^[^[:space:]@]+@[^[:space:]@]+[.][^[:space:]@]+$'
+ AND CHAR_LENGTH(TRIM(phone))>0 AND CHAR_LENGTH(TRIM(city))>0 AND CHAR_LENGTH(TRIM(state))>0
+ AND (gstin IS NULL OR REGEXP_LIKE(gstin,'^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$','c')) FOR UPDATE;
  IF v_found<>1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='GK_CUSTOMER_INTENT_DENIED'; END IF;
  INSERT INTO crm_customers(id,name,gstin,contactPerson,email,phone,city,state)
  SELECT customer_id,name,gstin,contactPerson,email,phone,city,state

@@ -1,12 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes,randomUUID} from 'node:crypto';
+import {randomBytes,randomUUID,createHash,generateKeyPairSync,sign} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {hashToken} from '../server/auth/crypto';
 import {assessRuntimeGrantEnvelope} from '../scripts/phase1fb-runtime-db-privileges';
 import mysql from 'mysql2/promise';
 import {getDatabaseConfig} from '../server/db';
 import {gfMigrationTarget,checkInstalledGfIntegrity} from '../scripts/migrate-gf-provenance';
+import {GM_AUDIENCE,gmCanonicalIntent,gmIssueVerifiedIntent,type GmEnvelope,type GmPinnedKey} from '../scripts/lib/gmSignedIntentCandidate';
+
+// Synthetic private keys never leave this test process. Real issuer custody is not established.
+async function issueSignedGm(issuer:mysql.Pool,values:Pick<GmEnvelope,'operation'|'actorId'|'sessionHash'|'intentHash'|'entityId'|'auditId'|'payload'>){
+ const {publicKey,privateKey}=generateKeyPairSync('ed25519'),now=Date.now();
+ const pin:GmPinnedKey={keyId:'gm-ci-key',publicKeyPem:publicKey.export({format:'pem',type:'spki'}).toString(),
+ spkiSha256:createHash('sha256').update(publicKey.export({format:'der',type:'spki'})).digest('hex'),
+ notBeforeMs:now-1000,notAfterMs:now+300000,revoked:false,operations:[values.operation]};
+ const envelope:GmEnvelope={...values,version:1,audience:GM_AUDIENCE,keyId:pin.keyId,issuedAtMs:now,expiresAtMs:now+120000};
+ const signature=sign(null,gmCanonicalIntent(envelope).bytes,privateKey).toString('base64url');
+ await assert.rejects(gmIssueVerifiedIntent(issuer,{...envelope,entityId:randomUUID()},signature,[pin]),/GM_INTENT_REJECTED/);
+ assert.equal((await gmIssueVerifiedIntent(issuer,envelope,signature,[pin])).issued,true);
+ await assert.rejects(gmIssueVerifiedIntent(issuer,envelope,signature,[pin]),/GM_INTENT_REJECTED/);
+}
 
 test('1GF disposable MySQL enforces unique origin and one-time same-owner quote binding',async()=>{
  gfMigrationTarget(process.env);
@@ -199,7 +213,7 @@ test('1GJ separate issuer exact-intent candidate rejects substitution and atomic
   await assert.rejects(issuer.execute('INSERT INTO auth_gj_quote_intents_candidate(intent_hash,consumed_at) VALUES (?,NULL)',[hashToken(randomUUID())]),sqlDenied);
   await assert.rejects(runtime.query('CALL aaditech_gi_bind_quote_candidate(?,?,?,?,?)',[actor,session,key,hash,quote]),sqlDenied);
   await runtime.execute('INSERT INTO sales_quote_create_requests(actor_id,request_key,request_hash) VALUES (?,?,?)',[actor,key,hash]);
-  await issuer.execute(issueSql,[intent,actor,session,key,hash,quote,2]);
+  await issueSignedGm(issuer,{operation:'quote-binding',actorId:actor,sessionHash:session,intentHash:intent,entityId:quote,auditId:null,payload:{requestKey:key,requestHash:hash}});
   const expired=hashToken(randomUUID()),overlong=hashToken(randomUUID());
   await issuer.execute(issueSql,[expired,actor,session,key,hash,quote,-1]);
   await issuer.execute(issueSql,[overlong,actor,session,key,hash,quote,10]);
@@ -283,7 +297,10 @@ test('1GK restricted customer CREATE intent issues exact record and audit atomic
   await assert.rejects(issuer.query('INSERT INTO auth_gk_customer_intents_candidate(intent_hash,consumed_at) VALUES (?,NULL)',[hashToken(randomUUID())]),denied);
   await assert.rejects(issuer.query('INSERT INTO auth_gk_customer_intents_candidate(intent_hash,created_at) VALUES (?,UTC_TIMESTAMP(3))',[hashToken(randomUUID())]),denied);
   await assert.rejects(issuer.query('UPDATE auth_gk_customer_intents_candidate SET consumed_at=NULL WHERE 1=0'),denied);
-  await issuer.execute(issueSql,[intent,actor,session,customer,audit]);
+  await issueSignedGm(issuer,{operation:'customers',actorId:actor,sessionHash:session,intentHash:intent,entityId:customer,auditId:audit,payload:{name:'GK authorized',gstin:null,contactPerson:'CI',email:'gk@example.invalid',phone:'0000000000',city:'Mumbai',state:'Maharashtra'}});
+  // A raw issuer may bypass the verifier: SQL must still reject invalid payload.
+  const badCustomer=randomUUID(),badIntent=hashToken(randomUUID());
+  await issuer.execute(issueSql.replace("'GK authorized'","' '"),[badIntent,actor,session,badCustomer,randomUUID()]);
   await issuer.execute(issueSql,[oldIntent,actor,session,historical,randomUUID()]);
   const call=(c:Pick<mysql.PoolConnection,'query'>,a:string=actor,s:string=session,i:string=intent)=>c.query('CALL aaditech_gk_create_customer_candidate(?,?,?)',[a,s,i]);
   const observe=async()=>{
@@ -295,7 +312,7 @@ test('1GK restricted customer CREATE intent issues exact record and audit atomic
   const conn=await runtime.getConnection();
   try{
    await assert.rejects(call(conn),(e:any)=>e?.code==='ER_SP_DOES_NOT_EXIST');
-   for(const [a,s,i] of [[randomUUID(),session,intent],[actor,'0'.repeat(64),intent],[actor,session,'0'.repeat(64)]]){
+   for(const [a,s,i] of [[randomUUID(),session,intent],[actor,'0'.repeat(64),intent],[actor,session,'0'.repeat(64)],[actor,session,badIntent]]){
     await conn.beginTransaction();try{await assert.rejects(call(conn,a,s,i),intentDenied);await conn.commit();}catch(e){await conn.rollback();throw e;}
    }
    // An existing row cannot be claimed even by an otherwise valid intent.
@@ -303,6 +320,7 @@ test('1GK restricted customer CREATE intent issues exact record and audit atomic
    try{await assert.rejects(call(conn,actor,session,oldIntent),(e:any)=>e?.code==='ER_DUP_ENTRY');await conn.commit();}catch(e){await conn.rollback();throw e;}
    const [oldEvents]=await admin.query<mysql.RowDataPacket[]>('SELECT id FROM crm_audit_events WHERE entity_id=?',[historical]);
    assert.equal(oldEvents.length,0);
+   const [badRows]=await admin.query<mysql.RowDataPacket[]>('SELECT id FROM crm_customers WHERE id=?',[badCustomer]);assert.equal(badRows.length,0);
    await conn.beginTransaction();try{await call(conn);}finally{await conn.rollback();}
    assert.deepEqual(await observe(),{consumed:null,customers:[],events:[]});
    const race=async()=>{const c=await runtime!.getConnection();try{await c.beginTransaction();await call(c);await c.commit();}catch(e){await c.rollback();throw e;}finally{c.release();}};
@@ -373,7 +391,7 @@ for(const entity of ['lead','product'] as const)test('1GL '+entity+' issuer-boun
   await assert.rejects(runtime.query('SELECT intent_hash FROM '+table+' LIMIT 0'),denied);
   await assert.rejects(issuer.query('UPDATE '+table+' SET consumed_at=NULL WHERE 1=0'),denied);
   await assert.rejects(issuer.query('INSERT INTO '+table+'(intent_hash,created_at) VALUES (?,UTC_TIMESTAMP(3))',[hashToken(randomUUID())]),denied);
-  await issuer.execute(issueSql,[intent,actor,session,id,audit,...payload]);
+  await issueSignedGm(issuer,{operation:entity==='lead'?'leads':'products',actorId:actor,sessionHash:session,intentHash:intent,entityId:id,auditId:audit,payload:Object.fromEntries(fields.map((k,i)=>[k,payload[i]]))});
   await issuer.execute(issueSql,[oldIntent,actor,session,historical,randomUUID(),...historicalPayload]);
   await issuer.execute(issueSql,[badIntent,actor,session,badId,badAudit,...invalidPayload]);
   await issuer.execute(issueSql,[collision,actor,session,collideId,existingAudit,...collidePayload]);

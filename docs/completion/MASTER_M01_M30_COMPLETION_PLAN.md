@@ -1210,3 +1210,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - 1GK exact PR 45458921802 FAILED 6/8: actual MySQL GK/GJ tests passed; baseline TS2345 and PR description 8684 > 8192 byte limit failed.
 - [x] [1GL runbook](../phase-1/PHASE_1GL_BATCH_CRM_PROVENANCE_AND_GOVERNANCE_HARD_HOLD.md): fix test type, archive historical PR index, isolated lead/product exact CREATE and audit/consume candidates, bounded SQL payload validation and negative/race/rollback tests; BV/BW updated. Existing governance budget unchanged.
 - [ ] Exact-head CI, app integration, independent cryptographic issuer and business/DBA verification, revocation/recovery and all external acceptance remain OPEN.
+
+
+## Phase 1GM — Signed intent and issuer validation batch (HARD HOLD)
+
+- [x] 1GL exact Draft PR 45461503684 SUCCESS 8/8 including customer/lead/product/quote SQL and live governance; no independent push CI observed.
+- [x] [1GM runbook](../phase-1/PHASE_1GM_SIGNED_INTENT_AND_ISSUER_VALIDATION_BATCH_HARD_HOLD.md): isolated Ed25519 verifier/issuer adapter for four operations, pinned key/expiry/revocation scope, exact canonical payload, SQL issuance and tamper/replay regression source; customer SQL bounded validation. Source custody updated.
+- [ ] Exact-head CI, independent key custody/enrollment, DB-enforced authority or isolated non-bypassable issuer, global nonce ledger, app integration, quote content reconciliation, revocation/recovery and external acceptance remain OPEN.

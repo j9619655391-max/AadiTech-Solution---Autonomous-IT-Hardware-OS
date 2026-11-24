@@ -152,6 +152,8 @@ export const BUILD_INPUT_PATHS=Object.freeze([
  'database/migrations/0051_gf_crm_quote_write_once.sql',
  'scripts/migrate-gf-provenance.ts',
  'tests/gf-provenance-mysql.integration.ts',
+ 'scripts/lib/gmSignedIntentCandidate.ts',
+ 'tests/gm-signed-intent-candidate.test.ts',
  'tests/procurement-mysql.integration.ts',
  'database/migrations/0043_el_reviewer_scope_candidates.sql',
  'scripts/migrate-el-reviewer-scopes.ts',
