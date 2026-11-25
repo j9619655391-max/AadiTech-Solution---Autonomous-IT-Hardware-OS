@@ -7,73 +7,73 @@
       "module": "M05",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M13",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M14",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M15",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M18",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M19",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M20",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M21",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M22",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M23",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M24",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "module": "M25",
       "form": "src/services/internalPlanningForms.ts",
       "ui": "src/components/InternalPlanningFields.tsx",
-      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     }
   ],
   "regressionCases": [
@@ -82,423 +82,427 @@
       "module": "M05",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M05-02",
       "module": "M05",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M05-03",
       "module": "M05",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M05-04",
       "module": "M05",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M05-05",
       "module": "M05",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M13-01",
       "module": "M13",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M13-02",
       "module": "M13",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M13-03",
       "module": "M13",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M13-04",
       "module": "M13",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M13-05",
       "module": "M13",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M14-01",
       "module": "M14",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M14-02",
       "module": "M14",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M14-03",
       "module": "M14",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M14-04",
       "module": "M14",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M14-05",
       "module": "M14",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M15-01",
       "module": "M15",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M15-02",
       "module": "M15",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M15-03",
       "module": "M15",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M15-04",
       "module": "M15",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M15-05",
       "module": "M15",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M18-01",
       "module": "M18",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M18-02",
       "module": "M18",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M18-03",
       "module": "M18",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M18-04",
       "module": "M18",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M18-05",
       "module": "M18",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M19-01",
       "module": "M19",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M19-02",
       "module": "M19",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M19-03",
       "module": "M19",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M19-04",
       "module": "M19",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M19-05",
       "module": "M19",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M20-01",
       "module": "M20",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M20-02",
       "module": "M20",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M20-03",
       "module": "M20",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M20-04",
       "module": "M20",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M20-05",
       "module": "M20",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M21-01",
       "module": "M21",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M21-02",
       "module": "M21",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M21-03",
       "module": "M21",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M21-04",
       "module": "M21",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M21-05",
       "module": "M21",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M22-01",
       "module": "M22",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M22-02",
       "module": "M22",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M22-03",
       "module": "M22",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M22-04",
       "module": "M22",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M22-05",
       "module": "M22",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M23-01",
       "module": "M23",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M23-02",
       "module": "M23",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M23-03",
       "module": "M23",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M23-04",
       "module": "M23",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M23-05",
       "module": "M23",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M24-01",
       "module": "M24",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M24-02",
       "module": "M24",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M24-03",
       "module": "M24",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M24-04",
       "module": "M24",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M24-05",
       "module": "M24",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M25-01",
       "module": "M25",
       "description": "example roundtrip",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M25-02",
       "module": "M25",
       "description": "planner parity",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M25-03",
       "module": "M25",
       "description": "blank form rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M25-04",
       "module": "M25",
       "description": "missing field rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     },
     {
       "id": "GW-M25-05",
       "module": "M25",
       "description": "wrong field type rejection",
       "testReference": "tests/gw-planning-forms.test.ts",
-      "status": "SOURCE_COMMITTED_PENDING_CI"
+      "status": "VERIFIED_HOSTED_CI_45500310899"
     }
   ],
   "additionalUnitTests": 3,
   "releaseDecision": "HOLD",
-  "productionReleaseAuthorized": false
+  "productionReleaseAuthorized": false,
+  "verifiedRun": 45500310899,
+  "verifiedRegressionCases": 60,
+  "verifiedAdditionalUnitTests": 3,
+  "browserE2EVerified": false
 }

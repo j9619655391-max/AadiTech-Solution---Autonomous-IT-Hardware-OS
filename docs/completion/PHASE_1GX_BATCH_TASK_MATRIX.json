@@ -1,0 +1,503 @@
+{
+  "phase": "1GX",
+  "priorVerifiedRun": 45500310899,
+  "functionalWorkstreams": [
+    {
+      "module": "M05",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M13",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M14",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M15",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M18",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M19",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M20",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M21",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M22",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M23",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M24",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    },
+    {
+      "module": "M25",
+      "resultContract": "src/services/internalPlanningResults.ts",
+      "resultView": "src/components/InternalPlanningResultView.tsx",
+      "status": "IMPLEMENTED_SOURCE_PENDING_CI"
+    }
+  ],
+  "regressionCases": [
+    {
+      "id": "GX-M05-01",
+      "module": "M05",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M05-02",
+      "module": "M05",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M05-03",
+      "module": "M05",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M05-04",
+      "module": "M05",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M05-05",
+      "module": "M05",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M13-01",
+      "module": "M13",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M13-02",
+      "module": "M13",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M13-03",
+      "module": "M13",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M13-04",
+      "module": "M13",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M13-05",
+      "module": "M13",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M14-01",
+      "module": "M14",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M14-02",
+      "module": "M14",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M14-03",
+      "module": "M14",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M14-04",
+      "module": "M14",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M14-05",
+      "module": "M14",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M15-01",
+      "module": "M15",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M15-02",
+      "module": "M15",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M15-03",
+      "module": "M15",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M15-04",
+      "module": "M15",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M15-05",
+      "module": "M15",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M18-01",
+      "module": "M18",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M18-02",
+      "module": "M18",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M18-03",
+      "module": "M18",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M18-04",
+      "module": "M18",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M18-05",
+      "module": "M18",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M19-01",
+      "module": "M19",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M19-02",
+      "module": "M19",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M19-03",
+      "module": "M19",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M19-04",
+      "module": "M19",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M19-05",
+      "module": "M19",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M20-01",
+      "module": "M20",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M20-02",
+      "module": "M20",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M20-03",
+      "module": "M20",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M20-04",
+      "module": "M20",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M20-05",
+      "module": "M20",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M21-01",
+      "module": "M21",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M21-02",
+      "module": "M21",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M21-03",
+      "module": "M21",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M21-04",
+      "module": "M21",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M21-05",
+      "module": "M21",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M22-01",
+      "module": "M22",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M22-02",
+      "module": "M22",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M22-03",
+      "module": "M22",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M22-04",
+      "module": "M22",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M22-05",
+      "module": "M22",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M23-01",
+      "module": "M23",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M23-02",
+      "module": "M23",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M23-03",
+      "module": "M23",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M23-04",
+      "module": "M23",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M23-05",
+      "module": "M23",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M24-01",
+      "module": "M24",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M24-02",
+      "module": "M24",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M24-03",
+      "module": "M24",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M24-04",
+      "module": "M24",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M24-05",
+      "module": "M24",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M25-01",
+      "module": "M25",
+      "description": "structured result and evidence requirements",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M25-02",
+      "module": "M25",
+      "description": "missing metric fails closed",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M25-03",
+      "module": "M25",
+      "description": "inconsistent result rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M25-04",
+      "module": "M25",
+      "description": "missing or unknown evidence requirement rejected",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    },
+    {
+      "id": "GX-M25-05",
+      "module": "M25",
+      "description": "identical scenario comparison remains held",
+      "testReference": "tests/gx-planning-results.test.ts",
+      "status": "SOURCE_COMMITTED_PENDING_CI"
+    }
+  ],
+  "additionalUnitTests": 4,
+  "releaseDecision": "HOLD",
+  "productionReleaseAuthorized": false
+}

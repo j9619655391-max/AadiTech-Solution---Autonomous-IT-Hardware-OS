@@ -1287,3 +1287,10 @@ M16 SERVER_INTERNAL_HELD. `productionReleaseAuthorized=false`, `productionReleas
 - [x] 1GV exact PR 45498444531 FAILED 7/8 (TS2322 workspace key); 120 named and seven shared HTTP cases passed MySQL. Baseline unit tests not executed.
 - [x] [GW runbook](../phase-1/PHASE_1GW_STRUCTURED_PLANNING_FORMS_BATCH_HARD_HOLD.md): 12 structured forms, native wrapper key correction, 60 named and three shared unit cases. [Task matrix](PHASE_1GW_BATCH_TASK_MATRIX.json). Exact-head CI pending.
 - [ ] Browser E2E, full input persistence, versioned review workflows, approved migration and independent DBA/tenant acceptance, full recovery remain OPEN.
+
+
+## Phase 1GX — Structured result review and scenario comparison (HARD HOLD)
+
+- [x] 1GW exact PR 45500310899 SUCCESS 8/8; 63 GW and three GV corrective units passed, recent GU/GV/GW total 316 verified; MySQL auth/restore/provenance PASS. No separate push receipt.
+- [x] [GX runbook](../phase-1/PHASE_1GX_STRUCTURED_RESULT_REVIEW_AND_SCENARIO_COMPARISON_HARD_HOLD.md): 12 result contracts, labeled metrics/tables/evidence requirements, in-memory comparison, strict response validation and 60 named + four shared tests. [Task matrix](PHASE_1GX_BATCH_TASK_MATRIX.json). Exact-head CI pending.
+- [ ] Browser E2E, complete draft integrity, durable review workflow, approved migration and external acceptance remain OPEN.

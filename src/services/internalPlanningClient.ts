@@ -1,10 +1,11 @@
 import {authenticatedFetch} from './authClient';
+import {summarizePlanningResult} from './internalPlanningResults';
 export type PlanningResult=Record<string,unknown>;
 export type PlanningRecord={id:string;module:string;createdAt:string;result:PlanningResult;replayed?:boolean};
 function verify(value:unknown,module:string):PlanningResult{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid planning response');
  const v=value as PlanningResult;
- if(v.module!==module||v.releaseDecision!=='HOLD'||v.externalExecutionEnabled!==false||v.productionReleaseAuthorized!==false||v.requiresHumanReview!==true||v.evidenceStatus!=='OPERATOR_SUPPLIED_UNVERIFIED')throw Error('Unverified planning response');return v;
+ if(v.module!==module||v.releaseDecision!=='HOLD'||v.externalExecutionEnabled!==false||v.productionReleaseAuthorized!==false||v.requiresHumanReview!==true||v.evidenceStatus!=='OPERATOR_SUPPLIED_UNVERIFIED')throw Error('Unverified planning response');summarizePlanningResult(module,v);return v;
 }
 async function call(path:string,init:RequestInit={}):Promise<unknown>{const response=await authenticatedFetch('/api/internal-planning'+path,init);if(!response.ok)throw Error('Planning request failed (HTTP '+response.status+'). No external action authorized.');return response.json();}
 function record(value:unknown,module?:string):PlanningRecord{

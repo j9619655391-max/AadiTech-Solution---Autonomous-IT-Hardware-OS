@@ -6,84 +6,84 @@
   "workstreams": [
     {
       "module": "M05",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M13",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M14",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M15",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M18",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M19",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M20",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M21",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M22",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M23",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M24",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
     },
     {
       "module": "M25",
-      "status": "HTTP_VERIFIED_FRONTEND_TYPECHECK_FAILED",
+      "status": "VERIFIED_HOSTED_CI_45500310899",
       "frontend": "src/components/InternalPlanningWorkspace.tsx",
       "persistence": "server/internalPlanning/records.ts",
       "httpTest": "tests/gv-planning-http-fixture.ts"
@@ -938,5 +938,8 @@
   "verifiedHttpCases": 120,
   "verifiedSharedHttpTests": 7,
   "baselineStatus": "FAILED_TS2322",
-  "unitTestsVerified": false
+  "unitTestsVerified": true,
+  "correctiveVerifiedRun": 45500310899,
+  "verifiedUnitTests": 3,
+  "correctiveBaselineStatus": "PASS"
 }
