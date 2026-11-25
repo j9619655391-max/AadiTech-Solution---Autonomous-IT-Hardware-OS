@@ -1,0 +1,78 @@
+{
+  "name": "AadiTech main protected two-person review - PROPOSED NOT INSTALLED",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ],
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": true,
+        "require_last_push_approval": true,
+        "required_approving_review_count": 2,
+        "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "do_not_enforce_on_create": false,
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          {
+            "context": "baseline",
+            "integration_id": 15368
+          },
+          {
+            "context": "mysql-integration",
+            "integration_id": 15368
+          },
+          {
+            "context": "production-runtime-scope",
+            "integration_id": 15368
+          },
+          {
+            "context": "build-input-provenance",
+            "integration_id": 15368
+          },
+          {
+            "context": "review-vendor-intake-hold",
+            "integration_id": 15368
+          },
+          {
+            "context": "independent-evidence-hold",
+            "integration_id": 15368
+          },
+          {
+            "context": "live-github-governance-hold",
+            "integration_id": 15368
+          },
+          {
+            "context": "source-merge-lineage-hold",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
+  ]
+}

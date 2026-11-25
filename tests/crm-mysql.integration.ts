@@ -1,0 +1,1164 @@
+import test, { after } from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID, randomBytes } from 'node:crypto';
+import express from 'express';
+import { getPool } from '../server/db';
+import { hashPassword, hashToken } from '../server/auth/crypto';
+import crmRouter from '../server/crm/router';
+import quoteDraftRouter from '../server/quotes/router';
+import troubleshootingRouter from '../server/troubleshooting/router';
+import quoteReviewRouter from '../server/quotes/reviewRouter';
+import quoteReleaseHoldRouter from '../server/quotes/releaseHoldRouter';
+import securityAdminRouter from '../server/security/adminRouter';
+import reviewerScopeRouter from '../server/security/reviewerScopeRouter';
+import commercialIntegrityRouter from '../server/commercialIntegrity/ownerRouter';
+import authRouter from '../server/auth/router';
+import mfaRouter from '../server/auth/mfaRouter';
+import {totpAt} from '../server/auth/totp';
+
+if (process.env.CRM_TEST_DB !== '1') throw new Error('CRM integration test must run on disposable test DB only (CRM_TEST_DB=1)');
+if (process.env.DB_NAME !== 'aaditech_ci') throw new Error('Refusing integration tests outside aaditech_ci database');
+const db=getPool();
+if (!db) throw new Error('Integration test MySQL pool unavailable');
+after(async()=>{await db.end();});
+const actor=randomUUID(), token='a'.repeat(43), csrf='b'.repeat(43);
+const ownerPassword='CI-owner-strong-password-2026';
+const reviewerPassword='CI-independent-reviewer-password-2026';
+let stepUpToken='',reviewerStepUpToken='';
+let base='';
+let closeServer:()=>Promise<void>;
+const cookie='aaditech_session='+token;
+const reviewerId=randomUUID(),reviewerToken='r'.repeat(43),reviewerCookie='aaditech_session='+reviewerToken;
+
+test('setup isolated owner session',async()=>{
+  await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+    [actor,'ci-owner@example.invalid','CI Owner',await hashPassword(ownerPassword),'OWNER']);
+  await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",[hashToken(token),actor,csrf]);
+  await db.execute("INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+    [reviewerId,'ci-reviewer@example.invalid','Independent CI Reviewer',await hashPassword(reviewerPassword),'REVIEWER']);
+  await db.execute("INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))",
+    [hashToken(reviewerToken),reviewerId,csrf]);
+  // Only this actor/workflow receives an explicit synthetic CI review scope.
+  await db.execute("INSERT INTO app_reviewer_scope_grants (owner_user_id,reviewer_user_id,workflow_scope) VALUES (?,?,'QUOTES')",
+   [actor,reviewerId]);
+  const app=express();app.use(express.json());app.use('/api/auth',authRouter);app.use('/api/auth/mfa',mfaRouter);app.use('/api/security',securityAdminRouter);app.use('/api/reviewer-scopes',reviewerScopeRouter);app.use('/api/crm',crmRouter);app.use('/api/help/troubleshooting',troubleshootingRouter);app.use('/api/quotes/drafts',quoteDraftRouter);app.use('/api/quotes/reviews',quoteReviewRouter);app.use('/api/quotes/release-preparations',quoteReleaseHoldRouter);app.use('/api/commercial-integrity',commercialIntegrityRouter);
+  const server=app.listen(0,'127.0.0.1');
+  await new Promise<void>(resolve=>server.once('listening',resolve));
+  const addr=server.address();
+  assert.ok(addr && typeof addr!=='string');
+  base='http://127.0.0.1:'+addr.port;
+  closeServer=()=>new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));
+});
+after(async()=>{if(closeServer)await closeServer();});
+
+async function call(route:string, method='GET', body?:unknown, authorized=true, includeCsrf=true, extraHeaders:Record<string,string>={}) {
+  const headers:Record<string,string>={...extraHeaders};
+  if(authorized)headers.cookie=headers.cookie??(route.startsWith('/api/quotes/reviews')?reviewerCookie:cookie);
+  if(body!==undefined)headers['content-type']='application/json';
+  if(method==='POST' && route==='/api/quotes/drafts' && !('idempotency-key' in headers)) headers['idempotency-key']=randomUUID();
+  if(includeCsrf&& !['GET','HEAD'].includes(method)&&!('x-csrf-token' in headers))headers['x-csrf-token']=csrf;
+  if(stepUpToken && !('x-step-up-token' in headers) && ((route.startsWith('/api/security/reviewers/')&&method!=='GET') || route==='/api/auth/revoke-my-sessions' || (method==='POST' && route.startsWith('/api/quotes/release-preparations/'))))
+    headers['x-step-up-token']=stepUpToken;
+  if(reviewerStepUpToken && method==='POST' && route.startsWith('/api/quotes/reviews/') && !('x-step-up-token' in headers) && headers.cookie===reviewerCookie)
+    headers['x-step-up-token']=reviewerStepUpToken;
+  const response=await fetch(base+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+  const raw=await response.text();
+  return {status:response.status,data:raw?JSON.parse(raw):null,setCookie:response.headers.get('set-cookie')};
+}
+
+test('1FM real MySQL sessions can read 20 Windows guides but cannot mutate service state',async()=>{
+ const list=await call('/api/help/troubleshooting');
+ assert.equal(list.status,200);
+ assert.equal(list.data.mode,'GUIDANCE_ONLY');
+ assert.equal(list.data.deviceInspected,false);
+ assert.equal(list.data.actionsExecuted,false);
+ assert.equal(list.data.total,20);
+ assert.equal(new Set(list.data.items.map((g:{id:string})=>g.id)).size,20);
+ const filtered=await call('/api/help/troubleshooting?q=blue%20screen');
+ assert.equal(filtered.status,200);
+ assert.deepEqual(filtered.data.items.map((g:{id:string})=>g.id),['blue-screen']);
+ const network=await call('/api/help/troubleshooting?category=NETWORK');
+ assert.equal(network.status,200);
+ assert.deepEqual(network.data.items.map((g:{id:string})=>g.id).sort(),
+  ['vpn-no-internet','wifi-no-internet']);
+ const detail=await call('/api/help/troubleshooting/suspected-malware');
+ assert.equal(detail.status,200);
+ assert.equal(detail.data.item.category,'SECURITY');
+ assert.equal(detail.data.actionsExecuted,false);
+ assert.ok(detail.data.item.firstChecks.length>=2);
+ assert.equal((await call('/api/help/troubleshooting?category=DROP')).status,400);
+ assert.equal((await call('/api/help/troubleshooting?q=a&q=b')).status,400);
+ assert.equal((await call('/api/help/troubleshooting/not-a-guide')).status,404);
+ // Express returns its default HTML 404 for an undefined POST; do not parse it as JSON.
+ const deniedPost=await fetch(base+'/api/help/troubleshooting',{
+  method:'POST',headers:{cookie,'x-csrf-token':csrf,'content-type':'application/json'},body:'{}'
+ });
+ assert.equal(deniedPost.status,404,'no troubleshooting write endpoint exists');
+ assert.equal((await call('/api/help/troubleshooting','GET',undefined,false)).status,401);
+ const reviewer=await call('/api/help/troubleshooting','GET',undefined,true,true,{cookie:reviewerCookie});
+ assert.equal(reviewer.status,200,'authenticated reviewer may read public first-response guidance');
+ assert.equal(reviewer.data.total,20);
+});
+test('roles are independent: reviewer cannot mutate CRM or draft, owner cannot sign review decisions',async()=>{
+  const reviewSession=await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:reviewerCookie});
+  assert.equal(reviewSession.status,200);
+  assert.equal((await call('/api/crm/customers','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/quotes/drafts','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie})).status,403);
+  const [drafts]=await db.query<any[]>('SELECT id FROM sales_quote_drafts ORDER BY created_at LIMIT 1');
+  if(drafts.length){
+    const attempt=await call('/api/quotes/reviews/'+drafts[0].id,'POST',{
+      expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Owner bypass attempt',overrideRequested:false
+    },true,true,{cookie});
+    assert.equal(attempt.status,403);
+  }
+});
+
+test('anonymous access and missing CSRF are blocked by server',async()=>{
+  assert.equal((await call('/api/crm/leads','GET',undefined,false)).status,401);
+  assert.equal((await call('/api/crm/leads','POST',{name:'X'},true,false)).status,403);
+});
+
+test('customer creation, update/version conflict, soft deletion and immutable audit',async()=>{
+  const payload={name:'Example Customer',contactPerson:'Buyer',email:'buyer@example.invalid',phone:'1234567890',city:'Mumbai',state:'Maharashtra'};
+  const created=await call('/api/crm/customers','POST',payload);
+  assert.equal(created.status,201);const id=created.data.id;assert.equal(created.data.version,1);
+  const get=await call('/api/crm/customers/'+id);assert.equal(get.data.name,payload.name);
+  const updated=await call('/api/crm/customers/'+id,'PATCH',{expectedVersion:1,city:'Pune'});
+  assert.equal(updated.status,200);assert.equal(updated.data.version,2);
+  assert.equal((await call('/api/crm/customers/'+id,'PATCH',{expectedVersion:1,city:'Delhi'})).status,409);
+  assert.equal((await call('/api/crm/customers?limit=10&page=1')).data.total,1);
+  assert.equal((await call('/api/crm/customers/'+id,'DELETE',undefined,true,true,{'if-match':'1'})).status,409);
+  assert.equal((await call('/api/crm/customers/'+id,'DELETE',undefined,true,true,{'if-match':'2'})).status,204);
+  assert.equal((await call('/api/crm/customers/'+id)).status,404);
+  const [audit]=await db.execute<any[]>('SELECT operation FROM crm_audit_events WHERE entity_id=? ORDER BY created_at',[id]);
+  assert.equal(audit.length,3);
+  assert.deepEqual(audit.map((x:any)=>x.operation).sort(),['CREATE','DELETE','UPDATE']);
+});
+
+test('lead and product records persist; product SKU enforced unique',async()=>{
+  const lead=await call('/api/crm/leads','POST',{name:'Buyer',company:'Example',email:'lead@example.invalid',phone:'1234567890',source:'EMAIL',requirement:'Servers',estimatedBudget:'250000.00'});
+  assert.equal(lead.status,201);
+  assert.equal((await call('/api/crm/leads/'+lead.data.id)).data.estimatedBudget,'250000.00');
+  const product={sku:'TEST-SRV-001',brand:'Dell',model:'Example',category:'SERVER',specs:'Test',unitCost:'20000.00',minPrice:'21000.00',sellingPrice:'23000.00',hsn:'8471'};
+  const created=await call('/api/crm/products','POST',product);assert.equal(created.status,201);
+  assert.equal(created.data.unitCost,'20000.00');
+  assert.equal((await call('/api/crm/products','POST',product)).status,409);
+  assert.equal((await call('/api/crm/products','POST',{...product,sku:'X',stockBhiwandi:100})).status,400);
+  assert.equal((await call('/api/crm/products','POST',{...product,sku:'Y',unitCost:20000})).status,400);
+});
+
+
+test('1FI real MySQL CRM cannot save a rounded-below-minimum product price',async()=>{
+ const p={sku:'FI-'+randomUUID(),brand:'Example',model:'High precision fixture',
+  category:'SERVER',specs:'Synthetic decimal comparison only',unitCost:'0.01',
+  minPrice:'9007199254740992.01',sellingPrice:'9007199254740992.02',hsn:'8471'};
+ const invalid=await call('/api/crm/products','POST',
+  {...p,sku:'FI-deny-'+randomUUID(),sellingPrice:'9007199254740992.00'});
+ assert.equal(invalid.status,400,'creation must reject one-paisa undercut beyond IEEE-754 precision');
+ const created=await call('/api/crm/products','POST',p);
+ assert.equal(created.status,201);
+ assert.equal(created.data.minPrice,'9007199254740992.01');
+ assert.equal(created.data.sellingPrice,'9007199254740992.02');
+ assert.equal(created.data.version,1);
+ const badSell=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,sellingPrice:'9007199254740992.00'});
+ assert.equal(badSell.status,409,'partial selling-price patch must use exact stored minPrice');
+ const badMin=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.03'});
+ assert.equal(badMin.status,409,'partial minPrice patch must use exact stored sellingPrice');
+ const unchanged=await call('/api/crm/products/'+created.data.id);
+ assert.equal(unchanged.status,200);
+ assert.equal(unchanged.data.version,1);
+ assert.equal(unchanged.data.sellingPrice,'9007199254740992.02');
+ const valid=await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.02'});
+ assert.equal(valid.status,200);
+ assert.equal(valid.data.version,2);
+ assert.equal(valid.data.minPrice,'9007199254740992.02');
+ assert.equal((await call('/api/crm/products/'+created.data.id,'PATCH',
+  {expectedVersion:1,minPrice:'9007199254740992.00'})).status,409);
+ const [audit]=await db.query<any[]>(
+  "SELECT operation FROM crm_audit_events WHERE entity_type='products' AND entity_id=?",
+  [created.data.id]);
+ assert.equal(audit.length,2,'rejected attempts must not append mutation audit events');
+});
+
+test('authenticated quote drafts snapshot verified product prices and do not send anything',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Quote Test Customer',contactPerson:'Buyer',email:'quote-buyer@example.invalid',
+    phone:'9999999999',city:'Mumbai',state:'Maharashtra'
+  });
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'QUOTE-TEST-1',brand:'Dell',model:'Quote Test Server',category:'SERVER',
+    specs:'Verified test specification',unitCost:'1000.00',minPrice:'1200.00',
+    sellingPrice:'1500.00',gstRate:'18.00',hsn:'8471'
+  });
+  assert.equal(product.status,201);
+  const body={customerId:customer.data.id,items:[{productId:product.data.id,quantity:2}]};
+  assert.equal((await call('/api/quotes/drafts','POST',body,false)).status,401);
+  assert.equal((await call('/api/quotes/drafts','POST',body,true,false)).status,403);
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,totalEstimate:'0.01'})).status,400);
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,items:[{...body.items[0],unitPrice:'0.01'}]})).status,400);
+  const key=randomUUID();
+  const created=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
+  assert.equal(created.status,201);
+  assert.equal(created.data.draftNumber,'ADQ-'+created.data.id);
+  const replay=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
+  assert.equal(replay.status,200);
+  assert.equal(replay.data.replayed,true);
+  assert.equal(replay.data.id,created.data.id);
+  assert.equal((await call('/api/quotes/drafts','POST',
+    {...body,items:[{...body.items[0],quantity:3}]},true,true,{'idempotency-key':key})).status,409);
+  assert.equal(created.data.status,'DRAFT');
+  assert.equal(created.data.subtotal,'3000.00');
+  assert.equal(created.data.taxEstimate,'540.00');
+  assert.equal(created.data.totalEstimate,'3540.00');
+  const detail=await call('/api/quotes/drafts/'+created.data.id);
+  assert.equal(detail.status,200);
+  assert.equal(detail.data.items.length,1);
+  assert.equal(detail.data.items[0].unit_price,'1500.00');
+  assert.equal((await call('/api/quotes/drafts')).data.items.length,1);
+  // Snapshot remains intact even after catalog price changes.
+  const updated=await call('/api/crm/products/'+product.data.id,'PATCH',
+    {expectedVersion:1,sellingPrice:'1900.00'});
+  assert.equal(updated.status,200);
+  const frozen=await call('/api/quotes/drafts/'+created.data.id);
+  assert.equal(frozen.data.items[0].unit_price,'1500.00');
+  const replayAfterCatalogChange=await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':key});
+  assert.equal(replayAfterCatalogChange.status,200);
+  assert.equal(replayAfterCatalogChange.data.totalEstimate,'3540.00');
+  const [dbRows]=await db.query<any[]>('SELECT status,total_estimate FROM sales_quote_drafts WHERE id=?',[created.data.id]);
+  assert.equal(dbRows[0].status,'DRAFT');
+  assert.equal(dbRows[0].total_estimate,'3540.00');
+  assert.equal((await call('/api/quotes/drafts','POST',{...body,customerId:'00000000-0000-0000-0000-000000000000'})).status,400);
+  assert.equal((await call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':'bad'})).status,400);
+  const [keys]=await db.query<any[]>('SELECT COUNT(*) AS n FROM sales_quote_create_requests WHERE actor_id=? AND request_key=?',[actor,key]);
+  assert.equal(Number(keys[0].n),1);
+  // Concurrent identical POST requests must serialize on MySQL's unique key.
+  const concurrentKey=randomUUID();
+  const [first,second]=await Promise.all([
+    call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':concurrentKey}),
+    call('/api/quotes/drafts','POST',body,true,true,{'idempotency-key':concurrentKey})
+  ]);
+  assert.deepEqual([first.status,second.status].sort(),[200,201]);
+  assert.equal(first.data.id,second.data.id);
+  const [concurrentRows]=await db.query<any[]>(
+    'SELECT COUNT(*) AS n FROM sales_quote_drafts WHERE id=?',[first.data.id]);
+  assert.equal(Number(concurrentRows[0].n),1);
+});
+
+
+/* Phase 1EK: real MySQL HTTP actor-scoped CRM provenance and draft inputs.
+ * This is application-audit actor scope, NOT a legal organization/tenant mandate. */
+let ekOtherCookie='',ekOwnCustomer='',ekOtherCustomer='',ekOwnLead='',ekOtherLead='',
+ ekOtherProduct='',ekOwnProduct='',ekOtherDraft='';
+test('1EK two OWNER sessions create independently scoped CRM inputs',async()=>{
+ const otherUser=randomUUID(),otherToken='k'.repeat(43);
+ ekOtherCookie='aaditech_session='+otherToken;
+ await db.execute('INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+  [otherUser,'ek-'+otherUser+'@example.invalid','Isolated CRM owner','test-only','OWNER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(otherToken),otherUser,csrf]);
+ const ownCustomer=await call('/api/crm/customers','POST',{
+  name:'Actor A Private Customer',contactPerson:'A only',
+  email:'a-'+randomUUID()+'@example.invalid',phone:'1234567890',
+  city:'Pune',state:'Maharashtra'});
+ const otherCustomer=await call('/api/crm/customers','POST',{
+  name:'Actor B Private Customer',contactPerson:'B only',
+  email:'b-'+randomUUID()+'@example.invalid',phone:'1234567891',
+  city:'Mumbai',state:'Maharashtra'},true,true,{cookie:ekOtherCookie});
+ assert.equal(ownCustomer.status,201);assert.equal(otherCustomer.status,201);
+ ekOwnCustomer=String(ownCustomer.data.id);
+ ekOtherCustomer=String(otherCustomer.data.id);
+ const lead=await call('/api/crm/leads','POST',{
+  name:'Actor A Lead',company:'Private only',email:'ek-lead-'+randomUUID()+'@example.invalid',
+  phone:'1234567890',source:'EMAIL',requirement:'CI evidence'});
+ assert.equal(lead.status,201);ekOwnLead=String(lead.data.id);
+ const foreignLead=await call('/api/crm/leads','POST',{
+  name:'Actor B Lead',company:'Private B',email:'ek-other-lead-'+randomUUID()+'@example.invalid',
+  phone:'1234567890',source:'EMAIL',requirement:'Synthetic internal quote only'
+ },true,true,{cookie:ekOtherCookie});
+ assert.equal(foreignLead.status,201);ekOtherLead=String(foreignLead.data.id);
+ const ownProduct=await call('/api/crm/products','POST',{
+  sku:'EK-OWN-'+randomUUID(),brand:'CI',model:'Owner A',category:'SERVER',
+  specs:'Synthetic only',unitCost:'100.00',minPrice:'100.00',
+  sellingPrice:'160.00',hsn:'8471'});
+ const otherProduct=await call('/api/crm/products','POST',{
+  sku:'EK-OTHER-'+randomUUID(),brand:'CI',model:'Owner B',category:'SERVER',
+  specs:'Synthetic only',unitCost:'90.00',minPrice:'90.00',
+  sellingPrice:'150.00',hsn:'8471'},true,true,{cookie:ekOtherCookie});
+ assert.equal(ownProduct.status,201);assert.equal(otherProduct.status,201);
+ ekOwnProduct=String(ownProduct.data.id);ekOtherProduct=String(otherProduct.data.id);
+});
+test('1EK CRM list/get/count, update/delete deny foreign OWNER and missing CREATE audit',async()=>{
+ for(const [entity,foreign,own] of [
+  ['customers',ekOtherCustomer,ekOwnCustomer],
+  ['products',ekOtherProduct,ekOwnProduct]
+ ] as const){
+  const list=await call('/api/crm/'+entity);
+  assert.equal(list.status,200);
+  assert.equal(list.data.items.some((x:any)=>x.id===foreign),false);
+  assert.equal(list.data.items.some((x:any)=>x.id===own),true);
+  assert.equal(list.data.total,list.data.items.length);
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign)).status,404);
+  const update=entity==='customers'?{expectedVersion:1,city:'Intrusion'}:
+   {expectedVersion:1,model:'Intrusion'};
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign,'PATCH',update)).status,404);
+  assert.equal((await call('/api/crm/'+entity+'/'+foreign,'DELETE',undefined,
+   true,true,{'if-match':'1'})).status,404);
+  assert.equal((await call('/api/crm/'+entity+'/'+own,'GET',undefined,true,true,
+   {cookie:ekOtherCookie})).status,404);
+ }
+ const [rows]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM crm_audit_events WHERE entity_id=? AND operation=?',
+  [ekOtherCustomer,'UPDATE']);
+ assert.equal(Number(rows[0].n),0);
+ const bare=randomUUID();
+ await db.execute(`INSERT INTO crm_customers
+  (id,name,contactPerson,email,phone,city,state) VALUES (?,?,?,?,?,?,?)`,
+  [bare,'Unattributed legacy customer','Nobody','legacy-'+bare+'@example.invalid',
+   '1234567890','Mumbai','Maharashtra']);
+ assert.equal((await call('/api/crm/customers/'+bare)).status,404);
+ assert.equal((await call('/api/crm/customers/'+bare,'GET',undefined,true,true,
+  {cookie:ekOtherCookie})).status,404);
+});
+test('1EK quote cannot use another OWNER customer, lead or price catalog ID',async()=>{
+ const other={cookie:ekOtherCookie};
+ const payload={customerId:ekOtherCustomer,
+  items:[{productId:ekOtherProduct,quantity:1}]};
+ for(const body of [
+  {...payload,customerId:ekOwnCustomer},
+  {...payload,items:[{productId:ekOwnProduct,quantity:1}]},
+  {...payload,leadId:ekOwnLead}
+ ]){
+  const key=randomUUID();
+  const denied=await call('/api/quotes/drafts','POST',body,true,true,
+   {...other,'idempotency-key':key});
+  assert.equal(denied.status,400);
+  const [reservation]=await db.execute<any[]>(
+   'SELECT COUNT(*) AS n FROM sales_quote_create_requests WHERE request_key=?',[key]);
+  assert.equal(Number(reservation[0].n),0);
+ }
+ const ownDenied=await call('/api/quotes/drafts','POST',payload);
+ assert.equal(ownDenied.status,400);
+});
+test('1EK valid same-OWNER quote remains private, atomic and never dispatched',async()=>{
+ const body={customerId:ekOtherCustomer,leadId:ekOtherLead,
+  items:[{productId:ekOtherProduct,quantity:1}]};
+ const key=randomUUID(),options={cookie:ekOtherCookie,'idempotency-key':key};
+ const draft=await call('/api/quotes/drafts','POST',body,true,true,options);
+ assert.equal(draft.status,201);ekOtherDraft=String(draft.data.id);
+ assert.equal(draft.data.status,'DRAFT');
+ const replay=await call('/api/quotes/drafts','POST',body,true,true,options);
+ assert.equal(replay.status,200);assert.equal(replay.data.id,ekOtherDraft);
+ const foreignGet=await call('/api/quotes/drafts/'+ekOtherDraft);
+ assert.equal(foreignGet.status,404);
+ const ownGet=await call('/api/quotes/drafts/'+ekOtherDraft,'GET',
+  undefined,true,true,{cookie:ekOtherCookie});
+ assert.equal(ownGet.status,200);
+ assert.equal(ownGet.data.items.length,1);
+ const otherList=await call('/api/quotes/drafts','GET',undefined,
+  true,true,{cookie:ekOtherCookie});
+ const aList=await call('/api/quotes/drafts');
+ assert.equal(otherList.data.items.some((x:any)=>x.id===ekOtherDraft),true);
+ assert.equal(aList.data.items.some((x:any)=>x.id===ekOtherDraft),false);
+ assert.equal(ownGet.data.draft.status,'DRAFT');
+});
+
+
+test('1EL quote reviewer sees only explicitly nominated OWNERs, including after revocation',async()=>{
+ const unauthorized=randomUUID(),unscopedToken='v'.repeat(43),
+  otherReviewerCookie='aaditech_session='+unscopedToken;
+ await db.execute("INSERT INTO auth_users(id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)",
+  [unauthorized,'el-reviewer-'+unauthorized+'@example.invalid','Unassigned test reviewer',
+   'test-only','REVIEWER']);
+ await db.execute(`INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at)
+  VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))`,
+  [hashToken(unscopedToken),unauthorized,csrf]);
+ const [mine]=await db.execute<any[]>(
+  'SELECT id FROM sales_quote_drafts WHERE created_by=? ORDER BY created_at LIMIT 1',[actor]);
+ assert.ok(mine.length>0);
+ const ownId=String(mine[0].id);
+ const isolated=await call('/api/quotes/reviews/queue','GET',
+  undefined,true,true,{cookie:otherReviewerCookie});
+ assert.equal(isolated.status,200);
+ assert.equal(isolated.data.items.some((q:any)=>q.id===ownId),false);
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief','GET',
+  undefined,true,true,{cookie:otherReviewerCookie})).status,404);
+ assert.equal((await call('/api/quotes/reviews/'+ownId,'GET',
+  undefined,true,true,{cookie:otherReviewerCookie})).status,404);
+ const primaryQueue=await call('/api/quotes/reviews/queue');
+ assert.equal(primaryQueue.status,200);
+ assert.equal(primaryQueue.data.items.some((q:any)=>q.id===ownId),true);
+ assert.equal(primaryQueue.data.items.some((q:any)=>q.id===ekOtherDraft),false);
+ assert.equal((await call('/api/quotes/reviews/'+ekOtherDraft+'/brief')).status,404);
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,200);
+ const scopes=await call('/api/reviewer-scopes');
+ assert.equal(scopes.status,200);
+ assert.equal(scopes.data.items.some((g:any)=>g.scope==='QUOTES'&&g.reviewerId===reviewerId),true);
+ // This is an isolated test fixture revocation, not a production admin action.
+ await db.execute(`UPDATE app_reviewer_scope_grants SET state='REVOKED'
+  WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'`,
+  [actor,reviewerId]);
+ try{
+  const after=await call('/api/quotes/reviews/queue');
+  assert.equal(after.status,200);
+  assert.equal(after.data.items.some((q:any)=>q.id===ownId),false);
+  assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,404);
+  assert.equal((await call('/api/quotes/reviews/'+ownId)).status,404);
+ }finally{
+  await db.execute(`UPDATE app_reviewer_scope_grants SET state='ACTIVE'
+   WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'`,
+   [actor,reviewerId]);
+ }
+ assert.equal((await call('/api/quotes/reviews/'+ownId+'/brief')).status,200);
+ const [orgs]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM app_organization_candidates');
+ const [members]=await db.execute<any[]>(
+  'SELECT COUNT(*) AS n FROM app_organization_member_candidates');
+ assert.equal(Number(orgs[0].n),0);
+ assert.equal(Number(members[0].n),0);
+});
+
+test('draft revisions preserve original snapshots, enforce version and margin guardrail',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Revision Customer',contactPerson:'Owner',email:'revision@example.invalid',
+    phone:'1234567890',city:'Mumbai',state:'Maharashtra'
+  });
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'REV-SKU-1',brand:'Dell',model:'Revision Test',category:'SERVER',
+    specs:'Test',unitCost:'900.00',minPrice:'1000.00',sellingPrice:'1000.00',gstRate:'18.00',hsn:'8471'
+  });
+  assert.equal(product.status,201);
+  const draft=await call('/api/quotes/drafts','POST',{
+    customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]
+  });
+  assert.equal(draft.status,201);
+  const route='/api/quotes/drafts/'+draft.data.id+'/revisions';
+  assert.equal((await call(route,'GET',undefined,false)).status,401);
+  assert.equal((await call(route)).data.revisions.length,0);
+  const body={expectedRevision:0,reason:'Customer requested two servers',items:[{productId:product.data.id,quantity:2}]};
+  assert.equal((await call(route,'POST',body,true,false)).status,403);
+  const first=await call(route,'POST',body);
+  assert.equal(first.status,201);
+  assert.equal(first.data.revision,1);
+  assert.equal(first.data.subtotal,'2000.00');
+  assert.equal(first.data.totalEstimate,'2360.00');
+  assert.equal(first.data.grossMarginBps,1000);
+  assert.equal(first.data.reviewStatus,'MARGIN_REVIEW_REQUIRED');
+  assert.equal((await call(route,'POST',body)).status,409);
+  assert.equal((await call(route,'POST',{...body,expectedRevision:1,
+    items:[{productId:randomUUID(),quantity:2}]})).status,400);
+  const second=await call(route,'POST',{...body,expectedRevision:1,reason:'Customer confirmed three units',
+    items:[{productId:product.data.id,quantity:3}]});
+  assert.equal(second.status,201);
+  assert.equal(second.data.revision,2);
+  const history=await call(route);
+  assert.equal(history.status,200);
+  assert.equal(history.data.revisions.length,2);
+  assert.equal(history.data.revisions[0].line_snapshot[0].quantity,2);
+  assert.equal(history.data.revisions[1].line_snapshot[0].quantity,3);
+  const original=await call('/api/quotes/drafts/'+draft.data.id);
+  assert.equal(original.data.items[0].quantity,1);
+  const [dbHistory]=await db.query<any[]>('SELECT revision_number,review_status FROM sales_quote_draft_revisions WHERE quote_id=? ORDER BY revision_number',[draft.data.id]);
+  assert.deepEqual(dbHistory.map((x:any)=>x.revision_number),[1,2]);
+});
+
+test('owner reviews exact latest draft revision with enforced margin override and immutable audit',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Review Test Customer',contactPerson:'Buyer',email:'review@example.invalid',
+    phone:'9876543210',city:'Mumbai',state:'Maharashtra'});
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'REVIEW-TEST-1',brand:'Dell',model:'Test Approval',category:'SERVER',specs:'Test',
+    unitCost:'950.00',sellingPrice:'1000.00',minPrice:'980.00',gstRate:'18.00',hsn:'8471'});
+  assert.equal(product.status,201);
+  const draft=await call('/api/quotes/drafts','POST',{
+    customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]});
+  assert.equal(draft.status,201);
+  const path='/api/quotes/reviews/'+draft.data.id;
+  assert.equal((await call(path,'GET',undefined,false)).status,401);
+  const missingStepUp=await call(path,'POST',{expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Missing password verification',overrideRequested:false});
+  assert.equal(missingStepUp.status,403);
+  const verifiedReviewer=await call('/api/auth/step-up','POST',{currentPassword:reviewerPassword},true,true,{cookie:reviewerCookie});
+  assert.equal(verifiedReviewer.status,200);
+  reviewerStepUpToken=verifiedReviewer.data.stepUpToken;
+  assert.match(reviewerStepUpToken,/^[A-Za-z0-9_-]{43}$/);
+  assert.equal((await call(path,'POST',{expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Invalid password verification',overrideRequested:false},true,true,{'x-step-up-token':'invalid'})).status,403);
+  assert.equal((await call(path,'POST',{expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Not commercially acceptable',overrideRequested:false},true,false)).status,403);
+  const review={expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Approved by owner',overrideRequested:false};
+  assert.equal((await call(path,'POST',review)).status,400);
+  assert.equal((await call(path,'POST',{...review,overrideRequested:true})).status,400);
+  const approved=await call(path,'POST',{...review,reason:'Owner accepted discounted margin after detailed commercial review',overrideRequested:true});
+  assert.equal(approved.status,201);
+  assert.equal(approved.data.reviewStatus,'APPROVED_INTERNAL');
+  const reviewQueue=await call('/api/quotes/reviews/queue');
+  assert.equal(reviewQueue.status,200);
+  const brief=await call('/api/quotes/reviews/'+draft.data.id+'/brief');
+  assert.equal(brief.status,200);
+  assert.equal(brief.data.drafterId,actor);
+  assert.equal('email' in brief.data,false);
+  assert.equal(approved.data.grossMarginBps,500);
+  assert.equal((await call(path,'POST',{...review,reason:'Try again',overrideRequested:true})).status,409);
+  const initial=await call(path);
+  assert.equal(initial.status,200);
+  assert.equal(initial.data.currentRevision,0);
+  assert.equal(initial.data.effectiveDecision.decision,'APPROVED_INTERNAL');
+  const revision=await call('/api/quotes/drafts/'+draft.data.id+'/revisions','POST',{
+    expectedRevision:0,reason:'Customer changed quantity',items:[{productId:product.data.id,quantity:2}]});
+  assert.equal(revision.status,201);
+  const stale=await call(path);
+  assert.equal(stale.data.currentRevision,1);
+  assert.equal(stale.data.effectiveDecision,null);
+  assert.equal(stale.data.history.length,1);
+  assert.equal((await call(path,'POST',{expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Old version',overrideRequested:false})).status,409);
+  const rejected=await call(path,'POST',{
+    expectedRevision:1,decision:'REJECTED_INTERNAL',reason:'Check vendor quote again',overrideRequested:false});
+  assert.equal(rejected.status,201);
+  const decisions=await call(path);
+  assert.equal(decisions.data.history.length,2);
+  assert.equal(decisions.data.effectiveDecision.decision,'REJECTED_INTERNAL');
+  const [databaseRows]=await db.query<any[]>('SELECT decision,revision_number FROM sales_quote_review_decisions WHERE quote_id=? ORDER BY revision_number',[draft.data.id]);
+  assert.deepEqual(databaseRows.map((x:any)=>x.decision),['APPROVED_INTERNAL','REJECTED_INTERNAL']);
+});
+
+test('release-preparation outbox stays disabled, replays safely and stales after revision',async()=>{
+  const customer=await call('/api/crm/customers','POST',{
+    name:'Held Release Customer',contactPerson:'Owner',email:'heldrelease@example.invalid',
+    phone:'9988776655',city:'Mumbai',state:'Maharashtra'});
+  assert.equal(customer.status,201);
+  const product=await call('/api/crm/products','POST',{
+    sku:'HOLD-RELEASE-1',brand:'HP',model:'Hold Only',category:'SERVER',
+    specs:'Internal test',unitCost:'600.00',minPrice:'900.00',
+    sellingPrice:'1000.00',gstRate:'18.00',hsn:'8471'});
+  assert.equal(product.status,201);
+  const draft=await call('/api/quotes/drafts','POST',
+    {customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]});
+  assert.equal(draft.status,201);
+  const path='/api/quotes/release-preparations/'+draft.data.id;
+  assert.equal((await call(path,'GET',undefined,false)).status,401);
+  assert.equal((await call(path,'POST',{expectedRevision:0})).status,403);
+  const ownerVerified=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(ownerVerified.status,200);
+  stepUpToken=ownerVerified.data.stepUpToken;
+  assert.equal((await call(path,'POST',{expectedRevision:0},true,true,{'x-step-up-token':'invalid'})).status,403);
+  assert.equal((await call(path,'POST',{expectedRevision:0},true,false)).status,403);
+  assert.equal((await call(path,'POST',{expectedRevision:0,recipient:'buyer@example.invalid'})).status,400);
+  assert.equal((await call(path,'POST',{expectedRevision:0})).status,409);
+  const approved=await call('/api/quotes/reviews/'+draft.data.id,'POST',{
+    expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Owner reviewed internal commercial record',
+    overrideRequested:false});
+  assert.equal(approved.status,201);
+  const first=await call(path,'POST',{expectedRevision:0});
+  assert.equal(first.status,201);
+  assert.equal(first.data.status,'HELD');
+  assert.equal(first.data.dispatchState,'DISABLED');
+  assert.equal(first.data.replayed,false);
+  const retry=await call(path,'POST',{expectedRevision:0});
+  assert.equal(retry.status,200);
+  assert.equal(retry.data.id,first.data.id);
+  assert.equal(retry.data.replayed,true);
+  const [holds]=await db.query<any[]>(
+    'SELECT p.status,o.dispatch_state,o.event_type FROM sales_quote_release_preparations p JOIN sales_quote_outbox_holds o ON o.release_preparation_id=p.id WHERE p.quote_id=?',[draft.data.id]);
+  assert.equal(holds.length,1);
+  assert.equal(holds[0].status,'HELD');
+  assert.equal(holds[0].dispatch_state,'DISABLED');
+  assert.equal(holds[0].event_type,'QUOTE_RELEASE_PREPARATION_HELD');
+  const newRevision=await call('/api/quotes/drafts/'+draft.data.id+'/revisions','POST',{
+    expectedRevision:0,reason:'Quantity changed after internal review',
+    items:[{productId:product.data.id,quantity:2}]});
+  assert.equal(newRevision.status,201);
+  assert.equal((await call(path,'POST',{expectedRevision:0})).status,409);
+  const refreshed=await call(path);
+  assert.equal(refreshed.status,200);
+  assert.equal(refreshed.data.currentRevision,1);
+  assert.equal(refreshed.data.preparations[0].stale,true);
+  assert.equal((await call(path,'POST',{expectedRevision:1})).status,409);
+  assert.equal((await call('/api/quotes/reviews/'+draft.data.id,'POST',{
+    expectedRevision:1,decision:'REJECTED_INTERNAL',
+    reason:'Do not prepare this version',overrideRequested:false})).status,201);
+  assert.equal((await call(path,'POST',{expectedRevision:1})).status,409);
+});
+
+test('Phase 1BJ real MySQL: a forged held quote snapshot cannot pass owner integrity readback',async()=>{
+ const customer=await call('/api/crm/customers','POST',{
+  name:'Integrity Readback Customer',contactPerson:'Owner',email:'integrity-readback@example.invalid',
+  phone:'9988776600',city:'Mumbai',state:'Maharashtra'});
+ assert.equal(customer.status,201);
+ const product=await call('/api/crm/products','POST',{
+  sku:'HOLD-INTEGRITY-1',brand:'HP',model:'Integrity Test',category:'SERVER',
+  specs:'Internal fixture only',unitCost:'600.00',minPrice:'900.00',
+  sellingPrice:'1000.00',gstRate:'18.00',hsn:'8471'});
+ assert.equal(product.status,201);
+ const draft=await call('/api/quotes/drafts','POST',
+  {customerId:customer.data.id,items:[{productId:product.data.id,quantity:1}]});
+ assert.equal(draft.status,201);
+ const reviewerStep=await call('/api/auth/step-up','POST',
+  {currentPassword:reviewerPassword},true,true,{cookie:reviewerCookie});
+ assert.equal(reviewerStep.status,200);
+ reviewerStepUpToken=reviewerStep.data.stepUpToken;
+ const approval=await call('/api/quotes/reviews/'+draft.data.id,'POST',{
+  expectedRevision:0,decision:'APPROVED_INTERNAL',reason:'Internal-only hold reviewer',
+  overrideRequested:false});
+ assert.equal(approval.status,201);
+ const ownerStep=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+ assert.equal(ownerStep.status,200);
+ stepUpToken=ownerStep.data.stepUpToken;
+ const hold=await call('/api/quotes/release-preparations/'+draft.data.id,'POST',{expectedRevision:0});
+ assert.equal(hold.status,201);
+ const route='/api/commercial-integrity/quotes/'+draft.data.id;
+ const before=await call(route);
+ assert.equal(before.status,200);
+ assert.equal(before.data.localScopeConsistent,true,before.data.anomalyCodes?.join(','));
+ const [rows]=await db.query<any[]>(
+  'SELECT snapshot_json FROM sales_quote_release_preparations WHERE quote_id=?',[draft.data.id]);
+ assert.equal(rows.length,1);
+ const original=typeof rows[0].snapshot_json==='string'?
+  rows[0].snapshot_json:JSON.stringify(rows[0].snapshot_json);
+ try{
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.items[0].hsn_snapshot','FORGED-HSN')
+   WHERE quote_id=?`,[draft.data.id]);
+  const hsn=await call(route);
+  assert.equal(hsn.status,200);
+  assert.equal(hsn.data.localScopeConsistent,false);
+  assert.ok(hsn.data.anomalyCodes.includes('QUOTE_HELD_OUTBOX_LINE_BINDING_CHANGED'));
+  assert.equal(hsn.data.productionReleaseAuthorized,false);
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.recipientEmail','fake@example.invalid')
+   WHERE quote_id=?`,[draft.data.id]);
+  const shadow=await call(route);
+  assert.equal(shadow.status,200);
+  assert.equal(shadow.data.localScopeConsistent,false);
+  assert.ok(shadow.data.anomalyCodes.includes('QUOTE_HELD_OUTBOX_SCOPE_OR_DISPATCH_INVALID'));
+  assert.equal(shadow.data.releaseDecision,'HOLD');
+ }finally{
+  await db.execute('UPDATE sales_quote_release_preparations SET snapshot_json=? WHERE quote_id=?',
+   [original,draft.data.id]);
+ }
+ const restored=await call(route);
+ assert.equal(restored.status,200);
+ assert.equal(restored.data.localScopeConsistent,true,restored.data.anomalyCodes?.join(','));
+});
+
+test('Phase 1BI authenticated quote ledger readback detects MySQL money tamper and always blocks issuance',async()=>{
+ const [held]=await db.query<any[]>('SELECT quote_id FROM sales_quote_release_preparations WHERE prepared_by=? ORDER BY created_at DESC LIMIT 1',[actor]);
+ assert.equal(held.length,1);
+ const route='/api/commercial-integrity/quotes/'+held[0].quote_id;
+ const freshOwnerToken=randomBytes(32).toString('base64url');
+ const freshReviewerToken=randomBytes(32).toString('base64url');
+ for(const [sessionToken,userId] of [[freshOwnerToken,actor],[freshReviewerToken,reviewerId]]){
+  await db.execute(
+   'INSERT INTO auth_sessions(token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 HOUR))',
+   [hashToken(sessionToken),userId,csrf]);
+ }
+ const ownerRequest=(target:string)=>call(target,'GET',undefined,true,true,
+  {cookie:'aaditech_session='+freshOwnerToken});
+ assert.equal((await call(route,'GET',undefined,false)).status,401);
+ assert.equal((await call(route,'GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+ assert.equal((await ownerRequest('/api/commercial-integrity/quotes/'+randomUUID())).status,404);
+ const start=await ownerRequest(route);
+ assert.equal(start.status,200);
+ assert.equal(start.data.localScopeConsistent,true,start.data.anomalyCodes?.join(','));
+ assert.equal(start.data.hasInternalReview,true);
+ assert.equal(start.data.legalCustomerIdentityIndependentlyVerified,false);
+ assert.equal(start.data.actualInvoiceOrCustomerDispatch,false);
+ assert.equal(start.data.productionReleaseAuthorized,false);
+ assert.equal(start.data.releaseDecision,'HOLD');
+ assert.equal('email' in start.data,false);
+ const [rows]=await db.query<any[]>('SELECT id,line_subtotal FROM sales_quote_draft_items WHERE quote_id=? ORDER BY position LIMIT 1',[held[0].quote_id]);
+ assert.equal(rows.length,1);
+ try{
+  await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',['0.01',rows[0].id]);
+  const changed=await ownerRequest(route);
+  assert.equal(changed.status,200);
+  assert.equal(changed.data.localScopeConsistent,false);
+  assert.ok(changed.data.anomalyCodes.includes('QUOTE_LINE_SNAPSHOT_MONEY_CHANGED'));
+  assert.equal(changed.data.productionReleaseAuthorized,false);
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_items SET line_subtotal=? WHERE id=?',[rows[0].line_subtotal,rows[0].id]);
+ }
+ assert.equal((await ownerRequest(route)).data.localScopeConsistent,true);
+});
+
+test('Phase 1BK MySQL: previous held revision remains inspected after newer draft and refuses history tampering',async()=>{
+ const [found]=await db.query<any[]>(`SELECT p.quote_id,i.product_id FROM sales_quote_release_preparations p
+ JOIN sales_quote_draft_items i ON i.quote_id=p.quote_id
+ WHERE i.sku_snapshot='HOLD-INTEGRITY-1' LIMIT 1`);
+ assert.equal(found.length,1);
+ const quoteId=found[0].quote_id;
+ const route='/api/commercial-integrity/quotes/'+quoteId;
+ const revision=await call('/api/quotes/drafts/'+quoteId+'/revisions','POST',{
+  expectedRevision:0,reason:'Phase 1BK newest unreleased draft only',
+  items:[{productId:found[0].product_id,quantity:2}]});
+ assert.equal(revision.status,201,JSON.stringify(revision.data));
+ const baseline=await call(route);
+ assert.equal(baseline.status,200);
+ assert.equal(baseline.data.localScopeConsistent,true,baseline.data.anomalyCodes?.join(','));
+ assert.equal(baseline.data.historyConsistent,true);
+ assert.equal(baseline.data.inspectedRevisionCount,1);
+ assert.equal(baseline.data.inspectedHeldCount,1);
+ assert.equal(baseline.data.hasInternalReview,false);
+ assert.match(baseline.data.localHistoryCommitmentSha256,/^[0-9a-f]{64}$/);
+ assert.equal(baseline.data.localHistoryCommitmentExternallyPublished,false);
+ assert.equal(baseline.data.authenticatedWitnessCheckpointAvailable,false);
+ assert.equal(baseline.data.independentlyAuthenticatedRevocationAvailable,false);
+ const baselineCommitment=baseline.data.localHistoryCommitmentSha256;
+ assert.equal(baseline.data.independentRollbackProofVerified,false);
+ assert.equal(baseline.data.productionReleaseAuthorized,false);
+ const [preps]=await db.query<any[]>(
+  'SELECT id,snapshot_json FROM sales_quote_release_preparations WHERE quote_id=?',[quoteId]);
+ assert.equal(preps.length,1);
+ const original=typeof preps[0].snapshot_json==='string'?
+  preps[0].snapshot_json:JSON.stringify(preps[0].snapshot_json);
+ try{
+  await db.execute(`UPDATE sales_quote_release_preparations
+   SET snapshot_json=JSON_SET(snapshot_json,'$.items[0].hsn_snapshot','HISTORY-FORGERY')
+   WHERE id=?`,[preps[0].id]);
+  const changed=await call(route);
+  assert.equal(changed.status,200);
+  assert.equal(changed.data.currentRevision,1);
+  assert.equal(changed.data.localScopeConsistent,false);
+  assert.equal(changed.data.historyConsistent,false);
+  assert.ok(changed.data.historyAnomalyCodes.includes('HISTORY_HELD_SCOPE_INVALID'));
+  assert.equal(changed.data.releaseDecision,'HOLD');
+  assert.notEqual(changed.data.localHistoryCommitmentSha256,baselineCommitment);
+ }finally{
+  await db.execute('UPDATE sales_quote_release_preparations SET snapshot_json=? WHERE id=?',
+   [original,preps[0].id]);
+ }
+ const [revisions]=await db.query<any[]>(
+  'SELECT id,line_snapshot FROM sales_quote_draft_revisions WHERE quote_id=?',[quoteId]);
+ assert.equal(revisions.length,1);
+ const savedRevision=typeof revisions[0].line_snapshot==='string'?
+  revisions[0].line_snapshot:JSON.stringify(revisions[0].line_snapshot);
+ try{
+  await db.execute(`UPDATE sales_quote_draft_revisions
+   SET line_snapshot=JSON_SET(line_snapshot,'$[0].lineTaxEstimate','0.01')
+   WHERE id=?`,[revisions[0].id]);
+  const altered=await call(route);
+  assert.equal(altered.status,200);
+  assert.equal(altered.data.historyConsistent,false);
+  assert.ok(altered.data.historyAnomalyCodes.includes('HISTORY_REVISION_LINE_MONEY_CHANGED'));
+  assert.equal(altered.data.productionReleaseAuthorized,false);
+  assert.notEqual(altered.data.localHistoryCommitmentSha256,baselineCommitment);
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_revisions SET line_snapshot=? WHERE id=?',
+   [savedRevision,revisions[0].id]);
+ }
+ try{
+  await db.execute('UPDATE sales_quote_draft_revisions SET revision_number=3 WHERE id=?',
+   [revisions[0].id]);
+  const gap=await call(route);
+  assert.equal(gap.status,200);
+  assert.equal(gap.data.localScopeConsistent,false);
+  assert.ok(gap.data.historyAnomalyCodes.includes('HISTORY_REVISION_SEQUENCE_GAP_OR_FORK'));
+  assert.notEqual(gap.data.localHistoryCommitmentSha256,baselineCommitment);
+ }finally{
+  await db.execute('UPDATE sales_quote_draft_revisions SET revision_number=1 WHERE id=?',
+   [revisions[0].id]);
+ }
+ const restored=await call(route);
+ assert.equal(restored.status,200);
+ assert.equal(restored.data.localScopeConsistent,true,restored.data.anomalyCodes?.join(','));
+ assert.equal(restored.data.historyConsistent,true);
+ assert.equal(restored.data.localHistoryCommitmentSha256,baselineCommitment);
+ assert.equal(restored.data.releaseDecision,'HOLD');
+});
+
+test('step-up requires correct password and creates session-bound short-lived token',async()=>{
+  assert.equal((await call('/api/auth/step-up','POST',{currentPassword:ownerPassword},true,false)).status,403);
+  assert.equal((await call('/api/auth/step-up','POST',{currentPassword:'wrong-password'})).status,401);
+  const verified=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(verified.status,200);
+  assert.equal(verified.data.expiresInSeconds,300);
+  assert.match(verified.data.stepUpToken,/^[A-Za-z0-9_-]{43}$/);
+  stepUpToken=verified.data.stepUpToken;
+  const [rows]=await db.execute<any[]>('SELECT step_up_token_hash FROM auth_step_up_sessions WHERE session_token_hash=?',[hashToken(token)]);
+  assert.equal(rows[0].step_up_token_hash,hashToken(stepUpToken));
+});
+
+test('privileged MFA policy rejects password-only sessions, retains journal and fails closed on invalid configuration',async()=>{
+  const previous=process.env.MFA_REQUIRE_PRIVILEGED;
+  try{
+    process.env.MFA_REQUIRE_PRIVILEGED='true';
+    const blocked=await call('/api/security/reviewers/'+reviewerId+'/revoke-sessions','POST',{},true,true);
+    assert.equal(blocked.status,403);
+    assert.match(blocked.data.error,/MFA-verified session/);
+    const policyDeniedReview=await call('/api/quotes/reviews/'+randomUUID(),'POST',{
+      expectedRevision:0,decision:'REJECTED_INTERNAL',reason:'Policy denial probe',overrideRequested:false
+    });
+    assert.equal(policyDeniedReview.status,403);
+    const [events]=await db.execute<any[]>(
+      'SELECT event_type FROM auth_security_events WHERE target_user_id IN (?,?) AND event_type=?',
+      [actor,reviewerId,'MFA_POLICY_DENIED']);
+    assert.ok(events.length>=2);
+    process.env.MFA_REQUIRE_PRIVILEGED='invalid';
+    assert.equal((await call('/api/security/reviewers/'+reviewerId+'/revoke-sessions','POST',{})).status,503);
+  }finally{
+    if(previous===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
+    else process.env.MFA_REQUIRE_PRIVILEGED=previous;
+  }
+});
+
+test('owner-only read-only security summary returns event counts without secrets',async()=>{
+  assert.equal((await call('/api/security/alerts','GET',undefined,false)).status,401);
+  assert.equal((await call('/api/security/alerts','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  const response=await call('/api/security/alerts');
+  assert.equal(response.status,200);
+  assert.equal(response.data.windowHours,24);
+  assert.equal(response.data.deliveryEnabled,false);
+  assert.ok(Array.isArray(response.data.counts));
+  assert.ok(response.data.counts.every((v:any)=>
+    typeof v.eventType==='string' && Number.isSafeInteger(v.count) && v.count>=0));
+});
+
+test('owner-only reviewer administration revokes sessions and appends immutable security events',async()=>{
+  const baseRoute='/api/security/reviewers/'+reviewerId;
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,true,{'x-step-up-token':'invalid'})).status,403);
+  assert.equal((await call('/api/security/reviewers','GET',undefined,true,true,{cookie:reviewerCookie})).status,403);
+  assert.equal((await call('/api/security/reviewers','GET',undefined,false)).status,401);
+  const listed=await call('/api/security/reviewers');
+  assert.equal(listed.status,200);
+  const target=listed.data.items.find((item:any)=>item.id===reviewerId);
+  assert.equal(target.status,'ACTIVE');
+  assert.equal('password_hash' in target,false);
+  assert.equal('csrf_token' in target,false);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'},true,false)).status,403);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'OWNER'})).status,400);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED',role:'OWNER'})).status,400);
+  assert.equal((await call('/api/security/reviewers/'+actor+'/status','PATCH',{status:'DISABLED'})).status,404);
+  const disabled=await call(baseRoute+'/status','PATCH',{status:'DISABLED'});
+  assert.equal(disabled.status,200);
+  assert.equal(disabled.data.status,'DISABLED');
+  assert.ok(disabled.data.revokedSessions>=1);
+  assert.equal((await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'DISABLED'})).status,409);
+  const enabled=await call(baseRoute+'/status','PATCH',{status:'ACTIVE'});
+  assert.equal(enabled.status,200);
+  assert.equal(enabled.data.status,'ACTIVE');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:reviewerCookie})).status,401);
+  const secondToken='z'.repeat(43);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(secondToken),reviewerId,csrf]);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:'aaditech_session='+secondToken})).status,200);
+  const revoked=await call(baseRoute+'/revoke-sessions','POST',{});
+  assert.equal(revoked.status,200);
+  assert.equal(revoked.data.revokedSessions,1);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:'aaditech_session='+secondToken})).status,401);
+  const logs=await call('/api/security/events?limit=10');
+  assert.equal(logs.status,200);
+  assert.deepEqual(logs.data.items.filter((ev:any)=>ev.target_user_id===reviewerId).slice(0,3).map((ev:any)=>ev.event_type),
+    ['SESSIONS_REVOKED','REVIEWER_ENABLED','REVIEWER_DISABLED']);
+  assert.equal((await call('/api/security/events?limit=1000')).status,400);
+});
+
+test('1EV: out-of-band SQL reviewer suspension quarantines dormant grants on HTTP re-enable',async()=>{
+  const baseRoute='/api/security/reviewers/'+reviewerId;
+  const staleToken='y'.repeat(43),staleCookie='aaditech_session='+staleToken;
+  // CI-only hostile SQL fixture: the 1EW trigger normally revokes the grant
+  // when status changes. Deliberately corrupt the grant AFTER suspension to
+  // retain 1EV's API re-enable repair coverage against privileged SQL tampering.
+  await db.execute("UPDATE auth_users SET status='DISABLED' WHERE id=? AND role='REVIEWER'",[reviewerId]);
+  await db.execute("UPDATE app_reviewer_scope_grants SET state='ACTIVE' WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(staleToken),reviewerId,csrf]);
+  const [before]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(before[0].state,'ACTIVE','fixture must contain a latent scope before repair');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:staleCookie})).status,401,
+    'disabled reviewer must not authenticate despite stale session');
+  const freshStepUp=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(freshStepUp.status,200);
+  stepUpToken=freshStepUp.data.stepUpToken;
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'ACTIVE'},true,false)).status,403,
+    'CSRF denial must occur before status restoration');
+  assert.equal((await call(baseRoute+'/status','PATCH',{status:'ACTIVE'},true,true,{'x-step-up-token':'invalid'})).status,403,
+    'password step-up denial must occur before status restoration');
+  const [stillDisabled]=await db.execute<any[]>('SELECT status FROM auth_users WHERE id=?',[reviewerId]);
+  assert.equal(stillDisabled[0].status,'DISABLED');
+  const enabled=await call(baseRoute+'/status','PATCH',{status:'ACTIVE'});
+  assert.equal(enabled.status,200);
+  assert.equal(enabled.data.status,'ACTIVE');
+  assert.ok(Number(enabled.data.revokedWorkflowNominations)>=1);
+  assert.ok(Number(enabled.data.revokedSessions)>=1);
+  assert.equal(enabled.data.productionReleaseAuthorized,false);
+  assert.equal(enabled.data.releaseDecision,'HOLD');
+  const [quarantined]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(quarantined[0].state,'REVOKED','re-enable must not resurrect historic scope');
+  const [remaining]=await db.execute<any[]>(
+    "SELECT COUNT(*) AS n FROM app_reviewer_scope_grants WHERE reviewer_user_id=? AND state='ACTIVE'",
+    [reviewerId]);
+  assert.equal(Number(remaining[0].n),0,'all app-local reviewer scopes must be quarantined');
+  const [sessions]=await db.execute<any[]>(
+    'SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[reviewerId]);
+  assert.equal(Number(sessions[0].n),0,'stale sessions must be removed transactionally');
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:staleCookie})).status,401,
+    'pre-disable session must stay invalid after re-enable');
+});
+
+test('1EW: direct SQL REVIEWER-OWNER-REVIEWER cycle revokes grants and sessions without restoration',async()=>{
+  const freshStepUp=await call('/api/auth/step-up','POST',{currentPassword:ownerPassword});
+  assert.equal(freshStepUp.status,200);
+  stepUpToken=freshStepUp.data.stepUpToken;
+  const grant=await call('/api/reviewer-scopes','POST',{
+    reviewerId,scope:'QUOTES',decision:'GRANT',
+    reason:'CI-only role transition quarantine regression nomination'
+  },true,true,{'x-step-up-token':stepUpToken});
+  assert.equal(grant.status,201,JSON.stringify(grant.data));
+  assert.equal(grant.data.productionReleaseAuthorized,false);
+  const roleCycleToken='n'.repeat(43),roleCycleCookie='aaditech_session='+roleCycleToken;
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(roleCycleToken),reviewerId,csrf]);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:roleCycleCookie})).status,200);
+  const [before]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(before[0].state,'ACTIVE');
+  // No app router is involved in either role change. Database triggers must
+  // enforce revocation even when status remains ACTIVE throughout.
+  await db.execute("UPDATE auth_users SET role='OWNER' WHERE id=? AND role='REVIEWER'",[reviewerId]);
+  const [demoted]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(demoted[0].state,'REVOKED');
+  const [oldSessions]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[reviewerId]);
+  assert.equal(Number(oldSessions[0].n),0);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,{cookie:roleCycleCookie})).status,401);
+  await db.execute("UPDATE auth_users SET role='REVIEWER' WHERE id=? AND role='OWNER'",[reviewerId]);
+  const [restored]=await db.execute<any[]>(
+    "SELECT state FROM app_reviewer_scope_grants WHERE owner_user_id=? AND reviewer_user_id=? AND workflow_scope='QUOTES'",
+    [actor,reviewerId]);
+  assert.equal(restored[0].state,'REVOKED','returning to REVIEWER role cannot recover historic nomination');
+  const [remaining]=await db.execute<any[]>(
+    "SELECT COUNT(*) AS n FROM app_reviewer_scope_grants WHERE reviewer_user_id=? AND state='ACTIVE'",[reviewerId]);
+  assert.equal(Number(remaining[0].n),0);
+  const renewedToken='w'.repeat(43),renewedCookie='aaditech_session='+renewedToken;
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 1 HOUR))',
+    [hashToken(renewedToken),reviewerId,csrf]);
+  const queue=await call('/api/quotes/reviews/queue','GET',undefined,true,true,{cookie:renewedCookie});
+  if(queue.status===200)assert.equal(queue.data.items.length,0,'no previous owner scope can be listed');
+  else assert.equal(queue.status,403,'reviewer cannot see nominee queue before a new grant');
+  const renominated=await call('/api/reviewer-scopes','POST',{
+    reviewerId,scope:'QUOTES',decision:'GRANT',
+    reason:'CI-only independently explicit post-cycle nomination'
+  },true,true,{'x-step-up-token':stepUpToken});
+  assert.equal(renominated.status,201,JSON.stringify(renominated.data));
+  assert.equal(renominated.data.releaseDecision,'HOLD');
+});
+
+test('authenticated self-revocation invalidates current owner session and is recorded',async()=>{
+  assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,false)).status,403);
+  assert.equal((await call('/api/auth/revoke-my-sessions','POST',{},true,true,{'x-step-up-token':'bad'})).status,403);
+  const response=await call('/api/auth/revoke-my-sessions','POST',{});
+  assert.equal(response.status,200);
+  assert.equal(response.data.signInRequired,true);
+  assert.ok(response.data.revokedSessions>=1);
+  assert.equal((await call('/api/auth/me')).status,401);
+  assert.equal((await call('/api/crm/customers')).status,401);
+  const [events]=await db.execute<any[]>('SELECT event_type,revoked_session_count FROM auth_security_events WHERE target_user_id=? ORDER BY created_at DESC',[actor]);
+  assert.ok(events.some((item:any)=>item.event_type==='OWN_SESSIONS_REVOKED'));
+});
+
+test('database-backed rate limiter survives request bursts and stores hashed identifiers',async()=>{
+  const email='absent-ci-user@example.invalid';
+  for(let n=0;n<6;n++){
+    const outcome=await call('/api/auth/login','POST',{email,password:'invalid-password'},false);
+    assert.equal(outcome.status,401);
+  }
+  assert.equal((await call('/api/auth/login','POST',{email,password:'invalid-password'},false)).status,429);
+  const [rows]=await db.execute<any[]>('SELECT key_hash,attempt_count FROM auth_login_rate_buckets ORDER BY attempt_count DESC');
+  assert.ok(rows.some((x:any)=>Number(x.attempt_count)>=7));
+  assert.ok(rows.every((x:any)=>!String(x.key_hash).includes('absent-ci-user')));
+  const [stepups]=await db.execute<any[]>('SELECT * FROM auth_step_up_sessions WHERE session_token_hash=?',[hashToken(token)]);
+  assert.equal(stepups.length,0);
+});
+
+
+test('MFA enrollment revokes old sessions; password login needs challenge; recovery codes are one-use',async()=>{
+  const id=randomUUID();
+  const email='mfa-ci-'+id.slice(0,8)+'@example.invalid';
+  const password='MFA-Integration-Test-Password-2026';
+  const sessionToken='m'.repeat(43),sessionCookie='aaditech_session='+sessionToken;
+  await db.execute('INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+    [id,email,'MFA CI Owner',await hashPassword(password),'OWNER']);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',
+    [hashToken(sessionToken),id,csrf]);
+  const extra={cookie:sessionCookie};
+  assert.equal((await call('/api/auth/mfa/status','GET',undefined,true,true,extra)).data.enabled,false);
+  assert.equal((await call('/api/auth/mfa/enroll/start','POST',{},true,true,extra)).status,403);
+  const fresh=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,extra);
+  assert.equal(fresh.status,200);
+  const stepHeaders={cookie:sessionCookie,'x-step-up-token':fresh.data.stepUpToken};
+  const start=await call('/api/auth/mfa/enroll/start','POST',{},true,true,stepHeaders);
+  assert.equal(start.status,200);
+  assert.match(start.data.otpauthUri,/^otpauth:\/\/totp\//);
+  const secret=start.data.secret;
+  const firstCode=totpAt(secret,Math.floor(Date.now()/30000));
+  assert.equal((await call('/api/auth/mfa/enroll/activate','POST',{code:'abcdef'},true,true,stepHeaders)).status,400);
+  assert.equal((await call('/api/auth/mfa/enroll/activate','POST',{code:'000000'},true,true,stepHeaders)).status,401);
+  const activated=await call('/api/auth/mfa/enroll/activate','POST',{code:firstCode},true,true,stepHeaders);
+  assert.equal(activated.status,200);
+  assert.equal(activated.data.enabled,true);
+  assert.equal(activated.data.signInRequired,true);
+  assert.equal(activated.data.recoveryCodes.length,8);
+  assert.equal((await call('/api/auth/me','GET',undefined,true,true,extra)).status,401);
+  const [storage]=await db.execute<any[]>('SELECT secret_encrypted,enabled_at,last_counter FROM auth_totp_credentials WHERE user_id=?',[id]);
+  assert.ok(storage[0].enabled_at);
+  assert.ok(!String(storage[0].secret_encrypted).includes(secret));
+  const noCookieLogin=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(noCookieLogin.status,202);
+  assert.equal(noCookieLogin.data.mfaRequired,true);
+  assert.ok(!noCookieLogin.data.csrfToken);
+  assert.ok(!noCookieLogin.data.user);
+  const [noSession]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_sessions WHERE user_id=?',[id]);
+  assert.equal(Number(noSession[0].n),0);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:'999'
+  },false)).status,400);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:firstCode
+  },false)).status,401);
+  const usedCode=activated.data.recoveryCodes[0];
+  const second=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:usedCode
+  },false);
+  assert.equal(second.status,200);
+  assert.equal(second.data.user.id,id);
+  assert.ok(second.data.csrfToken);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:noCookieLogin.data.challengeToken,code:usedCode
+  },false)).status,401);
+  const again=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(again.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:again.data.challengeToken,code:usedCode
+  },false)).status,401);
+  // An unused recovery code can recover once more.
+  const another=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:again.data.challengeToken,code:activated.data.recoveryCodes[1]
+  },false);
+  assert.equal(another.status,200);
+  const [used]=await db.execute<any[]>('SELECT COUNT(*) AS n FROM auth_totp_recovery_codes WHERE user_id=? AND used_at IS NOT NULL',[id]);
+  assert.equal(Number(used[0].n),2);
+  const nextChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(nextChallenge.status,202);
+  // Current-step +1 is within the allowable TOTP drift window and is newer
+  // than the code already used at enrollment.
+  const freshTotp=totpAt(secret,Math.floor(Date.now()/30000)+1);
+  const signed=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:nextChallenge.data.challengeToken,code:freshTotp
+  },false);
+  assert.equal(signed.status,200);
+  assert.equal(signed.data.user.id,id);
+  const verifiedCookie=signed.setCookie?.split(';')[0];
+  assert.ok(verifiedCookie?.startsWith('aaditech_session='));
+  const oldPolicy=process.env.MFA_REQUIRE_PRIVILEGED;
+  try{
+    process.env.MFA_REQUIRE_PRIVILEGED='true';
+    // TOTP-authenticated ownership alone is not a substitute for the
+    // separate recent password step-up required before held quote preparation.
+    const heldDraftUrl='/api/quotes/release-preparations/'+randomUUID();
+    const authHeaders={cookie:verifiedCookie,'x-csrf-token':signed.data.csrfToken};
+    const blocked=await call(heldDraftUrl,'POST',{expectedRevision:0},
+      true,false,authHeaders);
+    assert.equal(blocked.status,403);
+    const stepped=await call('/api/auth/step-up','POST',{currentPassword:password},
+      true,false,authHeaders);
+    assert.equal(stepped.status,200);
+    assert.match(stepped.data.stepUpToken,/^[A-Za-z0-9_-]{43}$/);
+    // Only after TOTP AND password step-up should an unknown draft return 404.
+    const accepted=await call(heldDraftUrl,'POST',{expectedRevision:0},
+      true,false,{...authHeaders,'x-step-up-token':stepped.data.stepUpToken});
+    assert.equal(accepted.status,404,JSON.stringify(accepted.data));
+  }finally{
+    if(oldPolicy===undefined)delete process.env.MFA_REQUIRE_PRIVILEGED;
+    else process.env.MFA_REQUIRE_PRIVILEGED=oldPolicy;
+  }
+  const [verifiedSessions]=await db.execute<any[]>('SELECT mfa_verified_at FROM auth_sessions WHERE user_id=?',[id]);
+  assert.ok(verifiedSessions.some((row:any)=>row.mfa_verified_at));
+  const [mfaEvents]=await db.execute<any[]>('SELECT event_type FROM auth_security_events WHERE target_user_id=?',[id]);
+  const names=mfaEvents.map((row:any)=>row.event_type);
+  assert.ok(names.includes('MFA_ENROLLED'));
+  assert.ok(names.includes('MFA_LOGIN_SUCCEEDED'));
+  assert.ok(names.includes('MFA_LOGIN_FAILED'));
+  assert.ok(names.includes('MFA_RECOVERY_USED'));
+  const reusedChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(reusedChallenge.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:freshTotp
+  },false)).status,401);
+  // A fixed challenge allows five wrong guesses, then permanently denies.
+  const wrong='FFFFFFFFFFFFFFFFFFFF';
+  for(let n=0;n<5;n++)assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:wrong
+  },false)).status,401);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:reusedChallenge.data.challengeToken,code:activated.data.recoveryCodes[2]
+  },false)).status,401);
+});
+
+test('recovery rotation requires verified second factor and invalidates every old code',async()=>{
+  const id=randomUUID(),email='rotation-'+id.slice(0,8)+'@example.invalid';
+  const password='Strong-Rotation-Password-2026';
+  const tokenValue='q'.repeat(43),loginCookie='aaditech_session='+tokenValue;
+  await db.execute('INSERT INTO auth_users (id,email,full_name,password_hash,role) VALUES (?,?,?,?,?)',
+    [id,email,'Recovery Rotation CI',await hashPassword(password),'OWNER']);
+  await db.execute('INSERT INTO auth_sessions (token_hash,user_id,csrf_token,expires_at) VALUES (?,?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 8 HOUR))',
+    [hashToken(tokenValue),id,csrf]);
+  const oldSession={cookie:loginCookie};
+  const oldStep=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,oldSession);
+  assert.equal(oldStep.status,200);
+  const enrollHeaders={cookie:loginCookie,'x-step-up-token':oldStep.data.stepUpToken};
+  const started=await call('/api/auth/mfa/enroll/start','POST',{},true,true,enrollHeaders);
+  assert.equal(started.status,200);
+  const activated=await call('/api/auth/mfa/enroll/activate','POST',{
+    code:totpAt(started.data.secret,Math.floor(Date.now()/30000))
+  },true,true,enrollHeaders);
+  assert.equal(activated.status,200);
+  const olderCodes=activated.data.recoveryCodes as string[];
+  const challenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(challenge.status,202);
+  const finished=await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:challenge.data.challengeToken,code:olderCodes[0]
+  },false);
+  assert.equal(finished.status,200);
+  const verifiedCookie=finished.setCookie?.split(';')[0];
+  assert.ok(verifiedCookie?.startsWith('aaditech_session='));
+  const verifiedHeaders={cookie:verifiedCookie,'x-csrf-token':finished.data.csrfToken};
+  assert.equal((await call('/api/auth/mfa/recovery/rotate','POST',{code:'000000'},true,true,verifiedHeaders)).status,403);
+  const verifyPasswordAgain=await call('/api/auth/step-up','POST',{currentPassword:password},true,true,verifiedHeaders);
+  assert.equal(verifyPasswordAgain.status,200);
+  const authorized={...verifiedHeaders,'x-step-up-token':verifyPasswordAgain.data.stepUpToken};
+  const fresh=totpAt(started.data.secret,Math.floor(Date.now()/30000)+1);
+  const rotated=await call('/api/auth/mfa/recovery/rotate','POST',{code:fresh},true,true,authorized);
+  assert.equal(rotated.status,200);
+  assert.equal(rotated.data.recoveryCodes.length,8);
+  assert.ok(!rotated.data.recoveryCodes.some((v:string)=>olderCodes.includes(v)));
+  assert.equal((await call('/api/auth/mfa/recovery/rotate','POST',{code:fresh},true,true,authorized)).status,401);
+  const [existing]=await db.execute<any[]>(
+    'SELECT code_hash FROM auth_totp_recovery_codes WHERE user_id=?',[id]);
+  assert.equal(existing.length,8);
+  assert.ok(!existing.some((row:any)=>row.code_hash===hashToken(id+':'+olderCodes[1])));
+  const secondChallenge=await call('/api/auth/login','POST',{email,password},false);
+  assert.equal(secondChallenge.status,202);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:secondChallenge.data.challengeToken,code:olderCodes[1]
+  },false)).status,401);
+  assert.equal((await call('/api/auth/mfa/challenge/verify','POST',{
+    challengeToken:secondChallenge.data.challengeToken,code:rotated.data.recoveryCodes[0]
+  },false)).status,200);
+  const [events]=await db.execute<any[]>(
+    'SELECT COUNT(*) AS n FROM auth_security_events WHERE target_user_id=? AND event_type=?',
+    [id,'MFA_RECOVERY_ROTATED']);
+  assert.equal(Number(events[0].n),1);
+});

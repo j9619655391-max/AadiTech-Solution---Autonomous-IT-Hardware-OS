@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../services/authClient';
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
@@ -76,59 +77,37 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
     }
   };
 
-  const handleTestNegotiation = async () => {
+  // Client-supplied margin numbers are not pricing authorization.
+  // No Telegram card or customer acceptance is emitted by this preview.
+  const handleTestNegotiation=async()=>{
     setIsNegotiating(true);
-    try {
-      const res = await fetch('/api/ai/negotiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPrice: negotiationNormalPrice,
-          customerOffer: customerOfferInput,
-          costPrice: negotiationCostPrice,
-          minPrice: negotiationMinPrice,
-          productName: negotiatingProduct,
-          minMarginThreshold: companyProfile.defaultMarginThreshold
-        })
+    try{
+      const res=await authenticatedFetch('/api/ai/negotiate',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({currentPrice:negotiationNormalPrice,
+          customerOffer:customerOfferInput,costPrice:negotiationCostPrice,
+          minPrice:negotiationMinPrice,productName:negotiatingProduct})
       });
-      const data = await res.json();
-      setNegotiationResult(data);
-
-      if (data.action === 'TELEGRAM_APPROVAL_REQUIRED') {
-        const card: TelegramApprovalCard = {
-          id: `appr-neg-${Date.now()}`,
-          type: 'DISCOUNT_EXCEPTION',
-          title: `Negotiation Counter-Offer Override: ₹${customerOfferInput.toLocaleString('en-IN')}`,
-          referenceId: currentQuote.quoteNumber,
-          amount: customerOfferInput * 15,
-          marginPct: Number((((customerOfferInput - negotiationCostPrice) / customerOfferInput) * 100).toFixed(1)),
-          customerName: currentQuote.customerName,
-          requestedBy: 'AI Negotiation Agent (WhatsApp Inbound)',
-          reason: `Customer counter-offered ₹${customerOfferInput.toLocaleString('en-IN')} (Target: ₹${negotiationNormalPrice.toLocaleString('en-IN')}, Min: ₹${negotiationMinPrice.toLocaleString('en-IN')}). Deal margin ${(((customerOfferInput - negotiationCostPrice) / customerOfferInput) * 100).toFixed(1)}% is below guardrail (${companyProfile.defaultMarginThreshold}%) and requires Owner Authorization.`,
-          status: 'PENDING',
-          timeoutMinutes: 10,
-          createdAt: new Date().toLocaleTimeString(),
-          escalationLevel: 'OWNER_ESCALATED'
-        };
-        onSendToTelegram(card);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsNegotiating(false);
-    }
+      const result=await res.json();
+      if(!res.ok||result.allowed!==false)
+        throw new Error(typeof result.error==='string'?result.error:
+          'Negotiation automation unavailable — no action executed');
+      setNegotiationResult({action:'UNAVAILABLE',allowed:false,
+        reason:String(result.error||'Server-side approval required'),
+        suggestedPitch:''});
+    }catch(err){
+      setNegotiationResult({action:'UNAVAILABLE',allowed:false,
+        reason:err instanceof Error?err.message:'Negotiation unavailable',
+        suggestedPitch:''});
+    }finally{setIsNegotiating(false);}
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleShareWhatsApp = () => {
-    const text = encodeURIComponent(
-      `Dear ${currentQuote.customerName},\n\nPlease find Commercial Quotation ${currentQuote.quoteNumber} from ${companyProfile.name} (https://aaditechs.in) for ₹${currentQuote.totalAmount.toLocaleString('en-IN')} (incl. GST).\n\nValidity: ${currentQuote.validityDays} Days.\nFor questions or acceptance, contact: ${companyProfile.phone} / ${companyProfile.email}`
-    );
-    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
-  };
+  // Sending a browser-local quotation would bypass the real review and release
+  // snapshot gate. Use the server-backed draft review/export flow instead.
 
   if (!currentQuote) {
     return (
@@ -176,12 +155,12 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
           </select>
 
           <button
-            onClick={handleShareWhatsApp}
-            title="Share quotation summary on WhatsApp"
+            disabled
+            title="Browser-only quotation cannot be sent; use reviewed server-backed quotation"
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs border border-emerald-500/30 font-medium transition-colors"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">WhatsApp</span>
+            <span className="hidden sm:inline">Share disabled</span>
           </button>
 
           <button
@@ -463,7 +442,7 @@ export const QuotationAndNegotiation: React.FC<QuotationAndNegotiationProps> = (
             }`}>
               <div className="flex items-center justify-between">
                 <span className="font-bold uppercase tracking-wider text-[10px]">
-                  Autonomous Decision:
+                  Server-side decision required:
                 </span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
                   negotiationResult.action === 'ACCEPT_OFFER'

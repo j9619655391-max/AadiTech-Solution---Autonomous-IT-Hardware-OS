@@ -1,0 +1,1591 @@
+{
+  "phase": "1GU",
+  "scope": "12 internal planning implementations and 120 individually named behavior regression cases, not 120 completed features",
+  "priorVerifiedRun": 45488593104,
+  "previousFailedRun": 45491355617,
+  "productionReleaseAuthorized": false,
+  "workstreams": [
+    {
+      "module": "M05",
+      "feature": "GST estimate",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M13",
+      "feature": "Shipment packing",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M14",
+      "feature": "Payment comparison",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M15",
+      "feature": "Warranty date comparison",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M18",
+      "feature": "Portal exposure review",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M19",
+      "feature": "Partner price protection",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M20",
+      "feature": "Commission estimate",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M21",
+      "feature": "Consent screening",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M22",
+      "feature": "AI action screening",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M23",
+      "feature": "Demand scenario",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M24",
+      "feature": "Workflow retry planning",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    },
+    {
+      "module": "M25",
+      "feature": "Knowledge source screening",
+      "status": "VERIFIED_HOSTED_CI_45497085666",
+      "source": "server/internalPlanning/planners.ts",
+      "tests": 10,
+      "externalAcceptance": "OPEN"
+    }
+  ],
+  "regressionCases": [
+    {
+      "id": "GU-M05-01",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "tax estimate",
+      "expected": {
+        "estimatedTotal": "224.20",
+        "estimatedTax": "34.20"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-02",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "zero discount",
+      "expected": {
+        "estimatedTotal": "236.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-03",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "full discount",
+      "expected": {
+        "estimatedTotal": "0.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-04",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "excess discount",
+      "expected": {
+        "reject": "DISCOUNT_EXCEEDS_SUBTOTAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-05",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid rate",
+      "expected": {
+        "reject": "INVALID_RATE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-06",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "quantity zero",
+      "expected": {
+        "reject": "INVALID_INTEGER"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-07",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "duplicate SKU",
+      "expected": {
+        "reject": "DUPLICATE_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-08",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "floating money",
+      "expected": {
+        "reject": "INVALID_MONEY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-09",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "empty lines",
+      "expected": {
+        "reject": "INVALID_ARRAY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M05-10",
+      "module": "M05",
+      "kind": "REGRESSION_CASE",
+      "description": "unexpected authority",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-01",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "partial packing",
+      "expected": {
+        "ordered": 4,
+        "packed": 2,
+        "remaining": 2,
+        "packingComplete": false
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-02",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "complete packing",
+      "expected": {
+        "packingComplete": true,
+        "remaining": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-03",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "zero packing",
+      "expected": {
+        "packed": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-04",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "overpacked",
+      "expected": {
+        "reject": "OVERPACKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-05",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "packages without stock",
+      "expected": {
+        "reject": "PACKAGE_COUNT_CONFLICT"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-06",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "too many packages",
+      "expected": {
+        "reject": "PACKAGE_COUNT_CONFLICT"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-07",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid postal",
+      "expected": {
+        "reject": "INVALID_POSTAL_CODE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-08",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid order reference",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-09",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "duplicate item",
+      "expected": {
+        "reject": "DUPLICATE_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M13-10",
+      "module": "M13",
+      "kind": "REGRESSION_CASE",
+      "description": "unexpected dispatch",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-01",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "exact",
+      "expected": {
+        "comparison": "EXACT",
+        "unmatchedAmount": "0.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-02",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "short",
+      "expected": {
+        "comparison": "SHORT",
+        "unmatchedAmount": "1.01"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-03",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "excess",
+      "expected": {
+        "comparison": "EXCESS",
+        "unmatchedAmount": "0.01"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-04",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "zero receipt",
+      "expected": {
+        "comparison": "SHORT",
+        "unmatchedAmount": "100.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-05",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "zero invoice",
+      "expected": {
+        "reject": "ZERO_INVOICE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-06",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "negative receipt",
+      "expected": {
+        "reject": "INVALID_MONEY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-07",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "fractional paise",
+      "expected": {
+        "reject": "INVALID_MONEY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-08",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "unsupported currency",
+      "expected": {
+        "reject": "INVALID_ENUM"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-09",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid receipt reference",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M14-10",
+      "module": "M14",
+      "kind": "REGRESSION_CASE",
+      "description": "forged settlement",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-01",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "within",
+      "expected": {
+        "declaredDateComparison": "WITHIN_DECLARED_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-02",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "before",
+      "expected": {
+        "declaredDateComparison": "BEFORE_START"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-03",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "after",
+      "expected": {
+        "declaredDateComparison": "AFTER_END"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-04",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "inclusive end",
+      "expected": {
+        "declaredDateComparison": "WITHIN_DECLARED_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-05",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "missing receipt",
+      "expected": {
+        "purchaseEvidencePresent": false
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-06",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "bad calendar",
+      "expected": {
+        "reject": "INVALID_DATE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-07",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "reversed period",
+      "expected": {
+        "reject": "INVALID_COVERAGE_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-08",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "excessive period",
+      "expected": {
+        "reject": "INVALID_COVERAGE_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-09",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "boolean type",
+      "expected": {
+        "reject": "INVALID_BOOLEAN"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M15-10",
+      "module": "M15",
+      "kind": "REGRESSION_CASE",
+      "description": "forged OEM",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-01",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "quote projection",
+      "expected": {
+        "recordKind": "QUOTE",
+        "proposedFields": [
+          "displayReference",
+          "totalEstimate"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-02",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "order projection",
+      "expected": {
+        "recordKind": "ORDER"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-03",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "ticket projection",
+      "expected": {
+        "recordKind": "TICKET"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-04",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "no consent",
+      "expected": {
+        "blockers": [
+          "CONSENT_NOT_RECORDED",
+          "TENANT_SCOPE_SSO_AND_ISSUED_RECORD_VERIFICATION_REQUIRED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-05",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "scope mismatched field",
+      "expected": {
+        "reject": "FIELD_NOT_ALLOWED_FOR_KIND"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-06",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "private field",
+      "expected": {
+        "reject": "INVALID_ENUM"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-07",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "duplicate fields",
+      "expected": {
+        "reject": "DUPLICATE_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-08",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "empty fields",
+      "expected": {
+        "reject": "INVALID_ARRAY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-09",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid tenant",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M18-10",
+      "module": "M18",
+      "kind": "REGRESSION_CASE",
+      "description": "forged access",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-01",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "above floor",
+      "expected": {
+        "priceComparison": "AT_OR_ABOVE_DECLARED_FLOOR",
+        "days": 31
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-02",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "at floor",
+      "expected": {
+        "priceComparison": "AT_OR_ABOVE_DECLARED_FLOOR"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-03",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "below floor",
+      "expected": {
+        "priceComparison": "BELOW_DECLARED_FLOOR"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-04",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "single day",
+      "expected": {
+        "days": 1
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-05",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "zero floor",
+      "expected": {
+        "reject": "ZERO_PRICE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-06",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "zero requested",
+      "expected": {
+        "reject": "ZERO_PRICE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-07",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "reversed",
+      "expected": {
+        "reject": "INVALID_PROTECTION_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-08",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "excess period",
+      "expected": {
+        "reject": "INVALID_PROTECTION_INTERVAL"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-09",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "bad SKU",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M19-10",
+      "module": "M19",
+      "kind": "REGRESSION_CASE",
+      "description": "forged price lock",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-01",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "net basis",
+      "expected": {
+        "declaredNetCollections": "900.00",
+        "cappedEstimate": "90.00",
+        "capApplied": false
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-02",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "cap",
+      "expected": {
+        "cappedEstimate": "50.00",
+        "capApplied": true
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-03",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "full refund",
+      "expected": {
+        "cappedEstimate": "0.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-04",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "zero rate",
+      "expected": {
+        "cappedEstimate": "0.00"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-05",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "half-up rounding",
+      "expected": {
+        "cappedEstimate": "0.01"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-06",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "refund exceeds",
+      "expected": {
+        "reject": "REFUNDS_EXCEED_COLLECTION"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-07",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "rate exceeds",
+      "expected": {
+        "reject": "INVALID_RATE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-08",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "negative cap",
+      "expected": {
+        "reject": "INVALID_MONEY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-09",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "bad partner",
+      "expected": {
+        "reject": "INVALID_TEXT"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M20-10",
+      "module": "M20",
+      "kind": "REGRESSION_CASE",
+      "description": "forged payout",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-01",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "declared match",
+      "expected": {
+        "declaredMatchCount": 1
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-02",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "opt-out",
+      "expected": {
+        "declaredMatchCount": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-03",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "channel mismatch",
+      "expected": {
+        "declaredMatchCount": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-04",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "expired",
+      "expected": {
+        "declaredMatchCount": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-05",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "future consent",
+      "expected": {
+        "declaredMatchCount": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-06",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "inclusive expiry",
+      "expected": {
+        "declaredMatchCount": 1
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-07",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "unsupported channel",
+      "expected": {
+        "reject": "INVALID_ENUM"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-08",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "bad as of",
+      "expected": {
+        "reject": "INVALID_DATE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-09",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "empty recipient",
+      "expected": {
+        "reject": "INVALID_ARRAY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M21-10",
+      "module": "M21",
+      "kind": "REGRESSION_CASE",
+      "description": "forged send",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-01",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "draft",
+      "expected": {
+        "classification": "DRAFT_REVIEW_ONLY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-02",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "summary",
+      "expected": {
+        "classification": "DRAFT_REVIEW_ONLY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-03",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "send",
+      "expected": {
+        "classification": "EXTERNAL_ACTION_BLOCKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-04",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "pay",
+      "expected": {
+        "classification": "EXTERNAL_ACTION_BLOCKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-05",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "stock",
+      "expected": {
+        "classification": "EXTERNAL_ACTION_BLOCKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-06",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "document",
+      "expected": {
+        "classification": "EXTERNAL_ACTION_BLOCKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-07",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "command",
+      "expected": {
+        "classification": "EXTERNAL_ACTION_BLOCKED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-08",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "unknown action",
+      "expected": {
+        "reject": "INVALID_ENUM"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-09",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid review",
+      "expected": {
+        "reject": "INVALID_BOOLEAN"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M22-10",
+      "module": "M22",
+      "kind": "REGRESSION_CASE",
+      "description": "forged authority",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-01",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "mean",
+      "expected": {
+        "scenarioUnitsPerMonth": 2,
+        "scenarioTotalUnits": 4
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-02",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "three months",
+      "expected": {
+        "scenarioTotalUnits": 6
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-03",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "zero history",
+      "expected": {
+        "scenarioUnitsPerMonth": 0
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-04",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "year rollover",
+      "expected": {
+        "scenarioUnitsPerMonth": 3
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-05",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "missing month",
+      "expected": {
+        "reject": "NONCONTIGUOUS_HISTORY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-06",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "bad month",
+      "expected": {
+        "reject": "INVALID_MONTH"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-07",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "negative units",
+      "expected": {
+        "reject": "INVALID_INTEGER"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-08",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "bad horizon",
+      "expected": {
+        "reject": "INVALID_INTEGER"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-09",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "insufficient history",
+      "expected": {
+        "reject": "INVALID_ARRAY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M23-10",
+      "module": "M23",
+      "kind": "REGRESSION_CASE",
+      "description": "forged measurement",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-01",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "transient",
+      "expected": {
+        "classification": "REVIEW_RETRY",
+        "scenarioDelaySeconds": 60
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-02",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "max attempts",
+      "expected": {
+        "classification": "NO_RETRY",
+        "scenarioDelaySeconds": null
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-03",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "permanent",
+      "expected": {
+        "classification": "NO_RETRY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-04",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "success",
+      "expected": {
+        "classification": "NO_RETRY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-05",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "ambiguous commit",
+      "expected": {
+        "classification": "RECONCILE_BEFORE_RETRY"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-06",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "delay cap",
+      "expected": {
+        "scenarioDelaySeconds": 3600
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-07",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "attempt conflict",
+      "expected": {
+        "reject": "ATTEMPT_LIMIT_CONFLICT"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-08",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "zero delay",
+      "expected": {
+        "reject": "INVALID_INTEGER"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-09",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "invalid key",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M24-10",
+      "module": "M24",
+      "kind": "REGRESSION_CASE",
+      "description": "forged execution",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-01",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "declared same scope",
+      "expected": {
+        "declaredScope": "INTERNAL",
+        "requestedScope": "INTERNAL",
+        "blockers": [
+          "SOURCE_RIGHTS_AND_ACCESS_AUTHORITY_REQUIRED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-02",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "scope narrowing",
+      "expected": {
+        "requestedScope": "RESTRICTED"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-03",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "scope widening",
+      "expected": {
+        "blockers": [
+          "SOURCE_RIGHTS_AND_ACCESS_AUTHORITY_REQUIRED",
+          "SCOPE_WIDENING_BLOCKED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-04",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "unknown rights",
+      "expected": {
+        "blockers": [
+          "SOURCE_RIGHTS_AND_ACCESS_AUTHORITY_REQUIRED",
+          "RIGHTS_NOT_ESTABLISHED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-05",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "prohibited rights",
+      "expected": {
+        "blockers": [
+          "SOURCE_RIGHTS_AND_ACCESS_AUTHORITY_REQUIRED",
+          "RIGHTS_NOT_ESTABLISHED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-06",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "personal data",
+      "expected": {
+        "blockers": [
+          "SOURCE_RIGHTS_AND_ACCESS_AUTHORITY_REQUIRED",
+          "PERSONAL_DATA_REVIEW_REQUIRED"
+        ]
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-07",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "bad digest",
+      "expected": {
+        "reject": "INVALID_DIGEST"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-08",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "bad scope",
+      "expected": {
+        "reject": "INVALID_ENUM"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-09",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "bad reference",
+      "expected": {
+        "reject": "INVALID_REFERENCE"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    },
+    {
+      "id": "GU-M25-10",
+      "module": "M25",
+      "kind": "REGRESSION_CASE",
+      "description": "forged ingestion",
+      "expected": {
+        "reject": "INVALID_FIELDS"
+      },
+      "implementationStatus": "VERIFIED_HOSTED_CI_45497085666",
+      "testReference": "tests/gu-internal-planning.test.ts",
+      "releaseDecision": "HOLD"
+    }
+  ],
+  "additionalBoundaryTests": 3,
+  "fullProjectCompletion": false,
+  "verifiedRun": 45497085666,
+  "verifiedRegressionCases": 120,
+  "verifiedBoundaryTests": 3
+}

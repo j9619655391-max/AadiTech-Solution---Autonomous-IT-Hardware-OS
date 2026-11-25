@@ -1,0 +1,120 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {bcFixture} from './support/phase1bcFixture.mjs';
+import {assessPhase1BcWitnessCustody} from '../scripts/lib/phase1BcWitnessCustody.mjs';
+const assess=x=>assessPhase1BcWitnessCustody(x);
+const h=n=>n.toString(16).padStart(64,'0');
+
+test('missing external authority source or evidence can never release production',()=>{
+ const r=assess();
+ assert.equal(r.claimCryptographicallyConsistent,false);
+ assert.equal(r.evidenceSha256,null);
+ assert.equal(r.productionReleaseAuthorized,false);
+ assert.equal(r.productionReleaseBlocked,true);
+ assert.equal(r.releaseDecision,'HOLD');
+ assert.equal(r.sourceOfTruthAuthenticated,false);
+ assert.ok(r.blockerCodes.includes('MISSING_CANDIDATE_WITNESS_EVIDENCE'));
+});
+test('two signed locally consistent append-only heads have deterministic digest but remain untrusted',()=>{
+ const f=bcFixture(),v=assess(f.make(2,5));
+ assert.equal(v.claimCryptographicallyConsistent,true,v.blockerCodes.join(','));
+ assert.equal(v.oldTreeSize,2);
+ assert.equal(v.newTreeSize,5);
+ assert.match(v.oldRootSha256,/^[0-9a-f]{64}$/);
+ assert.match(v.newRootSha256,/^[0-9a-f]{64}$/);
+ assert.match(v.pinSetSha256,/^[0-9a-f]{64}$/);
+ assert.match(v.evidenceSha256,/^[0-9a-f]{64}$/);
+ assert.equal(v.distinctClaimedWitnessAdministrators,2);
+ const same=f.make(2,5);
+ assert.equal(assess({...same,observations:same.observations.reverse()}).evidenceSha256,v.evidenceSha256);
+ assert.equal(v.sourceOfTruthAuthenticated,false);
+ assert.equal(v.independentKeyCustodyVerified,false);
+ assert.equal(v.immutableStorageVerified,false);
+ assert.equal(v.actualEncryptedRestoreVerified,false);
+ assert.equal(v.productionReleaseAuthorized,false);
+ assert.equal(v.productionReleaseBlocked,true);
+});
+test('same signed size and hash cannot count as append-only progress',()=>{
+ const f=bcFixture(),r=assess(f.make(2,2));
+ assert.equal(r.claimCryptographicallyConsistent,false);
+ assert.ok(r.blockerCodes.includes('NO_FORWARD_APPEND_ONLY_PROGRESS'));
+ assert.equal(r.productionReleaseAuthorized,false);
+});
+test('split-view signed forks preserve valid individual proofs but create different next-head commitments',()=>{
+ const f=bcFixture();
+ const first=assess(f.make(2,5));
+ const alternate=[...f.leaves];
+ alternate[3]=Buffer.from('attacker-divergent-branch');
+ const fork=assess(f.make(2,5,alternate));
+ assert.equal(first.claimCryptographicallyConsistent,true);
+ assert.equal(fork.claimCryptographicallyConsistent,true);
+ assert.equal(first.oldRootSha256,fork.oldRootSha256);
+ assert.notEqual(first.newRootSha256,fork.newRootSha256);
+ assert.notEqual(first.evidenceSha256,fork.evidenceSha256);
+ assert.equal(fork.productionReleaseAuthorized,false);
+});
+test('AZ dossier substitution, forged signature, invalid head and truncated path block new receipt',()=>{
+ const f=bcFixture();
+ const x=f.make(2,5);
+ x.azPacket.archive.storageAccountSha256=h(17);
+ let r=assess(x);
+ assert.equal(r.claimCryptographicallyConsistent,false);
+ assert.ok(r.blockerCodes.includes('CANDIDATE_PROOF_OR_ENROLLMENT_INVALID'));
+ const g=f.make(2,5);
+ g.observations[0].current.signature.signatureBase64=Buffer.alloc(64,1).toString('base64');
+ r=assess(g);
+ assert.equal(r.claimCryptographicallyConsistent,false);
+ const i=f.make(2,5);
+ i.observations[0].consistencyProofSha256.pop();
+ r=assess(i);
+ assert.equal(r.claimCryptographicallyConsistent,false);
+});
+test('witness key substitution, duplicated claimed administration and extra fields cannot self-authenticate',()=>{
+ const f=bcFixture(),key=f.make(2,5);
+ key.observations[0].pin.publicKeySha256=h(20);
+ assert.throws(()=>assess(key),/unpinned Ed25519 public key/);
+ const collision=f.make(2,5);
+ collision.observations[1].pin.authorityRef=collision.observations[0].pin.authorityRef;
+ const r=assess(collision);
+ assert.equal(r.claimCryptographicallyConsistent,false);
+ const oversized=f.make(2,5);
+ oversized.observations[0].credential='NOT_ALLOWED';
+ assert.throws(()=>assess(oversized));
+});
+test('chronology, rollback and wrong witness quorum fail closed',()=>{
+ const f=bcFixture(),future=f.make(2,5);
+ future.observations[0].current.body.observedAt='2027-11-16T17:00:00.000Z';
+ assert.throws(()=>assess(future),/Invalid anchor lifetime/);
+ const missing=f.make(2,5);
+ missing.observations.pop();
+ assert.equal(assess(missing).claimCryptographicallyConsistent,false);
+ assert.throws(()=>assess({now:new Date('invalid')}));
+});
+
+test('Phase 1BC CLI accepts only zero-input HOLD without leaking evidence paths or credentials',async()=>{
+ const {spawnSync}=await import('node:child_process');
+ const {fileURLToPath}=await import('node:url');
+ const file=fileURLToPath(new URL('../scripts/phase1bc-witness-custody-preflight.mjs',import.meta.url));
+ const run=args=>spawnSync(process.execPath,[file,...args],{
+  cwd:fileURLToPath(new URL('../',import.meta.url)),
+  env:{NODE_ENV:'production',GITHUB_ACTIONS:'true',DB_NAME:'aaditech_production'},
+  encoding:'utf8',timeout:8000,maxBuffer:32000
+ });
+ const allowed=run(['--ci-hold']);
+ assert.equal(allowed.status,0,allowed.stderr);
+ const result=JSON.parse(allowed.stdout);
+ assert.equal(result.productionReleaseAuthorized,false);
+ assert.equal(result.productionReleaseBlocked,true);
+ assert.equal(result.sourceOfTruthAuthenticated,false);
+ assert.equal(result.releaseDecision,'HOLD');
+ for(const args of [[],['--approve'],['--network'],
+  ['--ci-hold','--provider-token','SUPER_SECRET'],
+  ['--input','/tmp/private-trust-chain']]){
+  const bad=run(args);
+  assert.equal(bad.status,2);
+  assert.equal(bad.stdout,'');
+  assert.match(bad.stderr,/HOLD/);
+  assert.ok(!bad.stderr.includes('SUPER_SECRET'));
+  assert.ok(!bad.stderr.includes('/tmp/private-trust-chain'));
+ }
+});

@@ -1,0 +1,14 @@
+# Phase 1GR — Deadlock, interruption and recovery manifest batch (HARD HOLD)
+
+25 November 2026 IST. 1GQ exact Draft PR 45482963983 on 5ec21a3eca02edab8f65467fdb6f7eec8ef225e6 SUCCESS 8/8. Hosted combined GN–GQ MySQL subtest 7 passed; provenanceIntegrity PASS. No independently observed push receipt.
+
+1GR adds a forced lock cycle in disposable MySQL (weighted blocker holds issuer key, consumer waits on key after acquiring owner lock, observable performance_schema wait before blocker requests owner). Assert native 1213 and complete rollback then retry; victim selection and performance_schema support subject to hosted CI. Separate consumer connection destroyed after uncommitted mutation, retry from other connection after server rollback; exact registry/module/business state and replay assertions. Eight positive consumption outcomes, two revoke-first denials.
+
+CI-only recovery manifest captures seven authority tables within a read-only repeatable-read reconciled snapshot. Explicit ordered columns, binary primary-key order, exact decimal/date text, SQL NULL preservation, bounded row/row-byte counts, table-domain-separated SHA-256. Canonical manifest binds version/audience/sequence/predecessor/source commit/observation time and seven ordered digests/counts. Ed25519 verification against independently supplied expected anchor and public SPKI digest; no private keys persisted, no raw rows exported. Unit tests cover tamper, anchor mismatch, row/count/order drift and malformed signature. Combined MySQL fixture checks signed synthetic snapshot match and rejects reversible orphan registry corruption. Source commit in fixture is prior verified baseline, not a claim of independent current commit attestation.
+
+Limits: no actual physical/logical database backup or restore performed; no schema, trigger, full business table, external witness, trust chain, source commit authentication or signed artifact storage coverage. Manifest signer and expected anchor synthetic and supplied by caller; no independent key custody or non-bypassable approval. Real deadlock/interruption tests and manifest verification source committed, exact-head CI pending. 0051 unchanged. All M01–M30 independent acceptance, actual isolated restore and quote content verification, app/staging integration remain OPEN. No external business actions or release authorization.
+
+
+## Verified hosted receipt and correction
+
+Exact Draft PR 45485896211 on 22c973b53f9a670fa557e06e758753fea4ee0951 completed FAILED 7/8. Baseline Typecheck TS2339 and TS2769 in recovery manifest; MySQL combined GN–GR subtest 7 (forced deadlock/disconnect and recovery manifest) passed and provenanceIntegrity PASS. 1GS contains source corrections; re-verification pending. No separate push receipt or independent authority.

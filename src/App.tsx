@@ -1,9 +1,28 @@
+import { authenticatedFetch } from './services/authClient';
 import React, { useState } from 'react';
 import { Header } from './components/Header';
+import {InternalPlanningWorkspace} from './components/InternalPlanningWorkspace';
+import {planningTabs} from './services/internalPlanningCatalog';
 import { TelegramCommandHub } from './components/TelegramCommandHub';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import { CRMAndLeadsView } from './components/CRMAndLeadsView';
+import { LiveCRMWorkspace } from './components/LiveCRMWorkspace';
+import { LiveInventoryWorkspace } from './components/LiveInventoryWorkspace';
+import { LiveProcurementWorkspace } from './components/LiveProcurementWorkspace';
+import { InboundObservationWorkspace } from './components/InboundObservationWorkspace';
+import { SupplierDispatchOwnerPanel } from './components/SupplierDispatchOwnerPanel';
+import { SupplierEvidenceOwnerPanel } from './components/SupplierEvidenceOwnerPanel';
+import { StockFoundationOwnerPanel } from './components/StockFoundationOwnerPanel';
+import { JournalFoundationOwnerPanel } from './components/JournalFoundationOwnerPanel';
+import { SignedProofOwnerPanel } from './components/SignedProofOwnerPanel';
+import { KeyLifecycleOwnerPanel } from './components/KeyLifecycleOwnerPanel';
+import { ExternalTrustOwnerPanel } from './components/ExternalTrustOwnerPanel';
+import { ProviderBridgeOwnerPanel } from './components/ProviderBridgeOwnerPanel';
+import { ProviderSandboxOwnerPanel } from './components/ProviderSandboxOwnerPanel';
+import { ProviderSelectionOwnerPanel } from './components/ProviderSelectionOwnerPanel';
+import { ProviderOnboardingOwnerPanel } from './components/ProviderOnboardingOwnerPanel';
 import { SalesAndBOMBuilder } from './components/SalesAndBOMBuilder';
+import { LiveBOMWorkspace } from './components/LiveBOMWorkspace';
 import { QuotationAndNegotiation } from './components/QuotationAndNegotiation';
 import { ApprovalEngineView } from './components/ApprovalEngineView';
 import { ProcurementAndInventory } from './components/ProcurementAndInventory';
@@ -11,6 +30,8 @@ import { OrdersAndLogisticsView } from './components/OrdersAndLogisticsView';
 import { PortalsAndResellersView } from './components/PortalsAndResellersView';
 import { WorkflowsAndRAGView } from './components/WorkflowsAndRAGView';
 import { FinanceAndServiceView } from './components/FinanceAndServiceView';
+import { WindowsTroubleshootingWorkspace } from './components/WindowsTroubleshootingWorkspace';
+import { LiveServiceDeskWorkspace } from './components/LiveServiceDeskWorkspace';
 import { MarketingAndAgentView } from './components/MarketingAndAgentView';
 import { PredictiveAnalyticsView } from './components/PredictiveAnalyticsView';
 import { SystemHubView } from './components/SystemHubView';
@@ -70,6 +91,8 @@ import {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [crmViewMode, setCrmViewMode] = useState<'live' | 'legacy'>('live');
+  const [bomViewMode, setBomViewMode] = useState<'live' | 'legacy'>('live');
   const [isTelegramDrawerOpen, setIsTelegramDrawerOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
@@ -90,7 +113,7 @@ export default function App() {
   const [amcs, setAmcs] = useState<AMCContract[]>(() => storageService.loadAMCs());
   const [tickets, setTickets] = useState<ServiceTicket[]>(() => storageService.loadTickets());
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>(() => storageService.loadCampaigns());
-  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS);
+  const [agents, setAgents] = useState<AIAgent[]>([]); // No live agent health is verified
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => storageService.loadAuditLogs());
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => storageService.loadSalesOrders());
   const [workOrders, setWorkOrders] = useState<InstallationWorkOrder[]>(() => storageService.loadWorkOrders());
@@ -168,20 +191,13 @@ export default function App() {
     setTelegramMessages(prev => [...prev, userMsg]);
 
     try {
-      const res = await fetch('/api/ai/command', {
+      const res = await authenticatedFetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: text,
-          context: {
-            revenueToday: '₹8.42 Lakh',
-            margin: '17.2%',
-            pendingApprovalsCount: pendingApprovals.length,
-            lowStockItems: ['Fortinet FG-60F (2 left)', 'Kingston ECC DDR5 (0 left)']
-          }
-        })
+        body: JSON.stringify({ query: text })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Business command unavailable');
 
       const botMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
@@ -196,88 +212,26 @@ export default function App() {
       const fallbackMsg: TelegramMessage = {
         id: `bot-${Date.now()}`,
         sender: 'bot',
-        text: `🤖 Autonomous Command Result: Executed "${text}". System metrics are within normal parameters.`,
+        text: err instanceof Error ? err.message : 'Business command unavailable. No action executed.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setTelegramMessages(prev => [...prev, fallbackMsg]);
     }
   };
 
-  // Telegram / System Approval Action
-  const handleApproveCard = (cardId: string) => {
-    // 1. Update message approval card
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'APPROVED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    // 2. Find reference quote & mark as APPROVED
-    const targetCard = pendingApprovals.find(c => c.id === cardId);
-    if (targetCard) {
-      setQuotations(prev =>
-        prev.map(q => {
-          if (q.quoteNumber === targetCard.referenceId || q.id === targetCard.referenceId) {
-            return { ...q, status: 'APPROVED' };
-          }
-          return q;
-        })
-      );
-
-      // 3. Log into Immutable Audit Trail
-      const newAudit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'Business Owner (Telegram Command)',
-        action: 'EXCEPTION_AUTHORIZED',
-        entityType: targetCard.type,
-        entityId: targetCard.referenceId,
-        details: `Authorized by Business Owner via Telegram. Deal released for Sales Order generation and inventory lock in Bhiwandi Hub.`,
-        rulesChecked: 'Rule #25: Telegram Human Authorization Granted',
-        approvalRequired: true,
-        status: 'TELEGRAM_APPROVED'
-      };
-      setAuditLogs(prev => [newAudit, ...prev]);
-
-      // 4. Send Bot Confirmation in Telegram
-      const confirmBotMsg: TelegramMessage = {
-        id: `bot-conf-${Date.now()}`,
-        sender: 'bot',
-        text: `✅ **AUTHORIZATION RECORDED**\n\nQuotation **${targetCard.referenceId}** for **${targetCard.customerName}** is now **APPROVED**.\n• Sales Order **#SO-4409** automatically raised.\n• Reserved 15x ThinkPad T14 + 2x Cisco Switches in Bhiwandi Hub.\n• Pick list dispatched to warehouse floor.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setTelegramMessages(prev => [...prev, confirmBotMsg]);
-    }
+  // This browser-local preview has NO authority to approve quotes, dispatch
+  // orders, emit immutable audit, notify Telegram, or reserve warehouse stock.
+  // Use server-backed review endpoints and MFA/step-up workflow instead.
+  const noticeApprovalUnavailable=(action:'approve'|'reject')=>{
+    setTelegramMessages(prev=>[...prev,{
+      id:`bot-approval-blocked-${Date.now()}`,
+      sender:'bot',
+      text:`\u26a0\ufe0f ${action==='approve'?'Approval':'Rejection'} NOT recorded. This is an unverified browser-local preview. Use the server-backed quotation review workspace. No message, order or stock movement occurred.`,
+      timestamp:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+    }]);
   };
-
-  // Telegram Reject Action
-  const handleRejectCard = (cardId: string) => {
-    setTelegramMessages(prev =>
-      prev.map(msg => {
-        if (msg.approvalCard && msg.approvalCard.id === cardId) {
-          return {
-            ...msg,
-            approvalCard: { ...msg.approvalCard, status: 'REJECTED' }
-          };
-        }
-        return msg;
-      })
-    );
-
-    const rejectBotMsg: TelegramMessage = {
-      id: `bot-rej-${Date.now()}`,
-      sender: 'bot',
-      text: `❌ **DISCOUNT EXCEPTION REJECTED**\n\nAI Sales Agent informed: Sub-15% margin rejected. Agent instructed to counter-offer with 3-year AMC bundle at standard price.`,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setTelegramMessages(prev => [...prev, rejectBotMsg]);
-  };
+  const handleApproveCard=(_cardId:string)=>noticeApprovalUnavailable('approve');
+  const handleRejectCard=(_cardId:string)=>noticeApprovalUnavailable('reject');
 
   // CRM to BOM transition
   const handleSelectLeadForBOM = (lead: Lead) => {
@@ -322,589 +276,66 @@ export default function App() {
     setEnvironmentMode(storageService.getEnvironmentMode());
   };
 
-  // Add Real Customer
-  const handleAddCustomer = (newCustomer: Customer360) => {
-    setCustomers(prev => {
-      const updated = [newCustomer, ...prev];
-      storageService.saveCustomers(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI CRM Agent',
-      action: 'CUSTOMER_ONBOARDED',
-      entityType: 'CUSTOMER',
-      entityId: newCustomer.id,
-      details: `New customer account ${newCustomer.name} (GST: ${newCustomer.gstin}) onboarded with ₹${(newCustomer.creditLimit / 100000).toFixed(1)}L credit limit.`,
-      rulesChecked: 'Rule #28: B2B Credit Limit & KYC Verification',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Add Real Product SKU
-  const handleAddProduct = (newProduct: Product) => {
-    setProducts(prev => {
-      const updated = [newProduct, ...prev];
-      storageService.saveProducts(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Inventory Agent',
-      action: 'PRODUCT_REGISTERED',
-      entityType: 'PRODUCT',
-      entityId: newProduct.id,
-      details: `Registered new SKU ${newProduct.sku} (${newProduct.brand} ${newProduct.model}) at ₹${newProduct.unitCost} cost / ₹${newProduct.sellingPrice} sell.`,
-      rulesChecked: 'Rule #12: Master SKU Registry & Margin Guard',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Add Real Serialized Hardware Unit
-  const handleAddInventoryItem = (newInv: SerialInventory) => {
-    setInventory(prev => {
-      const updated = [newInv, ...prev];
-      storageService.saveInventory(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Warehouse Agent',
-      action: 'SERIAL_INWARDED',
-      entityType: 'INVENTORY',
-      entityId: newInv.id,
-      details: `Inwarded serial ${newInv.serialNumber} (${newInv.sku}) at ${newInv.warehouse} bin ${newInv.binLocation}.`,
-      rulesChecked: 'Rule #15: Serialized Hardware Inward & QC Validation',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Add Real RFQ
-  const handleAddRFQ = (newRFQ: RFQ) => {
-    setRfqs(prev => {
-      const updated = [newRFQ, ...prev];
-      storageService.saveRfqs(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Procurement Agent',
-      action: 'RFQ_BROADCASTED',
-      entityType: 'RFQ',
-      entityId: newRFQ.id,
-      details: `RFQ ${newRFQ.rfqNumber} for ${newRFQ.qty}x ${newRFQ.productName} broadcasted to authorized distributors.`,
-      rulesChecked: 'Rule #18: Multi-Distributor Competitive Tender',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Add Lead
-  const handleAddLead = (newLead: Lead) => {
-    setLeads(prev => {
-      const updated = [newLead, ...prev];
-      storageService.saveLeads(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Lead Agent',
-      action: 'LEAD_CAPTURED',
-      entityType: 'LEAD',
-      entityId: newLead.id,
-      details: `Captured ${newLead.company} via ${newLead.source}. Calculated Intent Score: ${newLead.intentScore}/100.`,
-      rulesChecked: 'Rule #6: Inbound Lead Intake & Auto-Scoring',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // BOM to Quotation Transition
-  const handleGenerateQuote = (bomItems: BOMItem[], targetMargin: number) => {
-    const subtotal = bomItems.reduce((acc, it) => acc + (it.unitSell * it.qty), 0);
-    const totalCost = bomItems.reduce((acc, it) => acc + (it.unitCost * it.qty), 0);
-    const freight = 5000;
-    const cgst = Math.round(subtotal * 0.09);
-    const sgst = Math.round(subtotal * 0.09);
-    const totalAmount = subtotal + freight + cgst + sgst;
-    const marginPct = Number((((subtotal - totalCost) / subtotal) * 100).toFixed(1));
-
-    const newQuoteNumber = `QT-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const requiresOwnerApproval = marginPct < companyProfile.defaultMarginThreshold;
-
-    const newQuote: Quotation = {
-      id: newQuoteNumber,
-      quoteNumber: newQuoteNumber,
-      customerName: 'FinStack Technologies Ltd',
-      customerGstin: '27AABCF1290K1ZP',
-      billingAddress: 'Level 8, Platina Tower, Bandra Kurla Complex, Mumbai, MH - 400051',
-      items: bomItems,
-      subtotal,
-      freight,
-      cgst,
-      sgst,
-      igst: 0,
-      totalAmount,
-      totalCost,
-      marginPct,
-      status: requiresOwnerApproval ? 'PENDING_APPROVAL' : 'APPROVED',
-      approvalTierRequired: requiresOwnerApproval ? 'OWNER_TELEGRAM' : 'NONE',
-      validityDays: 15,
-      deliveryWeeks: 1,
-      paymentTerms: '30% Advance with PO, Balance against Delivery',
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    setQuotations(prev => {
-      const updated = [newQuote, ...prev];
-      storageService.saveQuotations(updated);
-      return updated;
-    });
-    setActiveQuoteId(newQuote.id);
-    setActiveTab('quotes');
-
-    if (requiresOwnerApproval) {
-      const card: TelegramApprovalCard = {
-        id: `appr-${Date.now()}`,
-        type: 'QUOTATION_MARGIN',
-        title: `Margin Exception: ${newQuoteNumber}`,
-        referenceId: newQuoteNumber,
-        amount: totalAmount,
-        marginPct,
-        customerName: newQuote.customerName,
-        requestedBy: 'AI Sales Agent (via BOM Builder)',
-        reason: `Deal calculated at ${marginPct}% margin, which is below the ${companyProfile.defaultMarginThreshold}% autonomous boundary. Total value: ₹${totalAmount.toLocaleString('en-IN')}.`,
-        status: 'PENDING',
-        timeoutMinutes: 10,
-        createdAt: new Date().toLocaleTimeString(),
-        escalationLevel: 'OWNER_ESCALATED'
-      };
-
-      const tgMsg: TelegramMessage = {
-        id: `tg-${Date.now()}`,
-        sender: 'bot',
-        text: `🔔 **NEW APPROVAL GATE DISPATCHED**\nQuotation **${newQuoteNumber}** generated for **${newQuote.customerName}** has margin **${marginPct}%** (<${companyProfile.defaultMarginThreshold}%).`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        approvalCard: card
-      };
-
-      setTelegramMessages(prev => {
-        const updated = [...prev, tgMsg];
-        storageService.saveTelegramMessages(updated);
-        return updated;
-      });
-    }
-  };
-
-  // RFQ to PO
-  const handleRaisePO = (rfqId: string, supplierId: string) => {
-    const rfq = rfqs.find(r => r.id === rfqId);
-    const quote = rfq?.quotes?.find(q => q.supplierId === supplierId);
-    const sup = suppliers.find(s => s.id === supplierId);
-    const poNum = `PO-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const unitP = quote ? quote.pricePerUnit : (rfq?.targetPrice || 50000);
-    const qty = rfq?.qty || 1;
-    const baseTotal = unitP * qty;
-    const gst = Math.round(baseTotal * 0.18);
-
-    const newPO: PurchaseOrder = {
-      id: poNum,
-      poNumber: poNum,
-      supplierId: supplierId,
-      supplierName: sup?.name || quote?.supplierName || 'Authorized Distributor',
-      rfqId: rfqId,
-      productName: rfq?.productName || 'IT Hardware Equipment',
-      qty: qty,
-      unitPrice: unitP,
-      totalAmount: baseTotal + gst,
-      gstAmount: gst,
-      deliveryWarehouse: 'BHIWANDI_HUB',
-      status: 'ISSUED',
-      expectedDelivery: 'Within 3 Business Days',
-      createdDate: new Date().toISOString().split('T')[0]
-    };
-
-    setPurchaseOrders(prev => {
-      const updated = [newPO, ...prev];
-      storageService.savePurchaseOrders(updated);
-      return updated;
-    });
-
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Procurement Agent',
-      action: 'PO_GENERATED',
-      entityType: 'PO',
-      entityId: poNum,
-      details: `Purchase Order ${poNum} issued to ${newPO.supplierName} for ₹${newPO.totalAmount.toLocaleString('en-IN')}. GRN scheduled for Bhiwandi QC inspection.`,
-      rulesChecked: 'Rule #17: Procurement RFQ & Supplier Scorecard',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
+  // Legacy demo callbacks are not server-authoritative. Preserve all existing
+  // browser-local records for explicit owner migration review; never silently
+  // turn browser entries into KYC-approved customers, stock title, supplier
+  // RFQ broadcasts, official quotations, accepted prices or issued POs.
+  const handleAddCustomer = (_customer: Customer360) =>
+    denyUnverifiedOperation('Customer KYC/onboarding');
+  const handleAddProduct = (_product: Product) =>
+    denyUnverifiedOperation('Verified SKU/vendor pricing registration');
+  const handleAddInventoryItem = (_serial: SerialInventory) =>
+    denyUnverifiedOperation('Serial stock title and inward goods receipt');
+  const handleAddRFQ = (_rfq: RFQ) =>
+    denyUnverifiedOperation('Supplier RFQ broadcast');
+  const handleAddLead = (_lead: Lead) =>
+    denyUnverifiedOperation('Verified CRM lead onboarding');
+  const handleGenerateQuote = (_items: BOMItem[], _margin: number) =>
+    denyUnverifiedOperation('Commercial quotation pricing, GST and owner approval');
+  const handleRaisePO = (_rfqId: string, _supplierId: string) =>
+    denyUnverifiedOperation('Issuance of supplier purchase order');
 
   // AMC Renewal
-  const handleTriggerRenewal = (contractId: string) => {
-    setAmcs(prev =>
-      prev.map(c => c.id === contractId ? { ...c, status: 'ACTIVE' } : c)
-    );
-    alert('Autonomous 1-Year Comprehensive AMC Renewal Quote dispatched via WhatsApp & Email to customer finance team.');
+  // Central deny-only boundary for legacy browser-local operations.
+  // Child UI disables these buttons, but a future component may invoke the
+  // callback directly: therefore no localStorage mutation or fake audit event
+  // may be produced by any of these parent handlers.
+  const denyUnverifiedOperation = (action: string): void => {
+    window.alert('RELEASE HOLD: ' + action + ' requires an authenticated, server-authoritative workflow, independent review and explicit release. No transaction, message, payment, stock movement or legal document was created.');
   };
 
-  // Technician Assignment
-  const handleAssignTechnician = (ticketId: string, techName: string) => {
-    setTickets(prev =>
-      prev.map(t => t.id === ticketId ? { ...t, status: 'TECHNICIAN_ASSIGNED', technician: techName } : t)
-    );
-  };
+  const handleTriggerRenewal = (_contractId: string) =>
+    denyUnverifiedOperation('AMC renewal quote dispatch');
+  const handleAssignTechnician = (_ticketId: string, _techName: string) =>
+    denyUnverifiedOperation('Technician assignment');
+  const handleUpdateOrderStatus = (_orderId: string, _status: SalesOrder['fulfillmentStatus']) =>
+    denyUnverifiedOperation('Order fulfillment status change');
+  const handleDispatchOrder = (_orderId: string, _courier: SalesOrder['courierName'],
+    _awb: string, _eWayBill: string) =>
+    denyUnverifiedOperation('Carrier dispatch and GST e-Way bill');
+  const handleToggleWorkOrderChecklist = (_woId: string, _index: number) =>
+    denyUnverifiedOperation('Field-service evidence checklist');
+  const handleUpdateWorkOrderStatus = (_woId: string, _status: InstallationWorkOrder['status']) =>
+    denyUnverifiedOperation('Work order/customer acceptance');
+  const handleCreateWorkOrder = (_wo: InstallationWorkOrder) =>
+    denyUnverifiedOperation('Work order issuance');
+  const handleAddRMA = (_rma: RMARequest) =>
+    denyUnverifiedOperation('RMA/replacement initiation');
+  const handleAcceptQuotation = (_quoteId: string) =>
+    denyUnverifiedOperation('Customer quotation e-sign and sales order conversion');
+  const handleRegisterDeal = (_deal: DealRegistration) =>
+    denyUnverifiedOperation('Partner price-protection registration');
+  const handleApproveCommission = (_commId: string) =>
+    denyUnverifiedOperation('Partner commission settlement');
 
-  // Orders & Fulfillment Handlers
-  const handleUpdateOrderStatus = (orderId: string, status: SalesOrder['fulfillmentStatus']) => {
-    setSalesOrders(prev => {
-      const updated = prev.map(o => o.id === orderId ? { ...o, fulfillmentStatus: status } : o);
-      storageService.saveSalesOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleDispatchOrder = (orderId: string, courier: SalesOrder['courierName'], awb: string, eWayBill: string) => {
-    setSalesOrders(prev => {
-      const updated = prev.map(o => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            fulfillmentStatus: 'DISPATCHED' as const,
-            courierName: courier,
-            awbNumber: awb,
-            eWayBillNumber: eWayBill,
-            irnNumber: o.irnNumber || `irn_${Date.now()}_nic_einvoice_verified`
-          };
-        }
-        return o;
-      });
-      storageService.saveSalesOrders(updated);
-      return updated;
-    });
-
-    const targetOrder = salesOrders.find(o => o.id === orderId);
-    if (targetOrder) {
-      const newEvent: EventBusMessage = {
-        id: `EVT-${Date.now()}`,
-        eventId: `EVT_DSP_${Date.now().toString().slice(-4)}`,
-        eventType: 'DispatchReleased',
-        sourceAgent: 'AI Logistics Agent',
-        targetModule: 'Customer Portal & SMS Gateway',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        payloadSnippet: `Order ${targetOrder.orderNumber} dispatched via ${courier} AWB #${awb} e-Way Bill #${eWayBill}`,
-        status: 'DISPATCHED',
-        latencyMs: 38
-      };
-      setEventBusMessages(prev => {
-        const updated = [newEvent, ...prev];
-        storageService.saveEventBusMessages(updated);
-        return updated;
-      });
-
-      const audit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'AI Logistics & Dispatch Agent',
-        action: 'ORDER_DISPATCHED',
-        entityType: 'ORDER',
-        entityId: targetOrder.orderNumber,
-        details: `Dispatched order to ${targetOrder.customerName} via ${courier} (AWB: ${awb}). GST e-Way Bill transmitted.`,
-        rulesChecked: 'Rule #31: Warehouse QC Seal & Courier Dispatch Compliance',
-        approvalRequired: false,
-        status: 'AUTO_EXECUTED'
-      };
-      setAuditLogs(prev => {
-        const updated = [audit, ...prev];
-        storageService.saveAuditLogs(updated);
-        return updated;
-      });
-    }
-  };
-
-  const handleToggleWorkOrderChecklist = (woId: string, index: number) => {
-    setWorkOrders(prev => {
-      const updated = prev.map(w => {
-        if (w.id === woId) {
-          const newChecklist = [...w.checklist];
-          newChecklist[index] = { ...newChecklist[index], done: !newChecklist[index].done };
-          return { ...w, checklist: newChecklist };
-        }
-        return w;
-      });
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleUpdateWorkOrderStatus = (woId: string, status: InstallationWorkOrder['status']) => {
-    setWorkOrders(prev => {
-      const updated = prev.map(w => {
-        if (w.id === woId) {
-          return {
-            ...w,
-            status,
-            customerSignoff: status === 'COMPLETED' ? true : w.customerSignoff
-          };
-        }
-        return w;
-      });
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-  };
-
-  const handleCreateWorkOrder = (wo: InstallationWorkOrder) => {
-    setWorkOrders(prev => {
-      const updated = [wo, ...prev];
-      storageService.saveWorkOrders(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Field Service Agent',
-      action: 'WORK_ORDER_SCHEDULED',
-      entityType: 'WORK_ORDER',
-      entityId: wo.workOrderNumber,
-      details: `On-site commissioning work order assigned to ${wo.assignedTechnician} for ${wo.customerName}.`,
-      rulesChecked: 'Rule #34: Turnkey On-Site Deployment Protocol',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  const handleAddRMA = (rma: RMARequest) => {
-    setRmas(prev => {
-      const updated = [rma, ...prev];
-      storageService.saveRMAs(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI RMA & Reverse Logistics Agent',
-      action: 'RMA_CLAIM_RAISED',
-      entityType: 'RMA',
-      entityId: rma.rmaNumber,
-      details: `DOA Advance replacement initiated for ${rma.customerName} (SN: ${rma.serialNumber}). Assigned to ${rma.technicianAssigned}.`,
-      rulesChecked: 'Rule #35: 14-Day DOA Hardware Replacement Policy',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // 1-Click Accept Quotation & Conversion to Sales Order
-  const handleAcceptQuotation = (quoteId: string) => {
-    let convertedOrderNumber = '';
-    setQuotations(prev => {
-      const updated = prev.map(q => {
-        if (q.id === quoteId) {
-          convertedOrderNumber = `SO-2026-${Math.floor(100 + Math.random() * 900)}`;
-          return { ...q, status: 'WON' as const };
-        }
-        return q;
-      });
-      storageService.saveQuotations(updated);
-      return updated;
-    });
-
-    const quote = quotations.find(q => q.id === quoteId);
-    if (quote) {
-      const newSO: SalesOrder = {
-        id: `so-${Date.now()}`,
-        orderNumber: convertedOrderNumber || `SO-2026-${Math.floor(100 + Math.random() * 900)}`,
-        quoteId: quote.id,
-        customerId: quote.customerId || 'CUST-AUTO',
-        customerName: quote.customerName,
-        customerGst: '27AABCF1290K1ZP',
-        destinationCity: 'Mumbai',
-        deliveryAddress: 'Enterprise IT Data Center, Mumbai, Maharashtra 400051',
-        items: quote.items.map(item => ({
-          productName: item.productName,
-          sku: item.productId || 'SKU-ENT',
-          qty: item.qty,
-          unitPrice: item.unitPrice,
-          total: item.total,
-          serialNumbers: [`SN-${Math.floor(100000 + Math.random() * 900000)}`]
-        })),
-        subtotal: quote.subtotal,
-        gstAmount: quote.taxAmount,
-        totalAmount: quote.totalAmount,
-        fulfillmentStatus: 'ORDER_CONFIRMED',
-        paymentStatus: 'PAID',
-        createdDate: new Date().toISOString().split('T')[0],
-        expectedDelivery: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]
-      };
-
-      setSalesOrders(prev => {
-        const updated = [newSO, ...prev];
-        storageService.saveSalesOrders(updated);
-        return updated;
-      });
-
-      const audit: AuditEvent = {
-        id: `AUD-${Date.now()}`,
-        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-        agent: 'AI Order Processing Agent',
-        action: 'ORDER_CONVERTED_FROM_QUOTE',
-        entityType: 'ORDER',
-        entityId: newSO.orderNumber,
-        details: `Quotation ${quote.quoteNumber} accepted by customer. Generated Sales Order ${newSO.orderNumber} for ₹${quote.totalAmount.toLocaleString('en-IN')}.`,
-        rulesChecked: 'Rule #27: Quote-to-Cash Automation Pipeline',
-        approvalRequired: false,
-        status: 'AUTO_EXECUTED'
-      };
-      setAuditLogs(prev => {
-        const updated = [audit, ...prev];
-        storageService.saveAuditLogs(updated);
-        return updated;
-      });
-    }
-  };
-
-  // Deal Registration Handler
-  const handleRegisterDeal = (deal: DealRegistration) => {
-    setDealRegistrations(prev => {
-      const updated = [deal, ...prev];
-      storageService.saveDealRegistrations(updated);
-      return updated;
-    });
-    setPartners(prev => {
-      const updated = prev.map(p => p.id === deal.partnerId ? { ...p, registeredDealsCount: p.registeredDealsCount + 1 } : p);
-      storageService.savePartners(updated);
-      return updated;
-    });
-    const audit: AuditEvent = {
-      id: `AUD-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      agent: 'AI Partner Channel Agent',
-      action: 'DEAL_REGISTERED',
-      entityType: 'DEAL',
-      entityId: deal.dealNumber,
-      details: `Registered deal for ${deal.partnerName} on end-customer ${deal.endCustomerName} (₹${deal.estimatedValue.toLocaleString('en-IN')}) with 60-day price protection lock.`,
-      rulesChecked: 'Rule #44: Channel Partner Deal Protection Protocol',
-      approvalRequired: false,
-      status: 'AUTO_EXECUTED'
-    };
-    setAuditLogs(prev => {
-      const updated = [audit, ...prev];
-      storageService.saveAuditLogs(updated);
-      return updated;
-    });
-  };
-
-  // Approve Commission
-  const handleApproveCommission = (commId: string) => {
-    setCommissions(prev => {
-      const updated = prev.map(c => c.id === commId ? { ...c, payoutStatus: 'PAID' as const, disbursedDate: new Date().toISOString().split('T')[0] } : c);
-      storageService.saveCommissions(updated);
-      return updated;
-    });
-  };
-
-  // Workflow Handlers
-  const handleToggleWorkflowRule = (ruleId: string) => {
-    setWorkflowRules(prev => {
-      const updated = prev.map(r => r.id === ruleId ? { ...r, status: (r.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE') as any } : r);
-      storageService.saveWorkflowRules(updated);
-      return updated;
-    });
-  };
-
-  const handleExecuteWorkflowRule = (ruleId: string) => {
-    const targetRule = workflowRules.find(r => r.id === ruleId);
-    if (targetRule) {
-      setWorkflowRules(prev => {
-        const updated = prev.map(r => r.id === ruleId ? {
-          ...r,
-          executionsCount: r.executionsCount + 1,
-          lastTriggered: 'Just now'
-        } : r);
-        storageService.saveWorkflowRules(updated);
-        return updated;
-      });
-
-      const newMsg: EventBusMessage = {
-        id: `EVT-${Date.now()}`,
-        eventId: `EVT_WF_${Date.now().toString().slice(-4)}`,
-        eventType: 'WorkflowTriggerExecuted',
-        sourceAgent: 'Autonomous Workflow Engine',
-        targetModule: targetRule.channel,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        payloadSnippet: `Dispatched action: "${targetRule.action}" upon condition check: [${targetRule.condition}]`,
-        status: 'PROCESSED',
-        latencyMs: 42
-      };
-      setEventBusMessages(prev => {
-        const updated = [newMsg, ...prev];
-        storageService.saveEventBusMessages(updated);
-        return updated;
-      });
-
-      alert(`Workflow rule "${targetRule.name}" simulated successfully! Action: ${targetRule.action} dispatched via ${targetRule.channel}.`);
-    }
-  };
-
-  const handleCreateWorkflowRule = (rule: WorkflowRule) => {
-    setWorkflowRules(prev => {
-      const updated = [rule, ...prev];
-      storageService.saveWorkflowRules(updated);
-      return updated;
-    });
-  };
+  // Browser-local rules cannot be mistaken for an actual event bus,
+  // independent delivery receipt, active integration or executed workflow.
+  const handleToggleWorkflowRule = (_ruleId: string) =>
+    denyUnverifiedOperation('Workflow activation');
+  const handleExecuteWorkflowRule = (_ruleId: string) =>
+    denyUnverifiedOperation('Workflow execution and outbound dispatch');
+  const handleCreateWorkflowRule = (_rule: WorkflowRule) =>
+    denyUnverifiedOperation('Operational workflow publication');
 
   // Predictive Analytics Handlers
   const handleUpdateDeadStock = (items: DeadStockItem[]) => {
@@ -917,51 +348,17 @@ export default function App() {
     storageService.saveDemandForecasts(forecasts);
   };
 
-  const handleTriggerNextBestAction = (actionId: string) => {
-    const updated = nextBestActions.map(a => a.id === actionId ? { ...a, status: 'TRIGGERED' as const } : a);
-    setNextBestActions(updated);
-    storageService.saveNextBestActions(updated);
-  };
+  const handleTriggerNextBestAction = (_actionId: string) =>
+    denyUnverifiedOperation('Predictive next-best-action execution');
 
-  // System Hub Handlers
-  const handleSwitchTenant = (tenantId: string) => {
-    const updated = tenants.map(t => ({
-      ...t,
-      isCurrent: t.id === tenantId
-    }));
-    setTenants(updated);
-    storageService.saveTenants(updated);
-  };
-
-  const handleRetryDeadLetterJob = (jobId: string) => {
-    const updated = deadLetterJobs.map(j => {
-      if (j.id === jobId) {
-        return {
-          ...j,
-          status: 'RESOLVED' as const,
-          retryCount: j.retryCount + 1
-        };
-      }
-      return j;
-    });
-    setDeadLetterJobs(updated);
-    storageService.saveDeadLetterJobs(updated);
-  };
-
-  const handleToggleIntegration = (id: string) => {
-    const updated = integrations.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          connectionStatus: item.connectionStatus === 'CONNECTED' ? ('DISCONNECTED' as const) : ('CONNECTED' as const),
-          lastSyncTimestamp: 'Just now'
-        };
-      }
-      return item;
-    });
-    setIntegrations(updated);
-    storageService.saveIntegrations(updated);
-  };
+  // The system hub is not a tenant switch, connected-provider console or
+  // durable job worker. Do not forge successful retries or connector states.
+  const handleSwitchTenant = (_tenantId: string) =>
+    denyUnverifiedOperation('Tenant context switch');
+  const handleRetryDeadLetterJob = (_jobId: string) =>
+    denyUnverifiedOperation('Failed job retry');
+  const handleToggleIntegration = (_id: string) =>
+    denyUnverifiedOperation('External integration connect/disconnect');
 
   const formatINR = (val: number) => {
     return '₹' + Number(val || 0).toLocaleString('en-IN');
@@ -984,6 +381,12 @@ export default function App() {
         environmentMode={environmentMode}
       />
 
+      <div role="alert" className="mx-auto max-w-screen-2xl px-4 py-3 text-sm rounded-lg border border-amber-700/60 bg-amber-950/40 text-amber-100">
+        RELEASE HOLD — MIXED MODE: only explicitly server-backed CRM and quotation review endpoints can persist approved changes.
+        Other legacy dashboards, catalogs, workflows and previews are browser-local or simulated; figures and actions are NOT verified business records.
+        No customer messaging, purchasing, inventory movement or production release is authorized by this UI.
+      </div>
+
       {/* AadiTech Solution Master Settings & Real Data Backup/Import Modal */}
       <CompanySettingsModal
         isOpen={isSettingsModalOpen}
@@ -1005,6 +408,11 @@ export default function App() {
 
       {/* Main Workspace Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+        {activeTab !== 'crm' && <div role="note" className="mb-5 rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm text-amber-200">
+          Preview modules: many business reports, orders and inventory still use browser or demo data. The troubleshooting tab uses authenticated read-only guidance, not device inspection or real ticket records. Do not treat preview figures as verified operational data.
+          Do not treat other dashboard figures or claimed automation as verified live business operations.
+        </div>}
+        {planningTabs[activeTab] && <div key={activeTab}><InternalPlanningWorkspace modules={planningTabs[activeTab]} /></div>}
         {activeTab === 'dashboard' && (
           <ExecutiveDashboard
             leads={leads}
@@ -1035,35 +443,66 @@ export default function App() {
         )}
 
         {activeTab === 'crm' && (
-          <CRMAndLeadsView
-            leads={leads}
-            customers={customers}
-            gemTenders={gemTenders}
-            outboundTargets={outboundTargets}
-            hardwareRefreshAssets={hardwareRefreshAssets}
-            dealRegistrations={dealRegistrations}
-            onSelectLeadForBOM={handleSelectLeadForBOM}
-            onAddLead={handleAddLead}
-            onAddCustomer={handleAddCustomer}
-            onConvertTenderToLead={(tender) => {
-              setGemTenders(storageService.loadGeMTenders());
-            }}
-            onLaunchOutboundSequence={(target) => {
-              setOutboundTargets(storageService.loadOutboundTargets());
-            }}
-            onTriggerRefreshProposal={(asset) => {
-              setHardwareRefreshAssets(storageService.loadHardwareRefreshAssets());
-            }}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => setCrmViewMode('live')}
+                aria-pressed={crmViewMode === 'live'}
+                className={'rounded-lg px-4 py-2 text-sm border ' + (crmViewMode === 'live' ? 'bg-cyan-700 border-cyan-500 text-white' : 'border-slate-700 text-slate-300')}>
+                Live MySQL CRM
+              </button>
+              <button type="button" onClick={() => setCrmViewMode('legacy')}
+                aria-pressed={crmViewMode === 'legacy'}
+                className={'rounded-lg px-4 py-2 text-sm border ' + (crmViewMode === 'legacy' ? 'bg-amber-900 border-amber-600 text-amber-100' : 'border-slate-700 text-slate-300')}>
+                Legacy Demo Workspace
+              </button>
+            </div>
+            {crmViewMode === 'live' ? <LiveCRMWorkspace /> : (
+              <div className="space-y-3">
+                <div role="alert" className="rounded-lg border border-amber-700/70 bg-amber-950/40 p-3 text-sm text-amber-200">
+                  DEMO / BROWSER-ONLY: All records and actions below use localStorage or simulated workflows.
+                  They do not create MySQL customers or verified external leads.
+                </div>
+              <CRMAndLeadsView
+                leads={leads}
+                customers={customers}
+                gemTenders={gemTenders}
+                outboundTargets={outboundTargets}
+                hardwareRefreshAssets={hardwareRefreshAssets}
+                dealRegistrations={dealRegistrations}
+                onSelectLeadForBOM={handleSelectLeadForBOM}
+                onAddLead={handleAddLead}
+                onAddCustomer={handleAddCustomer}
+                onConvertTenderToLead={(tender) => {
+                  setGemTenders(storageService.loadGeMTenders());
+                }}
+                onLaunchOutboundSequence={(target) => {
+                  setOutboundTargets(storageService.loadOutboundTargets());
+                }}
+                onTriggerRefreshProposal={(asset) => {
+                  setHardwareRefreshAssets(storageService.loadHardwareRefreshAssets());
+                }}
+              />
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'bom' && (
-          <SalesAndBOMBuilder
-            products={products}
-            currentBOM={currentBOM}
-            setCurrentBOM={setCurrentBOM}
-            onGenerateQuote={handleGenerateQuote}
-          />
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" aria-pressed={bomViewMode === 'live'} onClick={() => setBomViewMode('live')}
+                className={bomViewMode === 'live' ? 'bg-cyan-700 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Live MySQL BOM</button>
+              <button type="button" aria-pressed={bomViewMode === 'legacy'} onClick={() => setBomViewMode('legacy')}
+                className={bomViewMode === 'legacy' ? 'bg-amber-900 p-2 rounded-lg' : 'border border-slate-700 p-2 rounded-lg'}>Legacy AI Demo BOM</button>
+            </div>
+            {bomViewMode === 'live' ? <LiveBOMWorkspace /> :
+              <div className="space-y-3">
+                <div role="alert" className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-amber-200 text-sm">
+                  DEMO ONLY: AI generated BOM costs, compatibility claims and quotation transitions are not verified commercial commitments.
+                </div>
+                <SalesAndBOMBuilder products={products} currentBOM={currentBOM} setCurrentBOM={setCurrentBOM} onGenerateQuote={handleGenerateQuote} />
+              </div>}
+          </div>
         )}
 
         {activeTab === 'quotes' && (
@@ -1112,6 +551,29 @@ export default function App() {
         )}
 
         {activeTab === 'procurement' && (
+          <div className="space-y-5">
+            <LiveInventoryWorkspace />
+            <LiveProcurementWorkspace />
+            <InboundObservationWorkspace />
+            <SupplierDispatchOwnerPanel />
+            <SupplierEvidenceOwnerPanel />
+            <StockFoundationOwnerPanel />
+            <JournalFoundationOwnerPanel />
+            <SignedProofOwnerPanel />
+            <KeyLifecycleOwnerPanel />
+            <ExternalTrustOwnerPanel />
+            <ProviderBridgeOwnerPanel />
+            <ProviderSandboxOwnerPanel />
+            <ProviderSelectionOwnerPanel />
+            <ProviderOnboardingOwnerPanel />
+            <details className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
+              <summary className="cursor-pointer text-amber-200 text-sm font-semibold">
+                Legacy procurement / stock UI — DEMO ONLY (browser-local, no MySQL movements)
+              </summary>
+              <p className="text-amber-200 text-xs my-3">
+                Do not use this simulator to receive goods, reserve inventory, authorize supplier POs
+                or report audited balances. No real procurement or stock movements occur here.
+              </p>
           <ProcurementAndInventory
             products={products}
             suppliers={suppliers}
@@ -1123,6 +585,8 @@ export default function App() {
             onAddInventoryItem={handleAddInventoryItem}
             onAddRFQ={handleAddRFQ}
           />
+            </details>
+          </div>
         )}
 
         {activeTab === 'analytics' && (
@@ -1183,6 +647,9 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'troubleshooting' && <WindowsTroubleshootingWorkspace />}
+        {activeTab === 'service-desk' && <LiveServiceDeskWorkspace />}
+
         {activeTab === 'finance' && (
           <FinanceAndServiceView
             warranties={warranties}
@@ -1200,7 +667,7 @@ export default function App() {
             campaigns={campaigns}
             agents={agents}
             onTriggerCampaign={(camp) => {
-              alert(`Campaign "${camp.name}" launched across ${camp.channel}. AI Lead Agent listening for replies.`);
+              alert(`Campaign "${camp.name}" is a browser-only preview. No messages were sent and no AI agent was started. Use an authorized connector with verified consent for real campaigns.`);
             }}
           />
         )}

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from '../services/authClient';
 import React, { useState, useEffect } from 'react';
 import {
   Database,
@@ -48,7 +49,7 @@ export const HostingerMySQLManager: React.FC = () => {
   const fetchDbStatus = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/db/status');
+      const res = await authenticatedFetch('/api/db/status');
       const data = await res.json();
       setDbStatus(data);
     } catch (err: any) {
@@ -71,7 +72,7 @@ export const HostingerMySQLManager: React.FC = () => {
   const fetchSqlSchema = async () => {
     setLoadingSchema(true);
     try {
-      const res = await fetch('/api/db/schema-sql');
+      const res = await authenticatedFetch('/api/db/schema-sql');
       const text = await res.text();
       setSqlSchema(text);
     } catch (err) {

@@ -1,0 +1,12 @@
+# Phase 1GF — Database provenance and one-time quote binding candidate (HARD HOLD)
+
+Previous Phase 1GE PR run 45441724551 was CANCELLED; it is not successful CI. This additive 0051 migration candidate is explicitly CI-only. It checks all predecessor checksums and conflicts (duplicate CREATE events, reused quote pointers, foreign-owner pointers) before any DDL, refusing rather than deleting or selecting a winning record. The database unique generated origin key restricts CREATE per entity type/ID while allowing multiple UPDATE/DELETE audit events. Unique non-null quote IDs plus BEFORE INSERT/UPDATE triggers require an unbound reservation, one NULL-to-non-NULL same-owner binding, and unchanged identity/hash/timestamp. No database grants or production records are changed.
+
+Migration executes after legacy tamper fixtures and browser tests in disposable MySQL; rerun checks checksum and installed index/generated-column/trigger metadata. Restricted-principal tests exercise concurrent duplicate origins and bind races, duplicate/foreign pointer rejection, hash alteration, identical-snapshot reassignment and permitted audit appends. Staging preflight additionally requires observed installed constraint metadata. Exact final commit CI remains unverified until hosted execution completes.
+
+Important limits: MySQL DDL auto-commits across statements; failure partway must remain HOLD and requires disposable reset or independent DBA reconciliation, not automatic DROP or recovery. Historical conflicts are quarantined by refusing migration and Phase 1GE scope denial; no retroactive legal authority or automatic correction. The first CREATE event or first same-owner pointer can still be forged by a compromised runtime; a database administrator can remove enforcement. Metadata comparison is technical observation, not independent attestation. No live staging migration permitted by this runner. Independent owner identity, legacy null reservation reconciliation, least-privilege authority separation, exact installed definer and rollback/restore exercise, real provider and legal/business acceptance remain open. No production release or external action.
+
+
+## Observed CI failure / follow-up
+
+Exact PR run 45449749870 on a1371e72c485ded33d230ccd7d72a34f84d85fb9 completed FAILURE at generated-column metadata verification; all seven other jobs succeeded. See [Phase 1GG corrective runbook](PHASE_1GG_PROVENANCE_INSTALLATION_RECOVERY_HARD_HOLD.md). No successful 0051 application receipt is established by that run.

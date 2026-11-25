@@ -63,19 +63,15 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
 
   const currentTenant = tenants.find(t => t.isCurrent) || tenants[0];
 
+  // No API sandbox, external provider or DLQ broker is connected. Never
+  // show fabricated HTTP 200 or "successfully retried" queue messages.
   const handleExecuteApi = () => {
-    setApiExecutionStatus('EXECUTING');
-    setTimeout(() => {
-      setApiExecutionStatus('SUCCESS');
-      setToastMessage(`Simulated 200 OK returned for ${selectedEndpoint.method} ${selectedEndpoint.path}`);
-      setTimeout(() => setToastMessage(null), 3000);
-    }, 600);
+    setApiExecutionStatus('BLOCKED');
+    setToastMessage('NOT VERIFIED: The API request was not executed. No authenticated sandbox authorization or endpoint response exists.');
   };
 
-  const handleRetryJob = (jobId: string) => {
-    onRetryDeadLetterJob(jobId);
-    setToastMessage(`Dispatched retry payload for job ${jobId} to event broker queue.`);
-    setTimeout(() => setToastMessage(null), 3500);
+  const handleRetryJob = (_jobId: string) => {
+    setToastMessage('RELEASE HOLD: No dead-letter payload was dispatched or retried. A durable, authorized worker and real receipt are required.');
   };
 
   const getConnectorIcon = (iconType: string) => {
@@ -105,7 +101,7 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-100">Enterprise System Hub & Observability</h1>
               <p className="text-xs text-slate-400">
-                Multi-tenant GST routing, RBAC matrix, service telemetry, dead letter queue (DLQ), and OpenAPI sandbox.
+                Browser-only previews. Tenant isolation, real RBAC telemetry, DLQ broker and OpenAPI execution require authenticated server evidence.
               </p>
             </div>
           </div>
@@ -115,8 +111,8 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
         <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-3 py-1.5 rounded-lg text-xs">
           <Building2 className="w-4 h-4 text-indigo-400 shrink-0" />
           <div>
-            <span className="text-slate-400 text-[10px] block leading-none">Active Branch / Entity</span>
-            <span className="font-bold text-slate-100">{currentTenant.companyName}</span>
+            <span className="text-slate-400 text-[10px] block leading-none">Browser Tenant Preview (Unverified)</span>
+            <span className="font-bold text-slate-100">{currentTenant?.companyName || 'NO VERIFIED ACTIVE TENANT'}</span>
           </div>
         </div>
       </div>
@@ -332,18 +328,15 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
                     {tenant.isCurrent ? (
                       <span className="px-2 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" />
-                        ACTIVE CONTEXT
+                        BROWSER PREVIEW ONLY
                       </span>
                     ) : (
                       <button
-                        onClick={() => {
-                          onSwitchTenant(tenant.id);
-                          setToastMessage(`Switched tenant context to: ${tenant.companyName}`);
-                          setTimeout(() => setToastMessage(null), 3000);
-                        }}
+                        disabled
+                        title="Tenant switching requires authenticated, server-enforced scoping"
                         className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
                       >
-                        Switch To This
+                        Switch HOLD
                       </button>
                     )}
                   </div>
@@ -523,11 +516,12 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleRetryJob(job.id)}
+                      disabled
+                      title="Durable DLQ retry unavailable without authenticated backend evidence"
                       className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
                     >
                       <RotateCw className="w-3.5 h-3.5" />
-                      <span>Re-Dispatch Webhook Payload</span>
+                      <span>DLQ Retry HOLD</span>
                     </button>
                   )}
                 </div>
@@ -563,18 +557,15 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
                     {getConnectorIcon(connector.iconType)}
                   </div>
                   <button
-                    onClick={() => {
-                      onToggleIntegration(connector.id);
-                      setToastMessage(`Toggled connector state for ${connector.name}`);
-                      setTimeout(() => setToastMessage(null), 2500);
-                    }}
+                    disabled
+                    title="Connector status requires authenticated provider evidence"
                     className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors ${
                       connector.connectionStatus === 'CONNECTED'
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    {connector.connectionStatus}
+                    NOT VERIFIED
                   </button>
                 </div>
 
@@ -585,7 +576,7 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
 
                 <div className="text-xs text-slate-600 space-y-1 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Last Synced:</span>
+                    <span className="text-slate-500">Verified Provider Sync:</span>
                     <span className="font-medium text-slate-800">{connector.lastSyncTimestamp}</span>
                   </div>
                   <div className="flex justify-between">
@@ -654,11 +645,12 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
               </div>
 
               <button
-                onClick={handleExecuteApi}
+                disabled
+                title="API sandbox execution requires independently approved credentials and route authorization"
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 shrink-0"
               >
                 <Play className="w-3.5 h-3.5 fill-white" />
-                <span>Execute Sandbox Call</span>
+                <span>API Execution HOLD</span>
               </button>
             </div>
 
@@ -667,9 +659,9 @@ export const SystemHubView: React.FC<SystemHubViewProps> = ({
               <div className="flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700 flex items-center gap-1.5">
                   <Code2 className="w-4 h-4 text-slate-500" />
-                  Response Payload (application/json)
+                  Illustrative API Schema (not a live response)
                 </span>
-                <span className="text-slate-400 font-mono text-[11px]">HTTP 200 OK • Content-Type: application/json</span>
+                <span className="text-slate-400 font-mono text-[11px]">EXAMPLE RESPONSE ONLY • NO REQUEST SENT</span>
               </div>
 
               <pre className="bg-slate-950 text-emerald-400 p-4 rounded-xl text-xs font-mono overflow-x-auto border border-slate-800 leading-relaxed shadow-inner">

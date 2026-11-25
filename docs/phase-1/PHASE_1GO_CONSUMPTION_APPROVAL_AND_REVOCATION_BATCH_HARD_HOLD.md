@@ -1,0 +1,12 @@
+# Phase 1GO — Consumption approval and revocation batch (HARD HOLD)
+
+25 November 2026 IST. 1GN exact Draft PR 45463561713 on f0de7c513ee3e65401a82154dd0bfb05dcda8670 SUCCESS 8/8. Hosted baseline rollover test and actual MySQL shared nonce race/rollback regression passed; provenanceIntegrity PASS. No separate push CI observed.
+
+1GO extends isolated GN fixture: install all four intent tables and consumers, shared nonce registry, key metadata and approval receipt tables, four BEFORE UPDATE consumption triggers. Separate issuer and approval accounts; approval adapter verifies GM signed intent and exact persisted immutable fields/expiry before INSERT-only approval receipt. Receipt carries key ID, SPKI digest, evidence digest and expiry. Runtime/issuer cannot insert approval, approval writer cannot issue or modify key/receipt. At consumption SQL locks current matching key/receipt, checks scope, expiry and revocation, then updates global nonce consumption atomically with per-module intent and actual mutation. Denial rolls back prior procedure changes. Combined MySQL regression covers all four operations, missing approval, separately signed different payload, duplicate approval, rollback/commit/replay for customer/lead/product, and quote denial after issuer revocation. Existing GN raw issuance tests retained. No migration 0051 modification; custody inventory updated.
+
+Limitations: SQL trusts separately authorized approval INSERT principal and DBA key metadata; it does not perform Ed25519 verification itself. Compromised approval account can forge fresh receipt, and actual independent key custody/identity, signed durable registry enrollment and revocation publication remain OPEN. Fixture grants prohibit intent edits; immutability against DBA, direct raw approval misuse, successful integrated quote consumption, concurrent key/session revocation ordering, deadlock recovery, restoration/reconciliation, quote content digest verification and app/staging integration remain pending. No actual production or staging grants, schema changes, deployment, approval or external actions. Exact-head hosted CI pending. All independent M01–M30 acceptance remains HARD HOLD.
+
+
+## Verified hosted receipt
+
+Exact Draft PR 45478240952 on a5a1b338b2cfa7512fe1e85d068996c22f144611 completed SUCCESS 8/8. Combined GN/GO MySQL fixture (subtest 7 under GN title) passed, provenanceIntegrity PASS. No independent production authority or separate push receipt.

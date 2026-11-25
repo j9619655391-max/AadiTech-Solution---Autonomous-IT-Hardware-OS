@@ -1,0 +1,987 @@
+import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import type {Pool,RowDataPacket} from 'mysql2/promise';
+
+export const MIGRATIONS=[
+ '0001_auth','0002_crm','0003_quote_drafts','0004_quote_idempotency',
+ '0005_quote_revisions','0006_quote_reviews','0007_quote_release_holds',
+ '0008_reviewer_roles','0009_auth_security_events','0010_auth_login_security',
+ '0011_totp_mfa','0012_mfa_audit_events','0013_mfa_recovery_rotation',
+ '0014_inventory_opening_counts','0015_procurement_internal',
+ '0016_quarantine_intake','0017_supplier_dispatch_holds',
+ '0018_acknowledgment_grn_holds','0019_stock_release_planning',
+ '0020_unposted_double_entry_journals',
+ '0021_signed_proof_prerequisites',
+ '0022_key_possession_lifecycle',
+ '0023_external_trust_prerequisites',
+ '0024_provider_identity_bridge',
+ '0025_provider_sandbox_evidence',
+ '0026_named_provider_policy_gates',
+ '0027_provider_approved_sandbox_prerequisites',
+ '0028_ax_checkpoint_governance',
+ '0029_az_external_readiness_holds',
+ '0030_bb_evidence_intake_holds',
+ '0031_bc_witness_continuity_holds',
+ '0032_bd_external_evidence_reviews',
+ '0033_be_revocation_freeze_holds',
+ '0034_bf_revocation_publication_holds',
+ '0035_bg_cross_source_acceptance_holds',
+ '0036_bm_quote_candidate_checkpoints',
+ '0037_bn_quote_head_reconciliation',
+ '0038_bo_candidate_authority_dossiers',
+ '0039_bp_candidate_evidence_intake',
+ '0040_bq_candidate_remote_evidence',
+ '0041_br_provider_byte_evidence',
+ '0042_bs_signed_revocation_holds',
+ '0043_el_reviewer_scope_candidates',
+ '0044_en_workflow_review_scopes',
+ '0045_eo_stock_journal_review_scopes',
+ '0046_ep_proof_key_trust_review_scopes',
+ '0047_eq_provider_review_scopes',
+ '0048_ew_role_cycle_quarantine',
+ '0049_fn_service_tickets_internal',
+ '0050_ga_field_service_plans_internal',
+ '0051_gf_crm_quote_write_once'
+] as const;
+
+export function checkPreflightTarget(env:NodeJS.ProcessEnv):'ci'|'staging' {
+ if(env.STAGING_PREFLIGHT!=='1')throw Error('STAGING_PREFLIGHT=1 explicit opt-in required');
+ if(env.CRM_TEST_DB==='1' && env.DB_NAME==='aaditech_ci' &&
+    env.NODE_ENV==='test')return 'ci';
+ if(env.STAGING_DISPOSABLE_CONFIRMED==='YES' &&
+    /^aaditech_staging_[a-z0-9_]+$/.test(env.DB_NAME??'') &&
+    env.DB_SSL==='true' && env.NODE_ENV!=='production')return 'staging';
+ throw Error('Refusing preflight: target is not disposable CI or explicitly confirmed TLS staging DB');
+}
+
+export function migrationChecksums(){
+ return MIGRATIONS.map(id=>({
+  id,checksum:createHash('sha256').update(
+   readFileSync('database/migrations/'+id+'.sql')).digest('hex')
+ }));
+}
+export async function runStagingPreflight(db:Pool,env:NodeJS.ProcessEnv) {
+ const target=checkPreflightTarget(env);
+ const problems:string[]=[];
+ const expected=migrationChecksums();
+ const [rows]=await db.query<RowDataPacket[]>('SELECT id,checksum FROM schema_migrations ORDER BY id');
+ const actual=new Map(rows.map(row=>[String(row.id),String(row.checksum)]));
+ for(const item of expected){
+  if(actual.get(item.id)!==item.checksum)problems.push('Missing/mismatched migration: '+item.id);
+ }
+ for(const id of actual.keys())if(!expected.some(x=>x.id===id))problems.push('Unknown migration: '+id);
+ const [holds]=await db.query<RowDataPacket[]>(`SELECT
+  COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN p.status<>'HELD' OR o.dispatch_state<>'DISABLED'
+   OR o.event_type<>'QUOTE_RELEASE_PREPARATION_HELD'
+   OR p.snapshot_sha256<>o.payload_sha256 THEN 1 ELSE 0 END),0) AS unsafe
+  FROM sales_quote_release_preparations p
+  LEFT JOIN sales_quote_outbox_holds o ON o.release_preparation_id=p.id`);
+ const [orphaned]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS n
+   FROM sales_quote_outbox_holds o LEFT JOIN sales_quote_release_preparations p
+   ON p.id=o.release_preparation_id WHERE p.id IS NULL`);
+ const [missingEvents]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS n
+   FROM sales_quote_release_preparations p LEFT JOIN sales_quote_outbox_holds o
+   ON o.release_preparation_id=p.id WHERE o.id IS NULL`);
+ if(Number(holds[0].unsafe)!==0||Number(orphaned[0].n)!==0||
+   Number(missingEvents[0].n)!==0)problems.push('Held/outbox invariant mismatch');
+ // No externally executable supplier outbox exists; an approved internal
+ // dispatch preparation MUST have exactly one HELD/DISABLED outbox.
+ const [supplierOutbox]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.id IS NULL OR d.id IS NULL
+    OR o.state<>'HELD' OR o.dispatch_state<>'DISABLED'
+    OR p.status<>'APPROVED_INTERNAL' OR d.decision<>'APPROVED_INTERNAL'
+    OR o.decision_id<>d.id
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.manifestSha256'))<>p.manifest_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.dispatchState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(o.snapshot_json,'$.externalPoIssued'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM proc_dispatch_outbox_holds o
+   LEFT JOIN proc_dispatch_preparations p ON p.id=o.preparation_id
+   LEFT JOIN proc_dispatch_review_decisions d ON d.id=o.decision_id`);
+ const [missingSupplierHolds]=await db.query<RowDataPacket[]>(`
+  SELECT COUNT(*) AS n FROM proc_dispatch_preparations p
+  LEFT JOIN proc_dispatch_outbox_holds o ON o.preparation_id=p.id
+  WHERE p.status='APPROVED_INTERNAL' AND o.id IS NULL`);
+ if(Number(supplierOutbox[0].unsafe)!==0||Number(missingSupplierHolds[0].n)!==0)
+  problems.push('Supplier dispatch HELD/DISABLED outbox invariant mismatch');
+ // Phase 1AF: any approved GRN-reconciliation pack must have exactly one
+ // evidence-only HELD row, permanently DISABLED and source-linked. This check
+ // does NOT authorize stock availability, supplier acknowledgment or GRN posting.
+ const [heldGrn]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.id IS NULL OR d.id IS NULL
+    OR h.status<>'HELD' OR h.stock_posting_state<>'DISABLED'
+    OR p.status<>'HELD_INTERNAL' OR d.decision<>'HELD_INTERNAL'
+    OR d.id<>h.decision_id
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.packSha256'))<>p.pack_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPostingState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.officialGrnCreated'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_grn_held_records h
+   LEFT JOIN inv_grn_reconciliation_packs p ON p.id=h.pack_id
+   LEFT JOIN inv_grn_reconciliation_decisions d ON d.id=h.decision_id`);
+ const [unheldGrn]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM inv_grn_reconciliation_packs p
+   LEFT JOIN inv_grn_held_records h ON h.pack_id=p.id
+   WHERE p.status='HELD_INTERNAL' AND h.id IS NULL`);
+ const [unreviewedAcknowledgments]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM proc_ack_claims c
+   LEFT JOIN proc_ack_claim_decisions d ON d.claim_id=c.id
+   WHERE (c.status='ATTESTED_INTERNAL' AND
+     (d.id IS NULL OR d.decision<>'ATTESTED_INTERNAL' OR NOT d.document_inspected))
+   OR (c.status='DISPUTED_INTERNAL' AND
+     (d.id IS NULL OR d.decision<>'DISPUTED_INTERNAL'))`);
+ if(Number(heldGrn[0].unsafe)!==0||Number(unheldGrn[0].total)!==0||
+    Number(unreviewedAcknowledgments[0].total)!==0)
+  problems.push('Supplier claim or GRN evidence HELD/DISABLED invariant mismatch');
+ // Phase 1AG: hard-zero stock positions and no orphaned, ENABLED or
+ // unreviewed internal release evidence. No actual stock receipt exists.
+ const [stockGate]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN available_quantity<>0 OR reserved_quantity<>0
+    OR picked_quantity<>0 OR posted_quantity<>0 THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_stock_position_gates`);
+ const [releaseHolds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN i.id IS NULL OR d.id IS NULL
+    OR h.state<>'HELD' OR h.posting_state<>'DISABLED'
+    OR i.status<>'REVIEWED_HELD' OR d.decision<>'REVIEWED_HELD'
+    OR h.decision_id<>d.id
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.intentSha256'))<>i.intent_sha256
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.postingState'))<>'DISABLED'
+    OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPosted'))<>'false'
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_stock_release_holds h
+   LEFT JOIN inv_stock_release_intents i ON i.id=h.release_intent_id
+   LEFT JOIN inv_stock_release_decisions d ON d.id=h.decision_id`);
+ const [missingReleaseHolds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+   FROM inv_stock_release_intents i
+   LEFT JOIN inv_stock_release_holds h ON h.release_intent_id=i.id
+   WHERE i.status='REVIEWED_HELD' AND h.id IS NULL`);
+ const [plans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+   COALESCE(SUM(CASE WHEN p.state<>'HELD' OR p.reservation_state<>'DISABLED'
+    OR i.status<>'REVIEWED_HELD' OR l.observed_quantity<p.requested_quantity
+    OR g.available_quantity<>0 OR g.reserved_quantity<>0 OR g.posted_quantity<>0
+    OR g.picked_quantity<>0 OR l.id IS NULL OR i.id IS NULL OR g.site_id IS NULL
+    THEN 1 ELSE 0 END),0) AS unsafe
+   FROM inv_reservation_planning_intents p
+   LEFT JOIN inv_stock_release_intents i ON i.id=p.release_intent_id
+   LEFT JOIN inv_stock_release_intent_lines l
+    ON l.release_intent_id=p.release_intent_id AND l.product_id=p.product_id
+   LEFT JOIN inv_stock_position_gates g
+    ON g.site_id=p.site_id AND g.product_id=p.product_id`);
+ if(Number(stockGate[0].unsafe)!==0||Number(releaseHolds[0].unsafe)!==0||
+    Number(missingReleaseHolds[0].total)!==0||Number(plans[0].unsafe)!==0)
+  problems.push('Hard-zero stock foundation, HELD release or disabled reservation plan invariant mismatch');
+ // Phase 1AH: do not certify operational stock; all journal and serial states
+ // must remain UNPOSTED, external trust unavailable and stock hard-zero.
+ const [journalSummary]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN b.journal_id IS NULL OR j.posting_state<>'DISABLED'
+   OR b.external_po_verified<>'NO' OR b.supplier_ack_authenticated<>'NO'
+   OR b.official_grn_verified<>'NO' OR b.warehouse_release_authorized<>'NO'
+   OR b.stock_credit_state<>'DISABLED'
+   OR (j.status='REVIEWED_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_HELD' OR NOT r.balancing_inspected
+      OR h.id IS NULL OR h.review_id<>r.id OR h.state<>'HELD'
+      OR h.posting_state<>'DISABLED'
+      OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.manifestSha256'))<>j.manifest_sha256
+      OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.stockPosted'))<>'false'))
+   OR (j.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL' OR h.id IS NOT NULL))
+   OR (j.status='PENDING_INTERNAL' AND (r.id IS NOT NULL OR h.id IS NOT NULL))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_unposted_journal_headers j
+  LEFT JOIN inv_unposted_source_blockers b ON b.journal_id=j.id
+  LEFT JOIN inv_unposted_journal_reviews r ON r.journal_id=j.id
+  LEFT JOIN inv_unposted_journal_holds h ON h.journal_id=j.id`);
+ const [unbalancedJournal]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe FROM (
+   SELECT journal_id,product_id
+   FROM inv_unposted_journal_legs
+   GROUP BY journal_id,product_id HAVING COUNT(*)<>2
+   OR SUM(CASE WHEN entry_side='CREDIT' AND account_code='QUARANTINE_EVIDENCE'
+    THEN 1 ELSE 0 END)<>1
+   OR SUM(CASE WHEN entry_side='DEBIT' AND account_code='RELEASE_CANDIDATE_EVIDENCE'
+    THEN 1 ELSE 0 END)<>1
+   OR SUM(CASE WHEN entry_side='CREDIT' THEN quantity ELSE -quantity END)<>0
+   OR SUM(CASE WHEN posting_state<>'DISABLED' THEN 1 ELSE 0 END)<>0
+ ) mismatches`);
+ const [missingLegs]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+  FROM inv_unposted_journal_headers j LEFT JOIN inv_unposted_journal_legs l
+  ON l.journal_id=j.id WHERE l.id IS NULL`);
+ const [badCandidates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total
+  FROM inv_unposted_serial_candidates WHERE provenance_state<>'UNVERIFIED'
+  OR ownership_state<>'NOT_ESTABLISHED'`);
+ const [serialMismatch]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total FROM (
+  SELECT j.id,
+   COALESCE(SUM(CASE WHEN l.account_code='QUARANTINE_EVIDENCE' AND
+    l.tracking_mode='SERIAL' THEN JSON_LENGTH(l.serials_json) ELSE 0 END),0) AS expected
+  FROM inv_unposted_journal_headers j
+  LEFT JOIN inv_unposted_journal_legs l ON l.journal_id=j.id
+  GROUP BY j.id
+ ) counted LEFT JOIN (
+   SELECT journal_id,COUNT(*) AS found FROM inv_unposted_serial_candidates GROUP BY journal_id
+ ) c ON c.journal_id=counted.id WHERE counted.expected<>COALESCE(c.found,0)`);
+ if(Number(journalSummary[0].unsafe)!==0||Number(unbalancedJournal[0].unsafe)!==0||
+    Number(missingLegs[0].total)!==0||Number(badCandidates[0].total)!==0||
+    Number(serialMismatch[0].total)!==0)
+  problems.push('UNPOSTED double-entry, serial provenance or HELD journal authority invariant mismatch');
+ // Phase 1AI: offline key proof candidate is cryptographic only, never a real
+ // external trust root; all attestations/GRNs/stock must remain hard-denied.
+ const [proofKeys]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   fingerprint_sha256<>SHA2(FROM_BASE64(public_key_spki_b64),256)
+   OR (party_kind='SUPPLIER' AND (supplier_id IS NULL OR site_id IS NOT NULL))
+   OR (party_kind='WAREHOUSE' AND (site_id IS NULL OR supplier_id IS NOT NULL))
+   OR (status='REVIEWED_UNTRUSTED' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_UNTRUSTED'
+      OR r.reviewer_id=k.registered_by OR NOT r.document_inspected))
+   OR (status='REJECTED_INTERNAL' AND
+     (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_proof_key_candidates k
+  LEFT JOIN inv_proof_key_reviews r ON r.key_id=k.id`);
+ const [proofClaims]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   b.claim_id IS NULL OR c.signature_matched<>1 OR
+   b.party_identity<>'UNVERIFIED' OR b.actual_po_issued<>'NO' OR
+   b.supplier_ack_authenticated<>'NO' OR
+   b.official_grn_authenticated<>'NO' OR b.stock_posting<>'DISABLED'
+   OR k.status<>'REVIEWED_UNTRUSTED'
+   OR (c.status='REVIEWED_CRYPTO_ONLY' AND
+      (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_ONLY'
+       OR r.reviewer_id=c.created_by OR NOT r.signature_inspected
+       OR h.id IS NULL OR h.review_id<>r.id
+       OR h.status<>'HELD' OR h.external_trust_state<>'UNVERIFIED'
+       OR h.stock_posting<>'DISABLED'
+       OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.messageSha256'))<>c.message_sha256
+       OR JSON_UNQUOTE(JSON_EXTRACT(h.snapshot_json,'$.officialGrnVerified'))<>'false'))
+   OR (c.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL' OR h.id IS NOT NULL))
+   OR (c.status='PENDING_INTERNAL' AND (r.id IS NOT NULL OR h.id IS NOT NULL))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_signed_proof_claims c
+  JOIN inv_proof_key_candidates k ON k.id=c.key_id
+  LEFT JOIN inv_signed_proof_blockers b ON b.claim_id=c.id
+  LEFT JOIN inv_signed_proof_reviews r ON r.claim_id=c.id
+  LEFT JOIN inv_signed_proof_holds h ON h.claim_id=c.id`);
+ if(Number(proofKeys[0].unsafe)!==0||Number(proofClaims[0].unsafe)!==0)
+  problems.push('Untrusted offline proof key, signature claim or HELD external authority invariant mismatch');
+ // Phase 1AJ: cryptographic challenge possession remains internally attested only.
+ // Check immediate retirement, one-time consumption, independent review, rotation
+ // finality and no external trust, without mutating any live key or stock state.
+ const [keyChallenges]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   (c.status='ISSUED' AND (c.consumed_at IS NOT NULL OR p.id IS NOT NULL))
+   OR (c.status='MATCHED_INTERNAL' AND
+    (c.consumed_at IS NULL OR c.consumed_at>c.expires_at OR p.id IS NULL))
+   OR (p.id IS NOT NULL AND (p.key_id<>c.key_id OR p.status<>'MATCHED_INTERNAL'))
+   OR (r.id IS NOT NULL AND
+    (r.reviewer_id=k.registered_by OR
+     (r.decision='REVIEWED_UNTRUSTED' AND NOT r.possession_inspected)))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_possession_challenges c
+  JOIN inv_proof_key_candidates k ON k.id=c.key_id
+  LEFT JOIN inv_key_possession_receipts p ON p.challenge_id=c.id
+  LEFT JOIN inv_key_possession_reviews r ON r.receipt_id=p.id`);
+ const [keyRetirements]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+    (t.event_type='EMERGENCY_REVOKED' AND t.initiated_by<>k.registered_by)
+    OR (t.event_type='ROTATION_RETIRED' AND NOT EXISTS(
+     SELECT 1 FROM inv_key_rotation_proposals x
+     JOIN inv_key_rotation_decisions d ON d.proposal_id=x.id
+     WHERE x.old_key_id=t.key_id AND x.status='REVIEWED_UNTRUSTED'
+       AND d.decision='REVIEWED_UNTRUSTED' AND d.reviewer_id=t.initiated_by))
+    THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_retirements t
+  JOIN inv_proof_key_candidates k ON k.id=t.key_id`);
+ const [keyRotations]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   old.registered_by<>x.prepared_by OR fresh.registered_by<>x.prepared_by
+   OR old.party_kind<>fresh.party_kind
+   OR COALESCE(old.supplier_id,old.site_id)<>COALESCE(fresh.supplier_id,fresh.site_id)
+   OR x.old_key_id=x.new_key_id
+   OR (x.status='PENDING_INTERNAL' AND d.id IS NOT NULL)
+   OR (x.status='REVIEWED_UNTRUSTED' AND (d.id IS NULL OR
+      d.decision<>'REVIEWED_UNTRUSTED' OR NOT d.possession_inspected OR
+      t.key_id IS NULL OR t.event_type<>'ROTATION_RETIRED'))
+   OR (x.status='REJECTED_INTERNAL' AND
+      (d.id IS NULL OR d.decision<>'REJECTED_INTERNAL'))
+   OR (d.id IS NOT NULL AND d.reviewer_id=x.prepared_by)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_key_rotation_proposals x
+  JOIN inv_proof_key_candidates old ON old.id=x.old_key_id
+  JOIN inv_proof_key_candidates fresh ON fresh.id=x.new_key_id
+  LEFT JOIN inv_key_rotation_decisions d ON d.proposal_id=x.id
+  LEFT JOIN inv_key_retirements t ON t.key_id=x.old_key_id`);
+ if(Number(keyChallenges[0].unsafe)!==0||Number(keyRetirements[0].unsafe)!==0||
+    Number(keyRotations[0].unsafe)!==0)
+  problems.push('Key possession expiry/replay, immediate retirement, independent review or internal rotation invariant mismatch');
+ // Phase 1AK: only self-entered organizational issuer candidates exist.
+ // These SQL integrity checks do not and cannot authenticate external roots.
+ const [extIssuers]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   i.external_root_state<>'UNVERIFIED' OR
+   i.fingerprint_sha256<>SHA2(FROM_BASE64(i.issuer_spki_b64),256)
+   OR (i.status='REVIEWED_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_HELD'
+     OR r.reviewer_id=i.registered_by OR NOT r.registry_inspected))
+   OR (i.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (i.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   OR (f.issuer_id IS NOT NULL AND f.initiated_by<>i.registered_by)
+   THEN 1 ELSE 0 END),0) AS unsafe,
+   COALESCE(SUM(CASE WHEN f.issuer_id IS NOT NULL THEN 1 ELSE 0 END),0) AS frozen
+  FROM inv_external_issuer_candidates i
+  LEFT JOIN inv_external_issuer_reviews r ON r.issuer_id=i.id
+  LEFT JOIN inv_external_issuer_freezes f ON f.issuer_id=i.id`);
+ const [extAuthorities]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.external_authority_state<>'UNVERIFIED' OR a.stock_posting<>'DISABLED'
+   OR a.prepared_by<>i.registered_by OR
+   JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.issuerExternallyAuthenticated'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.organizationAuthorityVerified'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(a.statement_json,'$.stockPostingState'))<>'DISABLED'
+   OR (a.status='REVIEWED_CRYPTO_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_HELD'
+      OR r.reviewer_id=a.prepared_by OR NOT r.signature_inspected))
+   OR (a.status='REJECTED_INTERNAL' AND
+      (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (a.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_external_authority_attestations a
+  JOIN inv_external_issuer_candidates i ON i.id=a.issuer_id
+  LEFT JOIN inv_external_authority_reviews r ON r.attestation_id=a.id`);
+ const [extFeeds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   b.status<>'SIGNED_UNTRUSTED' OR b.external_publisher_authenticated<>'NO'
+   OR b.submitted_by<>i.registered_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(b.manifest_json,'$.publisherExternallyAuthenticated'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(b.manifest_json,'$.stockPostingState'))<>'DISABLED'
+   OR JSON_LENGTH(JSON_EXTRACT(b.manifest_json,'$.revokedFingerprints'))<>
+    (SELECT COUNT(*) FROM inv_external_revocation_entries e WHERE e.bundle_id=b.id)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_external_revocation_bundles b
+  JOIN inv_external_issuer_candidates i ON i.id=b.issuer_id`);
+ const [extSequence]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid FROM(
+  SELECT issuer_id,MIN(sequence_number) AS firstSeq,
+   MAX(sequence_number) AS lastSeq,COUNT(*) AS n
+  FROM inv_external_revocation_bundles
+  GROUP BY issuer_id HAVING firstSeq<>1 OR lastSeq<>n
+ ) gaps`);
+ if(Number(extIssuers[0].unsafe)!==0||Number(extAuthorities[0].unsafe)!==0||
+  Number(extFeeds[0].unsafe)!==0||Number(extSequence[0].invalid)!==0)
+  problems.push('Issuer/organizational authority/revocation internal integrity mismatch');
+ // Phase 1AL: preprovisioned root candidates and offline issuer credentials
+ // never establish corporate authority or authenticated external provider.
+ const [providerPins]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.external_root_state<>'UNVERIFIED'
+   OR p.root_fingerprint_sha256<>SHA2(FROM_BASE64(p.root_spki_b64),256)
+   OR (p.status='REVIEWED_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_HELD'
+     OR r.reviewer_id=p.provisioned_by OR NOT r.pin_inspected))
+   OR (p.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (p.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   OR (f.pin_id IS NOT NULL AND f.initiated_by<>p.provisioned_by)
+   THEN 1 ELSE 0 END),0) AS unsafe,
+   COALESCE(SUM(CASE WHEN f.pin_id IS NOT NULL THEN 1 ELSE 0 END),0) AS frozen
+  FROM inv_provider_pin_candidates p
+  LEFT JOIN inv_provider_pin_reviews r ON r.pin_id=p.id
+  LEFT JOIN inv_provider_pin_freezes f ON f.pin_id=p.id`);
+ const [providerCredentials]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   c.corporate_identity_state<>'UNVERIFIED'
+   OR c.external_issuer_state<>'UNVERIFIED' OR c.stock_posting<>'DISABLED'
+   OR c.submitted_by<>p.provisioned_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.externallyAuthenticatedRoot'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.independentCorporateVerification'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(c.message_json,'$.stockPosting'))<>'DISABLED'
+   OR (c.status='REVIEWED_CRYPTO_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_CRYPTO_HELD'
+     OR r.reviewer_id=c.submitted_by OR NOT r.source_inspected))
+   OR (c.status='REJECTED_INTERNAL' AND
+    (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (c.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_org_credentials c
+  JOIN inv_provider_pin_candidates p ON p.id=c.pin_id
+  LEFT JOIN inv_provider_org_reviews r ON r.credential_id=c.id`);
+ const [providerFeeds]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   f.status<>'SIGNED_CANDIDATE' OR f.external_publisher_state<>'UNVERIFIED'
+   OR f.imported_by<>p.provisioned_by
+   OR JSON_UNQUOTE(JSON_EXTRACT(f.message_json,'$.externalPublisherVerified'))<>'false'
+   OR JSON_UNQUOTE(JSON_EXTRACT(f.message_json,'$.stockPosting'))<>'DISABLED'
+   OR JSON_LENGTH(JSON_EXTRACT(f.message_json,'$.revokedFingerprints'))<>
+    (SELECT COUNT(*) FROM inv_provider_revocation_entries e WHERE e.feed_id=f.id)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_revocation_feeds f
+  JOIN inv_provider_pin_candidates p ON p.id=f.pin_id`);
+ const [providerSeq]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid FROM(
+  SELECT pin_id,MIN(sequence_number) AS firstSeq,MAX(sequence_number) AS lastSeq,
+   COUNT(*) AS n FROM inv_provider_revocation_feeds
+  GROUP BY pin_id HAVING firstSeq<>1 OR lastSeq<>n
+ ) gaps`);
+ if(Number(providerPins[0].unsafe)!==0||Number(providerCredentials[0].unsafe)!==0||
+  Number(providerFeeds[0].unsafe)!==0||Number(providerSeq[0].invalid)!==0)
+  problems.push('Pinned provider/organization credential/revocation chain internal invariant mismatch');
+ // Phase 1AM: no self-reported identity, one-hop cert or candidate revocation
+ // proof may be promoted into genuine external corporate/KYC authority.
+ const [sandboxCases]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   c.corporate_identity_state<>'UNVERIFIED'
+   OR c.signatory_authority_state<>'UNVERIFIED'
+   OR c.production_release<>'HOLD'
+   OR c.opened_by<>p.provisioned_by OR c.opened_by<>i.registered_by
+   OR c.registry_reference<>i.organization_registration
+   OR (c.status='REVIEWED_EVIDENCE_HELD' AND
+    (r.id IS NULL OR r.decision<>'REVIEWED_EVIDENCE_HELD'
+     OR r.reviewer_id=c.opened_by
+     OR NOT r.registry_document_inspected OR NOT r.signatory_document_inspected))
+   OR (c.status='REJECTED_INTERNAL' AND (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   OR (c.status='PENDING_INTERNAL' AND r.id IS NOT NULL)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_onboarding_cases c
+  JOIN inv_provider_pin_candidates p ON p.id=c.pin_id
+  JOIN inv_external_issuer_candidates i ON i.id=c.issuer_id
+  LEFT JOIN inv_sandbox_case_reviews r ON r.case_id=c.id`);
+ const [sandboxCertificates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.provider_issued_authenticated<>'NO' OR p.rfc5280_path_validated<>'NO'
+   OR p.status<>'CERT_SIGNATURE_MATCHED_HELD'
+   OR p.imported_by<>c.opened_by
+   OR p.leaf_not_after<=p.leaf_not_before
+   OR (r.id IS NOT NULL AND
+    (r.reviewer_id=p.imported_by OR
+     (r.decision='REVIEWED_CRYPTO_HELD' AND
+      (NOT r.certificate_inspected OR NOT r.policy_gaps_acknowledged))))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_cert_packages p
+  JOIN inv_sandbox_onboarding_cases c ON c.id=p.case_id
+  LEFT JOIN inv_sandbox_cert_reviews r ON r.cert_id=p.id`);
+ const [sandboxChecks]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   x.status<>'CHECKED_HELD' OR x.external_publisher_authenticated<>'NO'
+   OR x.official_grn_state<>'DISABLED' OR x.stock_posting_state<>'DISABLED'
+   OR x.checked_by<>p.imported_by
+   OR LENGTH(x.checked_digest_sha256)<>64
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_sandbox_revocation_checks x
+  JOIN inv_sandbox_cert_packages p ON p.id=x.cert_id`);
+ if(Number(sandboxCases[0].unsafe)!==0||
+    Number(sandboxCertificates[0].unsafe)!==0||
+    Number(sandboxChecks[0].unsafe)!==0)
+  problems.push('Sandbox company/signatory/CERT/CRL readiness is not internally HELD/unverified');
+ // Phase 1AN: do not promote a publicly listed CA, synthetic policy
+ // OID, self-reported corporate records, or access ticket into trust.
+ const [namedProviders]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   n.provider_code<>'EMUDHRA_INDIA_CCA' OR n.legal_name<>'eMudhra Limited'
+   OR n.regulatory_source_url<>'https://cca.gov.in/CAServicesPublic.html'
+   OR n.provider_contract<>'NOT_APPROVED'
+   OR n.sandbox_credentials<>'NOT_PROVIDED'
+   OR n.external_root_authenticated<>'NO' OR n.production_release<>'HOLD'
+   OR (r.id IS NOT NULL AND (r.reviewer_id=n.opened_by
+    OR (r.decision='REVIEWED_CANDIDATE_HELD' AND
+      (NOT r.official_listing_inspected OR NOT r.contract_missing_acknowledged))))
+   OR (n.status='REJECTED_INTERNAL' AND
+     (r.id IS NULL OR r.decision<>'REJECTED_INTERNAL'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_named_nominations n
+  LEFT JOIN inv_provider_named_reviews r ON r.nomination_id=n.id`);
+ const [namedPolicies]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.status<>'PROFILE_HELD' OR p.full_certification_path<>'NOT_VALIDATED'
+   OR p.trusted_crl_ocsp<>'NOT_VALIDATED' OR p.provider_policy_approved<>'NO'
+   OR p.prepared_by<>n.opened_by
+   OR p.cps_source_url<>'https://cca.gov.in/sites/files/pdf/Licensed-CA/eMudhra_4.1.0.pdf'
+   OR (r.id IS NOT NULL AND (r.reviewer_id=p.prepared_by OR
+    (r.decision='REVIEWED_POLICY_HELD' AND
+     (NOT r.policy_oid_inspected OR NOT r.missing_crl_ocsp_acknowledged))))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_policy_proposals p
+  JOIN inv_provider_named_nominations n ON n.id=p.nomination_id
+  LEFT JOIN inv_provider_policy_reviews r ON r.policy_id=p.id`);
+ const [registryDossiers]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   d.registry_authentication<>'UNVERIFIED'
+   OR d.legal_signatory_authentication<>'UNVERIFIED'
+   OR d.registry_source_url<>'https://www.mca.gov.in/'
+   OR d.prepared_by<>n.opened_by
+   OR (d.status='INTERNALLY_INSPECTED_HELD' AND
+     (r.id IS NULL OR r.decision<>'REVIEWED_CLAIM_HELD'
+      OR r.reviewer_id=d.prepared_by
+      OR NOT r.registry_source_inspected OR NOT r.delegation_source_inspected))
+   OR (r.id IS NOT NULL AND r.reviewer_id=d.prepared_by)
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_registry_dossiers d
+  JOIN inv_provider_named_nominations n ON n.id=d.nomination_id
+  LEFT JOIN inv_provider_registry_reviews r ON r.dossier_id=d.id`);
+ const [accessGates]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.secret_reference_status<>'NOT_CONFIGURED' OR
+   a.provider_authorization<>'NOT_VERIFIED' OR
+   a.live_test_access<>'DISABLED' OR a.production_release<>'HOLD'
+   OR a.requested_by<>n.opened_by
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_sandbox_access_gates a
+  JOIN inv_provider_named_nominations n ON n.id=a.nomination_id`);
+ if(Number(namedProviders[0].unsafe)!==0||Number(namedPolicies[0].unsafe)!==0||
+  Number(registryDossiers[0].unsafe)!==0||Number(accessGates[0].unsafe)!==0)
+  problems.push('Named CCA CA, certificate policy, MCA/signatory and credential HOLD prerequisites altered');
+ // Phase 1AO: absolute SQL HOLD; signed offline CRL/OCSP math cannot
+ // become actual eMudhra, legal MCA signatory or real stock authority.
+ const [aoPackets]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   p.contract_authentication<>'UNVERIFIED'
+   OR p.sandbox_secret_state<>'NOT_CONFIGURED'
+   OR p.provider_credential_authentication<>'NO'
+   OR p.production_release<>'HOLD'
+   OR p.prepared_by<>n.opened_by
+   OR (p.status='DUAL_REVIEWED_HELD' AND
+    (SELECT COUNT(*) FROM inv_provider_ao_packet_reviews x
+     WHERE x.packet_id=p.id AND x.decision='INSPECTED_HELD'
+     AND x.no_external_contract_ack=1 AND x.no_live_credentials_ack=1)<>2)
+   OR (p.status='REJECTED_INTERNAL' AND NOT EXISTS(
+    SELECT 1 FROM inv_provider_ao_packet_reviews r
+     WHERE r.packet_id=p.id AND r.decision='REJECTED_INTERNAL'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_packets p
+  JOIN inv_provider_named_nominations n ON n.id=p.nomination_id`);
+ const [aoTrials]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   t.status<>'OFFLINE_CRYPTO_HELD'
+   OR t.provider_chain_authenticated<>'NO'
+   OR t.real_issuer_status<>'UNVERIFIED'
+   OR t.trusted_crl_ocsp<>'NO' OR t.prepared_by<>p.prepared_by
+   OR t.policy_id<>pol.id OR t.requested_policy_oid<>pol.policy_oid
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_pkix_trials t
+  JOIN inv_provider_ao_packets p ON p.id=t.packet_id
+  JOIN inv_provider_policy_proposals pol ON pol.id=t.policy_id`);
+ const [aoArtifacts]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   a.status<>'SIGNED_OFFLINE_HELD' OR a.issuer_authority_verified<>'NO'
+   OR a.external_publisher_authenticated<>'NO'
+   OR a.serial_status<>'CRYPTO_GOOD_ONLY'
+   OR a.imported_by<>t.prepared_by
+   OR a.artifact_sha256<>SHA2(FROM_BASE64(a.artifact_der_b64),256)
+   OR (r.id IS NOT NULL AND (r.reviewer_id=a.imported_by OR
+    (r.decision='CRYPTO_REVIEWED_HELD' AND NOT r.issuer_provenance_missing_ack)))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_revocation_trials a
+  JOIN inv_provider_ao_pkix_trials t ON t.id=a.trial_id
+  LEFT JOIN inv_provider_ao_revocation_reviews r ON r.artifact_id=a.id`);
+ const [aoMca]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN
+   m.registry_authenticated<>'NO' OR m.signatory_authorized<>'NO'
+   OR m.prepared_by<>p.prepared_by
+   OR (m.status='INTERNALLY_INSPECTED_HELD' AND
+    (r.id IS NULL OR r.decision<>'INSPECTED_HELD'
+     OR r.reviewer_id=m.prepared_by
+     OR NOT r.external_mca_auth_missing_ack
+     OR NOT r.signatory_auth_missing_ack))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_provider_ao_mca_evidence m
+  JOIN inv_provider_ao_packets p ON p.id=m.packet_id
+  LEFT JOIN inv_provider_ao_mca_reviews r ON r.mca_id=m.id`);
+ if(Number(aoPackets[0].unsafe)!==0||Number(aoTrials[0].unsafe)!==0||
+   Number(aoArtifacts[0].unsafe)!==0||Number(aoMca[0].unsafe)!==0)
+  problems.push('Phase1AO offline CA/CRL/OCSP/MCA contract and dual-review HOLD constraints altered');
+ // Phase 1AX: read-only guard against a silently promoted/partially damaged
+ // offline ledger. Synthetic quarantined CI fixtures are expected; actual
+ // isolated staging with an unresolved fork is NOT ready for acceptance.
+ const [axStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   release_decision<>'HOLD'
+   OR (last_sequence=0 AND (last_receipt_sha256 IS NOT NULL OR
+       last_claim_sha256 IS NOT NULL OR last_signer_pin_sha256 IS NOT NULL))
+   OR (last_sequence>0 AND (last_receipt_sha256 IS NULL OR
+       last_claim_sha256 IS NULL OR last_signer_pin_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_ax_checkpoint_observations x WHERE x.log_ref=inv_ax_checkpoint_streams.log_ref
+      AND x.outcome IN ('FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE')))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_ax_checkpoint_observations x WHERE x.log_ref=inv_ax_checkpoint_streams.log_ref
+      AND x.outcome IN ('FORK','ROLLBACK','GAP','UNAUTHORIZED_KEY_CHANGE')))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_ax_checkpoint_streams`);
+ const [axOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe FROM
+  inv_ax_checkpoint_observations o LEFT JOIN inv_ax_checkpoint_streams s
+   ON s.log_ref=o.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(axStreams[0].unsafe)!==0||Number(axOrphans[0].unsafe)!==0)
+  problems.push('Phase 1AX offline checkpoint head/quarantine integrity mismatch');
+ if(target==='staging'&&Number(axStreams[0].quarantined)!==0)
+  problems.push('Phase 1AX signed checkpoint incident quarantine is unresolved');
+ // Phase 1AZ: only digest metadata exists. These checks do NOT establish
+ // immutable cloud retention, independent witness identity or genuine DR.
+ const [azStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_witnesses_authenticated<>'NO' OR immutable_storage_verified<>'NO'
+   OR real_dr_restore_verified<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND last_packet_sha256 IS NOT NULL)
+   OR (last_revision>0 AND last_packet_sha256 IS NULL)
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+     SELECT 1 FROM inv_az_readiness_packets p
+     WHERE p.log_ref=inv_az_readiness_streams.log_ref
+       AND p.outcome<>'RECORDED_UNTRUSTED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+     SELECT 1 FROM inv_az_readiness_packets p
+     WHERE p.log_ref=inv_az_readiness_streams.log_ref
+       AND p.outcome<>'RECORDED_UNTRUSTED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_az_readiness_streams`);
+ const [azOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_az_readiness_packets p LEFT JOIN inv_az_readiness_streams s
+   ON s.log_ref=p.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(azStreams[0].unsafe)!==0||Number(azOrphans[0].unsafe)!==0)
+  problems.push('Phase 1AZ external readiness packet integrity or HOLD gate mismatch');
+ if(target==='staging'&&Number(azStreams[0].quarantined)!==0)
+  problems.push('Phase 1AZ unresolved readiness evidence quarantine in staging');
+ // Phase 1BB: read-only intake digest guard; no external publisher or KMS
+ // provenance can be asserted by a local database counter.
+ const [bbStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_sources_authenticated<>'NO' OR independent_key_custody_verified<>'NO'
+   OR production_release<>'HOLD'
+   OR (last_sequence=0 AND last_batch_sha256 IS NOT NULL)
+   OR (last_sequence>0 AND last_batch_sha256 IS NULL)
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bb_evidence_attempts a WHERE a.log_ref=inv_bb_evidence_streams.log_ref
+      AND a.outcome<>'ACCEPTED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bb_evidence_attempts a WHERE a.log_ref=inv_bb_evidence_streams.log_ref
+      AND a.outcome<>'ACCEPTED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bb_evidence_streams`);
+ const [bbNonceCounts]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS missing FROM
+  inv_bb_evidence_attempts a WHERE a.outcome='ACCEPTED_UNVERIFIED'
+   AND (SELECT COUNT(*) FROM inv_bb_evidence_nonce_claims n
+     WHERE n.log_ref=a.log_ref AND n.batch_sha256=a.batch_sha256)<>6`);
+ if(Number(bbStreams[0].unsafe)!==0||Number(bbNonceCounts[0].missing)!==0)
+  problems.push('Phase 1BB offline nonce custody, persisted head or release-HOLD integrity mismatch');
+ if(target==='staging'&&Number(bbStreams[0].quarantined)!==0)
+  problems.push('Phase 1BB signed evidence intake quarantine unresolved in staging');
+ // Phase 1BC candidate Merkle heads are not independently authenticated.
+ // Read-only checks prevent silent local head/release state promotion only.
+ const [bcStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   external_source_authenticated<>'NO' OR independent_key_custody_verified<>'NO'
+   OR immutable_worm_retention_verified<>'NO' OR production_release<>'HOLD'
+   OR (last_tree_size=0 AND (last_root_sha256 IS NOT NULL OR
+     last_az_packet_sha256 IS NOT NULL OR last_witness_pinset_sha256 IS NOT NULL))
+   OR (last_tree_size>0 AND (last_root_sha256 IS NULL OR
+     last_az_packet_sha256 IS NULL OR last_witness_pinset_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bc_witness_observations e
+    WHERE e.log_ref=inv_bc_witness_streams.log_ref AND
+      e.outcome NOT IN ('GENESIS_UNVERIFIED','EXTENSION_UNVERIFIED')))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bc_witness_observations e
+    WHERE e.log_ref=inv_bc_witness_streams.log_ref AND
+      e.outcome NOT IN ('GENESIS_UNVERIFIED','EXTENSION_UNVERIFIED')))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bc_witness_streams`);
+ const [bcOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bc_witness_observations e LEFT JOIN inv_bc_witness_streams s
+   ON e.log_ref=s.log_ref WHERE s.log_ref IS NULL`);
+ if(Number(bcStreams[0].unsafe)!==0||Number(bcOrphans[0].unsafe)!==0)
+  problems.push('Phase 1BC local witness custody HEAD/quarantine or release HOLD mismatch');
+ if(target==='staging'&&Number(bcStreams[0].quarantined)!==0)
+  problems.push('Phase 1BC witness split-view or key-change incident unresolved in staging');
+ // Phase 1BD review table is NOT externally trusted or immutable.
+ // Staging must reject local quarantine or impossible authority promotion.
+ const [bdStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_authority_verified<>'NO' OR object_lock_provider_verified<>'NO'
+   OR encrypted_dr_witnessed<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND (last_review_sha256 IS NOT NULL OR
+    last_az_packet_sha256 IS NOT NULL OR last_bb_batch_sha256 IS NOT NULL))
+   OR (last_revision>0 AND (last_review_sha256 IS NULL OR
+    last_az_packet_sha256 IS NULL OR last_bb_batch_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bd_review_attempts a WHERE a.log_ref=inv_bd_review_streams.log_ref
+    AND a.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bd_review_attempts a WHERE a.log_ref=inv_bd_review_streams.log_ref
+    AND a.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bd_review_streams`);
+ const [bdHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS invalid
+   FROM inv_bd_review_attempts a WHERE a.outcome='RECORDED_UNVERIFIED' AND (
+    (a.revision_number=1 AND a.previous_review_sha256 IS NOT NULL)
+    OR (a.revision_number>1 AND NOT EXISTS (
+      SELECT 1 FROM inv_bd_review_attempts p WHERE p.log_ref=a.log_ref
+       AND p.revision_number=a.revision_number-1
+       AND p.review_sha256=a.previous_review_sha256
+       AND p.outcome='RECORDED_UNVERIFIED'))
+   )`);
+ if(Number(bdStreams[0].unsafe)!==0||Number(bdHistory[0].invalid)!==0)
+  problems.push('Phase 1BD local evidence review chain, incident HOLD or trust-promotion mismatch');
+ if(target==='staging'&&Number(bdStreams[0].quarantined)!==0)
+  problems.push('Phase 1BD unresolved independent evidence review quarantine in staging');
+ // Phase 1BE: a locally signed candidate emergency freeze is *not*
+ // authoritative revocation or a provider-issued release. Staging with an
+ // unresolved freeze is denied even if local digest records are consistent.
+ const [beStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN state='FROZEN_UNVERIFIED' THEN 1 ELSE 0 END),0) AS frozen,
+  COALESCE(SUM(CASE WHEN state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_witness_authority_authenticated<>'NO'
+   OR independently_published_revocation_verified<>'NO'
+   OR provider_worm_denial_verified<>'NO'
+   OR encrypted_dr_restore_witnessed<>'NO'
+   OR production_release<>'HOLD'
+   OR (state='HELD_UNVERIFIED' AND
+    (last_incident_sha256 IS NOT NULL OR frozen_witness_ref IS NOT NULL OR
+     frozen_key_spki_sha256 IS NOT NULL OR last_bd_review_sha256 IS NOT NULL OR
+     EXISTS(SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref)))
+   OR (state<>'HELD_UNVERIFIED' AND
+    (last_incident_sha256 IS NULL OR frozen_witness_ref IS NULL OR
+     frozen_key_spki_sha256 IS NULL OR last_bd_review_sha256 IS NULL OR
+     (SELECT COUNT(*) FROM inv_be_freeze_attempts a
+      WHERE a.log_ref=inv_be_freeze_streams.log_ref AND
+       a.outcome='FROZEN_UNVERIFIED')<>1))
+   OR (state='FROZEN_UNVERIFIED' AND EXISTS(
+     SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref
+      AND a.outcome<>'FROZEN_UNVERIFIED'))
+   OR (state='QUARANTINED' AND NOT EXISTS(
+     SELECT 1 FROM inv_be_freeze_attempts a WHERE a.log_ref=inv_be_freeze_streams.log_ref
+      AND a.outcome<>'FROZEN_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_be_freeze_streams`);
+ const [beOrphans]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_be_freeze_attempts a LEFT JOIN inv_be_freeze_streams s
+  ON a.log_ref=s.log_ref WHERE s.log_ref IS NULL`);
+ const [beUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_be_freeze_streams s LEFT JOIN inv_bd_review_streams bd
+  ON s.log_ref=bd.log_ref
+  WHERE s.state<>'HELD_UNVERIFIED' AND
+   (bd.log_ref IS NULL OR bd.last_review_sha256<>s.last_bd_review_sha256)`);
+ if(Number(beStreams[0].unsafe)!==0||Number(beOrphans[0].unsafe)!==0||
+    Number(beUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BE witness emergency freeze head/review lineage or HARD HOLD mismatch');
+ if(target==='staging'&&
+    (Number(beStreams[0].frozen)>0||Number(beStreams[0].quarantined)>0))
+  problems.push('Phase 1BE unresolved witness key compromise freeze blocks staging acceptance');
+ // Phase 1BF public revocation publisher keys/CRL hashes are applicant-held
+ // candidate evidence, not independently authenticated source-of-truth.
+ const [bfStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independent_issuer_authenticated<>'NO'
+   OR active_crl_ocsp_independently_verified<>'NO'
+   OR revoked_key_externally_confirmed<>'NO'
+   OR object_lock_provider_verified<>'NO'
+   OR encrypted_dr_witnessed<>'NO'
+   OR production_release<>'HOLD'
+   OR (last_sequence=0 AND
+     (last_publication_sha256 IS NOT NULL OR last_freeze_incident_sha256 IS NOT NULL
+      OR last_publisher_spki_sha256 IS NOT NULL))
+   OR (last_sequence>0 AND
+     (last_publication_sha256 IS NULL OR last_freeze_incident_sha256 IS NULL
+      OR last_publisher_spki_sha256 IS NULL))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bf_publication_attempts a WHERE a.log_ref=inv_bf_publication_streams.log_ref
+      AND a.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bf_publication_attempts a WHERE a.log_ref=inv_bf_publication_streams.log_ref
+      AND a.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bf_publication_streams`);
+ const [bfHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bf_publication_attempts a WHERE a.outcome='RECORDED_UNVERIFIED'
+   AND ((a.publication_sequence=1 AND a.previous_publication_sha256 IS NOT NULL)
+    OR (a.publication_sequence>1 AND NOT EXISTS(
+     SELECT 1 FROM inv_bf_publication_attempts p
+     WHERE p.log_ref=a.log_ref AND p.publication_sequence=a.publication_sequence-1
+      AND p.publication_sha256=a.previous_publication_sha256
+      AND p.outcome='RECORDED_UNVERIFIED'
+      AND p.freeze_incident_sha256=a.freeze_incident_sha256
+      AND p.publisher_spki_sha256=a.publisher_spki_sha256)))`);
+ const [bfUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+   FROM inv_bf_publication_streams s LEFT JOIN inv_be_freeze_streams be
+    ON s.log_ref=be.log_ref
+   WHERE s.last_sequence>0 AND
+    (be.log_ref IS NULL OR be.state='HELD_UNVERIFIED'
+     OR be.last_incident_sha256<>s.last_freeze_incident_sha256)`);
+ if(Number(bfStreams[0].unsafe)!==0||Number(bfHistory[0].unsafe)!==0||
+    Number(bfUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BF candidate revocation issuer, predecessor or release HOLD tampering');
+ if(target==='staging'&&Number(bfStreams[0].quarantined)>0)
+  problems.push('Phase 1BF unresolved revocation publication fork or issuer change in staging');
+ // Phase 1BG cross-source auditor claims cannot authenticate a real CA,
+ // object-lock authority or restore. Staging requires no unresolved forks.
+ const [bgStreams]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN governance_state='QUARANTINED' THEN 1 ELSE 0 END),0) AS quarantined,
+  COALESCE(SUM(CASE WHEN
+   independently_authenticated_issuer<>'NO' OR trusted_live_crl_ocsp<>'NO'
+   OR independently_pinned_auditors<>'NO' OR externally_enforced_object_lock<>'NO'
+   OR real_encrypted_dr_witnessed<>'NO' OR production_release<>'HOLD'
+   OR (last_revision=0 AND
+    (last_review_sha256 IS NOT NULL OR last_publication_sha256 IS NOT NULL
+     OR last_auditor_pinset_sha256 IS NOT NULL OR last_publisher_pin_sha256 IS NOT NULL
+     OR last_crl_number<>0 OR last_crl_this_update_ms<>0))
+   OR (last_revision>0 AND
+    (last_review_sha256 IS NULL OR last_publication_sha256 IS NULL
+     OR last_auditor_pinset_sha256 IS NULL OR last_publisher_pin_sha256 IS NULL
+     OR last_crl_number=0 OR last_crl_this_update_ms=0))
+   OR (governance_state='HELD_UNVERIFIED' AND EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts x WHERE x.log_ref=inv_bg_cross_source_streams.log_ref
+     AND x.outcome<>'RECORDED_UNVERIFIED'))
+   OR (governance_state='QUARANTINED' AND NOT EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts x WHERE x.log_ref=inv_bg_cross_source_streams.log_ref
+     AND x.outcome<>'RECORDED_UNVERIFIED'))
+   THEN 1 ELSE 0 END),0) AS unsafe
+  FROM inv_bg_cross_source_streams`);
+ const [bgHistory]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bg_cross_source_attempts x
+  WHERE x.outcome='RECORDED_UNVERIFIED' AND (
+   (x.review_revision=1 AND x.previous_review_sha256 IS NOT NULL)
+   OR (x.review_revision>1 AND NOT EXISTS(
+    SELECT 1 FROM inv_bg_cross_source_attempts p
+     WHERE p.log_ref=x.log_ref AND p.review_revision=x.review_revision-1
+      AND p.review_sha256=x.previous_review_sha256
+      AND p.outcome='RECORDED_UNVERIFIED'
+      AND p.publisher_pin_sha256=x.publisher_pin_sha256
+      AND p.auditor_pinset_sha256=x.auditor_pinset_sha256
+      AND p.crl_number<=x.crl_number
+      AND p.crl_this_update_ms<=x.crl_this_update_ms)))`);
+ const [bgUpstream]=await db.query<RowDataPacket[]>(`SELECT COUNT(*) AS unsafe
+  FROM inv_bg_cross_source_streams s
+   LEFT JOIN inv_bf_publication_streams bf ON bf.log_ref=s.log_ref
+   LEFT JOIN inv_be_freeze_streams be ON be.log_ref=s.log_ref
+  WHERE s.last_revision>0 AND
+   (bf.log_ref IS NULL OR bf.governance_state<>'HELD_UNVERIFIED'
+    OR bf.last_publication_sha256<>s.last_publication_sha256
+    OR bf.last_publisher_spki_sha256<>s.last_publisher_pin_sha256
+    OR be.log_ref IS NULL OR be.state<>'FROZEN_UNVERIFIED')`);
+ if(Number(bgStreams[0].unsafe)!==0||Number(bgHistory[0].unsafe)!==0||
+    Number(bgUpstream[0].unsafe)!==0)
+  problems.push('Phase 1BG candidate CRL/OCSP-auditor lineage, WORM/DR custody or HOLD-state mismatch');
+ if(target==='staging'&&Number(bgStreams[0].quarantined)>0)
+  problems.push('Phase 1BG unresolved cross-source audit quorum incident blocks staging acceptance');
+ const [mfa]=await db.query<RowDataPacket[]>(`SELECT
+   SUM(CASE WHEN role='OWNER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS owners,
+   SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' THEN 1 ELSE 0 END) AS reviewers,
+   SUM(CASE WHEN role='OWNER' AND status='ACTIVE' AND t.enabled_at IS NOT NULL THEN 1 ELSE 0 END) AS owner_mfa,
+   SUM(CASE WHEN role='REVIEWER' AND status='ACTIVE' AND t.enabled_at IS NOT NULL THEN 1 ELSE 0 END) AS reviewer_mfa
+   FROM auth_users u LEFT JOIN auth_totp_credentials t ON u.id=t.user_id`);
+ const activeOwners=Number(mfa[0].owners??0),activeReviewers=Number(mfa[0].reviewers??0);
+ if(env.MFA_REQUIRE_PRIVILEGED==='true' &&
+   (Number(mfa[0].owner_mfa??0)<1||Number(mfa[0].reviewer_mfa??0)<1))
+   problems.push('Privileged MFA policy enabled without enrolled active owner and reviewer');
+ if(!['true','false',undefined].includes(env.MFA_REQUIRE_PRIVILEGED))
+   problems.push('Invalid privileged MFA setting');
+ if(!/^[a-fA-F0-9]{64}$/.test(env.MFA_ENCRYPTION_KEY??''))
+   problems.push('Missing/invalid MFA encryption key');
+ if(target==='staging'&&env.DB_SSL!=='true')problems.push('TLS is required in staging');
+ return {
+  ready:problems.length===0,target,
+  migrationCount:actual.size,expectedMigrationCount:expected.length,
+  heldPreparations:Number(holds[0].total),
+  heldSupplierDispatchOutboxes:Number(supplierOutbox[0].total),
+  heldGrnReconciliationEvidence:Number(heldGrn[0].total),
+  hardZeroStockPositions:Number(stockGate[0].total),
+  heldStockReleaseOutboxes:Number(releaseHolds[0].total),
+  nonallocatingReservationPlans:Number(plans[0].total),
+  unpostedBalancedJournalProposals:Number(journalSummary[0].total),
+  unverifiedSerialCandidatesCheck:Number(badCandidates[0].total),
+  untrustedProofKeyCandidates:Number(proofKeys[0].total),
+  cryptographicallyMatchedUntrustedClaims:Number(proofClaims[0].total),
+  oneTimeKeyPossessionChallenges:Number(keyChallenges[0].total),
+  irrevocablyRetiredCandidates:Number(keyRetirements[0].total),
+  internalOnlyKeyRotations:Number(keyRotations[0].total),
+  unverifiedExternalIssuerCandidates:Number(extIssuers[0].total),
+  frozenExternalIssuerCandidates:Number(extIssuers[0].frozen),
+  internalHeldOrganizationalClaims:Number(extAuthorities[0].total),
+  selfSignedRevocationBundles:Number(extFeeds[0].total),
+  unverifiedProviderRootCandidates:Number(providerPins[0].total),
+  permanentlyFrozenProviderPins:Number(providerPins[0].frozen),
+  rootSignedHeldOrganizationalCredentials:Number(providerCredentials[0].total),
+  pinnedRootSignedRevocationFeeds:Number(providerFeeds[0].total),
+  unverifiedSandboxCorporateCases:Number(sandboxCases[0].total),
+  pinnedOneHopCertificatesHeld:Number(sandboxCertificates[0].total),
+  internalOnlySandboxRevocationChecks:Number(sandboxChecks[0].total),
+  namedProviderCandidatesWithoutAuthorization:Number(namedProviders[0].total),
+  unapprovedSandboxPolicyProfiles:Number(namedPolicies[0].total),
+  unverifiedMcaSignatoryDossiers:Number(registryDossiers[0].total),
+  sandboxAccessRequestsWithoutCredentials:Number(accessGates[0].total),
+  phase1BgCandidateCrossSourceReviewStreams:Number(bgStreams[0].total),
+  phase1BgQuarantinedCrossSourceReviewStreams:Number(bgStreams[0].quarantined),
+  phase1BfCandidatePublicationStreams:Number(bfStreams[0].total),
+  phase1BfQuarantinedPublicationStreams:Number(bfStreams[0].quarantined),
+  phase1BeEmergencyFrozenWitnessStreams:Number(beStreams[0].frozen),
+  phase1BeQuarantinedRevocationStreams:Number(beStreams[0].quarantined),
+  phase1BdHeldEvidenceReviewStreams:Number(bdStreams[0].total),
+  phase1BdQuarantinedEvidenceReviewStreams:Number(bdStreams[0].quarantined),
+  phase1BcHeldWitnessCustodyStreams:Number(bcStreams[0].total),
+  phase1BcQuarantinedWitnessCustodyStreams:Number(bcStreams[0].quarantined),
+  phase1BbHeldEvidenceIntakeStreams:Number(bbStreams[0].total),
+  phase1BbQuarantinedEvidenceIntakeStreams:Number(bbStreams[0].quarantined),
+  phase1AzOfflineReadinessStreams:Number(azStreams[0].total),
+  phase1AzQuarantinedReadinessStreams:Number(azStreams[0].quarantined),
+  phase1AxOfflineCheckpointStreams:Number(axStreams[0].total),
+  phase1AxQuarantinedCheckpointStreams:Number(axStreams[0].quarantined),
+  unverifiedProviderAgreementPackets:Number(aoPackets[0].total),
+  offlineProviderPolicyChainTrials:Number(aoTrials[0].total),
+  offlineSignedCrlOcspArtifacts:Number(aoArtifacts[0].total),
+  unauthenticatedMcaAndSignerEvidence:Number(aoMca[0].total),
+  activeOwnerCount:activeOwners,
+  activeReviewerCount:activeReviewers,
+  privilegedMfaPolicy:env.MFA_REQUIRE_PRIVILEGED==='true',
+  problems,
+  externalGates:{
+   phase1BgIndependentCrlOcspRevocationAuthority:'NOT_VERIFIED',
+   phase1BgOutOfBandAuditorKeyCustody:'NOT_VERIFIED',
+   phase1BgRealProviderWormAndEncryptedDr:'NOT_VERIFIED',
+   phase1BfAuthenticatedRevocationIssuerAndCrlOcsp:'NOT_VERIFIED',
+   phase1BfActualWitnessKeyRevocation:'NOT_VERIFIED',
+   phase1BfRealImmutableStorageAndDrAcceptance:'NOT_VERIFIED',
+   phase1BeExternallyAuthenticatedRevocation:'NOT_VERIFIED',
+   phase1BeRealWormObjectLockDenial:'NOT_VERIFIED',
+   phase1BeIndependentlyObservedEncryptedDR:'NOT_VERIFIED',
+   phase1BdIndependentWitnessEnrollment:'NOT_VERIFIED',
+   phase1BdProviderObjectLockDeleteDenial:'NOT_VERIFIED',
+   phase1BdEncryptedDrIndependentTelemetry:'NOT_VERIFIED',
+   phase1BcIndependentSourceOfTruth:'NOT_VERIFIED',
+   phase1BcExternallyPinnedWitnessKeyCustody:'NOT_VERIFIED',
+   phase1BcPublishedImmutableArchiveAndRealDr:'NOT_VERIFIED',
+   phase1BbIndependentPublisherEvidence:'NOT_VERIFIED',
+   phase1BbWitnessKeyCustody:'NOT_VERIFIED',
+   phase1BbCloudRetentionEnforcement:'NOT_VERIFIED',
+   phase1BbEncryptedDrAcceptance:'NOT_VERIFIED',
+   phase1AzExternalWitnessAdministration:'NOT_VERIFIED',
+   phase1AzImmutableWormObjectLock:'NOT_VERIFIED',
+   phase1AzIndependentlyWitnessedEncryptedRestore:'NOT_VERIFIED',
+   phase1AxIndependentWitnessSignatures:'NOT_VERIFIED',
+   phase1AxImmutableExternalCheckpointStorage:'NOT_VERIFIED',
+   encryptedBackupAndRestoreRehearsal:'NOT_VERIFIED',
+   browserHttpsMfaEndToEnd:'NOT_VERIFIED',
+   secretKeyRecoveryAndRotation:'NOT_VERIFIED',
+   externalNotificationAndDispatch:'DISABLED',
+   externalTrustRootAuthentication:'NOT_VERIFIED',
+   officialSupplierAndWarehouseAuthority:'NOT_VERIFIED',
+   externallyPublishedRevocationTrust:'NOT_VERIFIED',
+   preprovisionedProviderRootOwnership:'NOT_VERIFIED',
+   corporateRegistryAndSignatory:'NOT_VERIFIED',
+   pinnedTlsPublisherProductionAcceptance:'NOT_VERIFIED',
+   genuineCorporateKyc:'NOT_VERIFIED',
+   authorizedLegalSignatory:'NOT_VERIFIED',
+   fullPkixPathAndOcspCrl:'NOT_VERIFIED',
+   namedProviderContract:'NOT_APPROVED',
+   sandboxCredentials:'NOT_PROVIDED',
+   mcaSignatoryLegalAuthentication:'NOT_VERIFIED',
+   cspPolicyAndTrustedRevocation:'NOT_VERIFIED',
+   signedProviderContract:'NOT_AUTHENTICATED',
+   approvedLiveSandboxCredentials:'NOT_CONFIGURED',
+   authenticatedCaCrlOcspPublisher:'NOT_VERIFIED',
+   verifiedMcaLegalRepresentative:'NOT_VERIFIED'
+  }
+ };
+}

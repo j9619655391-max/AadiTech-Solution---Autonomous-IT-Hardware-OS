@@ -1,0 +1,14 @@
+# Phase 1GQ — Revocation ordering and authority reconciliation (HARD HOLD)
+
+25 November 2026 IST. 1GP exact Draft PR 45480434240 on 56d5c0e367d2ae32998d473bc6d7ce52a30d854e SUCCESS 8/8. Hosted MySQL combined GN–GP subtest 7 passed, provenanceIntegrity PASS. No separate push receipt observed.
+
+1GQ adds commit-first key/session revocation lock contention, bounded timeout/rollback followed by post-consumption revocation, and replay rejection alongside previous revoke-first cases. Eight authorizations: six positive consumptions, two revoke-first denials. Separate synthetic key and session for commit-first cases preserve independent later revoke-first fixtures. Four consumers preserve native deadlock 1213 via specific handler instead of trying to roll back to an InnoDB-invalidated savepoint. No forced deadlock regression yet.
+
+New CI-only read-only reconciliation helper uses owned repeatable-read consistent snapshot and fixed SQL. Checks both directions of global/module identities and consumption timestamps, valid historical approval/key metadata at consumption, CRM CREATE audit linkage or quote reservation and owner linkage, orphan approval. Outputs anomaly codes only; no repair or release authorization. Positive combined fixture and reversible orphan registry corruption test. Equality of revocation and consumption milliseconds is not proof of order; independent witness required. Does not verify complete signed payload or audit bytes, external signature evidence, restored database completeness, schema/trigger custody, actual backup/restore, or quote item content. No external DB, no real key or approver, no live migration. 0051 unchanged; BV/BW source custody updated. Exact-head CI pending; all independent acceptance and production HARD HOLD retained.
+
+Remaining: force deadlock and interrupted-connection recovery test, authenticated recovery manifest and full isolated restore rehearsal, quote content digest, non-bypassable independently authenticated approval, real key custody, app/staging integration, M01–M30 functional and external acceptance.
+
+
+## Verified hosted receipt
+
+Exact Draft PR 45482963983 on 5ec21a3eca02edab8f65467fdb6f7eec8ef225e6 completed SUCCESS 8/8. Combined GN–GQ MySQL subtest 7 and provenanceIntegrity PASS. No separate push receipt or independent external authority.

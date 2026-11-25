@@ -158,7 +158,7 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
       cost: Number(newSerialForm.cost),
       supplier: newSerialForm.supplierName,
       ageDays: 1,
-      state: 'AVAILABLE',
+      state: 'QC_CHECK', // legacy type has no unverified/quarantine state; parent rejects this entirely
       isDeadStock: false
     };
 
@@ -363,15 +363,16 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
                   <span>Serialized Physical Inventory Tracking</span>
                 </h3>
                 <span className="text-xs text-slate-400">
-                  Tracking {filteredInventory.length} Units with Bin Locations & Serial Scanning
+                  Previewing {filteredInventory.length} browser-local serial claims. Real stock ownership and availability NOT VERIFIED.
                 </span>
               </div>
               <button
-                onClick={() => setShowAddSerialModal(true)}
+                disabled
+                title="Legacy serial posting cannot establish warehouse title; use the server-backed quarantine workspace"
                 className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm self-start sm:self-auto"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Serial Hardware</span>
+                <span>Serial Posting HOLD</span>
               </button>
             </div>
 
@@ -452,15 +453,16 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
                   <span>Hardware Catalog & Master SKU Registry</span>
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Total {products.length} Products registered with HSN codes, multi-hub inventory allocation and target margins
+                  {products.length} local SKU previews; no authenticated supplier pricing, HSN/GST approval or available stock is established
                 </p>
               </div>
               <button
-                onClick={() => setShowAddProductModal(true)}
+                disabled
+                title="SKU onboarding requires server-side verified supplier, HSN/GST and pricing evidence"
                 className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm self-start sm:self-auto"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Add Hardware SKU</span>
+                <span>SKU Registration HOLD</span>
               </button>
             </div>
 
@@ -544,15 +546,16 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
                 <span>Competitive Supplier RFQ Matrix & L1 Evaluation</span>
               </h3>
               <p className="text-xs text-slate-400">
-                Compare authorized national distributors (Redington, Ingram Micro, Savex, Kaizen) with L1 algorithmic scoring
+                Browser-only candidate RFQ comparisons. Distributor identities, quotes and L1 scoring are unverified.
               </p>
             </div>
             <button
-              onClick={() => setShowCreateRFQModal(true)}
+              disabled
+              title="Supplier RFQ broadcast requires separately approved provider channel and customer data controls"
               className="px-3.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm self-start sm:self-auto"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Create New RFQ</span>
+              <span>Supplier RFQ HOLD</span>
             </button>
           </div>
 
@@ -624,14 +627,15 @@ export const ProcurementAndInventory: React.FC<ProcurementAndInventoryProps> = (
                       </div>
 
                       <button
-                        onClick={() => onRaisePO(rfq.id, quote.supplierId)}
+                        disabled
+                        title="Issue a PO only from independently authorized server-side procurement reviews"
                         className={`w-full mt-3 py-2 rounded-lg font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 ${
                           quote.aiRecommended
                             ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md'
                             : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
                         }`}
                       >
-                        <span>Issue Purchase Order (PO)</span>
+                        <span>PO Issuance HOLD</span>
                         <ArrowRight className="w-3 h-3" />
                       </button>
                     </div>

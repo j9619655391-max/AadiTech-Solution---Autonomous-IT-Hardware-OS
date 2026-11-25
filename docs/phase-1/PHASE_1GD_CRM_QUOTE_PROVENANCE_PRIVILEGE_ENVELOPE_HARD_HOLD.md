@@ -1,0 +1,11 @@
+# Phase 1GD — CRM / quotation provenance privilege envelope (HARD HOLD)
+
+24 November 2026 IST. Source review of server/crm/repository.ts and server/quotes/router.ts confirms CRM soft deletion uses versioned UPDATE and audit INSERT, and quotation draft, original item and revision writes are INSERT-only. Quote request reservation needs UPDATE to attach its quote ID.
+
+The read-only runtime grant assessor now rejects UPDATE/DELETE on crm_audit_events, sales_quote_drafts, sales_quote_draft_items, sales_quote_draft_revisions, and DELETE on crm_customers, crm_products, crm_leads, sales_quote_create_requests. Mixed/case-normalized grants are covered. No installed grants are changed. The existing 1GC/1GB policies remain intact.
+
+MySQL locking-read compatibility: https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html documents that FOR UPDATE needs an additional write-capable privilege, whereas MySQL >=8.0.22 permits FOR SHARE with SELECT. The quotation revision parent is immutable; change its read to FOR SHARE while retaining the existing same-transaction exclusive active OWNER lock BEFORE any consistent read. Every revision of that draft requires the same created_by identity and thus the same OWNER row lock. No weakened role check, no second connection, and no new privileged routine. Independent DBA verification of lock ordering/isolation and installed routine remains required.
+
+Regression source: unit allow/deny matrix, twelve actual disposable MySQL grant widening/revocation checks, restricted-principal HTTP create/replay and two concurrent same-version revisions (one 201, one 409), direct SQL denial, CRM versioned patch/soft delete with retained row and three audit events. No production DB or external data. Exact-head push + Draft PR CI required before claiming verified integration.
+
+Limitations: INSERT access does not authenticate CRM audit creator events against a compromised runtime; table-wide UPDATE on CRM and request rows remains broader than individual API operations. No cryptographic immutability or legal tenancy, supplier price, official quote issuance or real customer approval. All external M01–M30 acceptance remains open. Main unchanged, PR #1 Draft/unmerged, Issue #2 open. productionReleaseAuthorized=false; productionReleaseBlocked=true; releaseDecision=HOLD.
